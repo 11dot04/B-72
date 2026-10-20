@@ -32,6 +32,14 @@ jobs:
           cp /tmp/pubspec.yaml pubspec.yaml
           # ML Kit needs a higher minSdk than some Flutter defaults
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle* || true
+          # ask Google Play services to fetch the subject-segmentation model
+          python3 - << 'PY'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p).read()
+          if 'subject_segment' not in s:
+              s = s.replace('</application>', '    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>', 1)
+          open(p, 'w').write(s)
+          PY
 
       - run: flutter pub get
       - run: flutter build apk --debug --target-platform android-arm64
