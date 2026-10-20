@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'collection.dart';
 import 'editor.dart';
 import 'main.dart' show Board, Kind;
+import 'note_page.dart';
 import 'palette.dart';
 import 'store.dart';
 
@@ -38,7 +40,9 @@ class Home extends StatefulWidget {
 
 class _HomeState extends State<Home> {
   String q = '';
-  bool searching = false, byTag = true;
+  bool searching = false;
+  int tab = 0; // 0 tags, 1 notes, 2 collection
+  bool get byTag => tab == 0;
   String? open;
 
   Future<void> go(Widget page) async {
@@ -49,7 +53,7 @@ class _HomeState extends State<Home> {
   void edit([Note? n, String? tag]) => go(Editor(store: widget.store, note: n, tag: tag));
 
   String headline(Note n) => n.blocks.map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => n.blocks.map((b) => b.body).firstWhere((s) => s.isNotEmpty, orElse: () => 'Photo'));
-  String snippet(Note n) => n.blocks.any((b) => b.title.isNotEmpty) ? n.blocks.map((b) => b.body).firstWhere((s) => s.isNotEmpty, orElse: () => '') : '';
+  List<String> photosOf(Note n) => [for (final b in n.blocks) if (b.kind == Kind.photo && b.path != null) b.path!];
 
   TextStyle caps(Color c, [double size = 11]) => TextStyle(fontSize: size, fontWeight: FontWeight.w700, letterSpacing: .6, color: c);
 
@@ -68,7 +72,7 @@ class _HomeState extends State<Home> {
         ),
       ]);
 
-  /// Light outlined row with a chevron (collapsed state).
+  /// Light outlined row with a chevron (collapsed accordion).
   Widget row(String name, String trail, ColorScheme cs, VoidCallback onTap) => GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
@@ -86,35 +90,26 @@ class _HomeState extends State<Home> {
         ),
       );
 
-  Widget notePanel(Note n, ColorScheme cs) {
-    final light = cs.primaryContainer, sn = snippet(n);
-    final photos = [for (final b in n.blocks) if (b.kind == Kind.photo && b.path != null) b.path!];
-    final kinds = n.blocks.map((b) => b.kind == Kind.bare ? 'TEXT' : b.kind.name.toUpperCase()).toSet().join(' + ');
-    return GestureDetector(
-      onTap: () => edit(n),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
+  Widget panel(String label, Widget child, Color light) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(kinds, style: caps(light.withAlpha(150), 10)),
+          Text(label, style: caps(light.withAlpha(150), 10)),
           const SizedBox(height: 6),
-          Text(headline(n), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'serif', fontSize: 20, height: 1.15, color: light)),
-          if (sn.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(sn, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: light.withAlpha(190)))),
-          if (photos.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Row(children: [
-                for (final p in photos.take(4))
-                  Padding(padding: const EdgeInsets.only(right: 8), child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(p), width: 56, height: 56, fit: BoxFit.cover, cacheWidth: 160))),
-              ]),
-            ),
+          child,
         ]),
-      ),
-    );
-  }
+      );
 
-  Widget expanded(String name, String? tag, List<Note> notes, ColorScheme cs) {
-    final light = cs.primaryContainer;
+  Widget expandedNote(Note n, ColorScheme cs) {
+    final light = cs.primaryContainer, txt = TextStyle(fontSize: 14, height: 1.35, color: light.withAlpha(220));
+    final photos = photosOf(n);
+    Widget check(String s) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(children: [
+            Icon(s.startsWith('x ') ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 16, color: light),
+            const SizedBox(width: 8),
+            Expanded(child: Text(s.startsWith('x ') ? s.substring(2) : s, maxLines: 1, overflow: TextOverflow.ellipsis, style: txt.copyWith(decoration: s.startsWith('x ') ? TextDecoration.lineThrough : null))),
+          ]),
+        );
     return Fused(color: cs.onPrimaryContainer, children: [
       GestureDetector(
         onTap: () => setState(() => open = null),
@@ -122,28 +117,40 @@ class _HomeState extends State<Home> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
           child: Row(children: [
-            Expanded(child: Text(name, style: TextStyle(fontFamily: 'serif', fontSize: 22, color: light))),
+            Expanded(child: Text(headline(n), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'serif', fontSize: 22, height: 1.1, color: light))),
             Icon(Icons.expand_more, color: light),
           ]),
         ),
       ),
-      for (final n in notes) notePanel(n, cs),
+      for (final b in n.blocks)
+        if (b.kind == Kind.text && b.body.isNotEmpty)
+          panel('TEXT', Text(b.body, maxLines: 5, overflow: TextOverflow.ellipsis, style: txt), light)
+        else if (b.kind == Kind.checklist)
+          panel('CHECKLIST · ${b.items.where((s) => s.startsWith('x ')).length}/${b.items.length}', Column(children: [for (final s in b.items.take(6)) check(s)]), light),
+      if (photos.isNotEmpty)
+        panel(
+          'PHOTOS · ${photos.length}',
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final p in photos.take(8)) ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(p), width: 56, height: 56, fit: BoxFit.cover, cacheWidth: 160)),
+          ]),
+          light,
+        ),
       Padding(
         padding: const EdgeInsets.all(14),
         child: Row(children: [
           Expanded(
             child: FilledButton(
-              onPressed: tag == null ? null : () => go(Board(store: widget.store, tag: tag, onSeed: widget.onSeed)),
+              onPressed: () => go(NotePage(store: widget.store, note: n)),
               style: FilledButton.styleFrom(backgroundColor: light, foregroundColor: cs.onPrimaryContainer, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: Text('OPEN CANVAS', style: caps(cs.onPrimaryContainer, 12)),
+              child: Text('OPEN', style: caps(cs.onPrimaryContainer, 12)),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: OutlinedButton(
-              onPressed: () => edit(null, tag),
+              onPressed: () => edit(n),
               style: OutlinedButton.styleFrom(foregroundColor: light, side: BorderSide(color: light.withAlpha(150)), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: Text('NEW NOTE', style: caps(light, 12)),
+              child: Text('EDIT', style: caps(light, 12)),
             ),
           ),
         ]),
@@ -151,9 +158,9 @@ class _HomeState extends State<Home> {
     ]);
   }
 
-  /// A tag accordion row, themed from the colours of that tag's own photos.
-  Widget tagRow(String? tag, List<Note> notes, ColorScheme g) {
-    final paths = tag == null ? <String>[] : widget.store.photosFor(tag), name = tag ?? 'Untagged';
+  /// Each multi-part note is an accordion, themed from its own photos.
+  Widget noteRow(Note n, ColorScheme g) {
+    final paths = photosOf(n);
     return FutureBuilder<Color?>(
       initialData: peekSeed(paths),
       future: seedFromPhotos(paths),
@@ -163,7 +170,35 @@ class _HomeState extends State<Home> {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
-          child: open == name ? expanded(name, tag, notes, cs) : row(name, '${notes.length}', cs, () => setState(() => open = name)),
+          child: open == n.id ? expandedNote(n, cs) : row(headline(n), n.tags.isEmpty ? 'UNTAGGED' : n.tags.first.toUpperCase(), cs, () => setState(() => open = n.id)),
+        );
+      },
+    );
+  }
+
+  /// A tag is an entry to its canvas.
+  Widget tagTile(String tag, int i, ColorScheme g) {
+    final paths = widget.store.photosFor(tag), n = widget.store.count(tag);
+    return FutureBuilder<Color?>(
+      initialData: peekSeed(paths),
+      future: seedFromPhotos(paths),
+      builder: (_, snap) {
+        final cs = snap.data == null ? g : ColorScheme.fromSeed(seedColor: snap.data!);
+        return GestureDetector(
+          onTap: () => go(Board(store: widget.store, tag: tag, onSeed: widget.onSeed)),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: BorderRadius.circular(i.isEven ? 36 : 22)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              pill('$n NOTE${n == 1 ? '' : 'S'}', cs.onPrimaryContainer, cs.primaryContainer),
+              const Spacer(),
+              Text(tag, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'serif', fontSize: 26, height: 1.05, color: cs.onPrimaryContainer)),
+              if (paths.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Row(children: [for (final p in paths.take(3)) Padding(padding: const EdgeInsets.only(right: 6), child: ClipOval(child: Image.file(File(p), width: 28, height: 28, fit: BoxFit.cover, cacheWidth: 90)))]),
+              ],
+            ]),
+          ),
         );
       },
     );
@@ -178,9 +213,9 @@ class _HomeState extends State<Home> {
         onTap: f,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
           decoration: BoxDecoration(color: on ? cs.primaryContainer : Colors.transparent, borderRadius: BorderRadius.circular(30)),
-          child: Text(t, style: caps(on ? cs.onPrimaryContainer : cs.primaryContainer, 12)),
+          child: Text(t, style: caps(on ? cs.onPrimaryContainer : cs.primaryContainer, 11)),
         ),
       );
 
@@ -190,7 +225,6 @@ class _HomeState extends State<Home> {
     bool hit(Note n) => qq.isEmpty || n.tags.any((t) => t.toLowerCase().contains(qq)) || n.blocks.any((b) => '${b.title} ${b.body}'.toLowerCase().contains(qq));
     final all = s.notes.where(hit).toList().reversed.toList();
     final tags = s.tags.where((t) => all.any((n) => n.tags.contains(t))).toList()..sort();
-    final loose = all.where((n) => n.tags.isEmpty).toList();
     Widget gap(Widget w) => Padding(padding: const EdgeInsets.only(bottom: 10), child: w);
     return Scaffold(
       backgroundColor: cs.surface,
@@ -202,7 +236,7 @@ class _HomeState extends State<Home> {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(color: cs.onPrimaryContainer, borderRadius: BorderRadius.circular(40)),
-              child: Row(children: [seg('TAGS', byTag, cs, () => setState(() => byTag = true)), seg('NOTES', !byTag, cs, () => setState(() => byTag = false))]),
+              child: Row(children: [seg('TAGS', tab == 0, cs, () => setState(() => tab = 0)), seg('NOTES', tab == 1, cs, () => setState(() => tab = 1)), seg('COLLECTION', tab == 2, cs, () => setState(() => tab = 2))]),
             ),
             circle(searching ? Icons.close : Icons.search, cs, () => setState(() {
                   searching = !searching;
@@ -220,12 +254,21 @@ class _HomeState extends State<Home> {
               onChanged: (v) => setState(() => q = v),
               decoration: InputDecoration(hintText: 'Search notes and tags', filled: true, prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(_r), borderSide: BorderSide.none)),
             )),
-          if (byTag) ...[
-            for (final t in tags) gap(tagRow(t, all.where((n) => n.tags.contains(t)).toList(), cs)),
-            if (loose.isNotEmpty) gap(tagRow(null, loose, cs)),
-          ] else
-            for (final n in all) gap(row(headline(n), n.tags.isEmpty ? 'UNTAGGED' : n.tags.join(', ').toUpperCase(), cs, () => edit(n))),
-          if (all.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Nothing here yet. Tap + to add a note.'))),
+          if (tab == 2)
+            CollectionView(store: widget.store)
+          else if (byTag)
+            GridView.count(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [for (var i = 0; i < tags.length; i++) tagTile(tags[i], i, cs)],
+            )
+          else
+            for (final n in all) gap(noteRow(n, cs)),
+          if (tab != 2 && (byTag ? tags.isEmpty : all.isEmpty))
+            Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(byTag ? 'Tag a note to create its canvas.' : 'Nothing here yet. Tap + to add a note.'))),
         ]),
       ),
     );
