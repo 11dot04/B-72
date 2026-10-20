@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show Rect;
 import 'package:path_provider/path_provider.dart';
 import 'main.dart' show Kind, NoteCard;
 import 'sticker.dart';
+import 'templates.dart';
 
 class Block {
   Block(this.kind, {this.id = '', this.title = '', this.body = '', this.path, this.focal = const Rect.fromLTRB(.3, .3, .7, .7), this.aspect = 1});
@@ -117,7 +118,7 @@ class Store {
 
   NoteCard cardOf(Note n, Block b, int i, String tag) {
     final p = n.places['$tag|${b.id}'], photo = b.kind == Kind.photo;
-    return NoteCard(b.id, b.kind, p?.x ?? .3, p?.y ?? 0, photo ? .38 : (b.kind == Kind.bare ? .5 : .36), photo ? b.aspect : 0,
+    return NoteCard(b.id, b.kind, p?.x ?? .3, p?.y ?? 0, photo ? .38 : tplWidth(b.kind), photo ? b.aspect : 0,
         noteId: n.id,
         order: i,
         angle: photo ? ((b.id.hashCode % 9) - 4) * .01 : 0,
