@@ -7,19 +7,46 @@ import 'sticker.dart';
 import 'templates.dart';
 
 class Block {
-  Block(this.kind, {this.id = '', this.title = '', this.body = '', this.path, this.focal = const Rect.fromLTRB(.3, .3, .7, .7), this.aspect = 1});
+  Block(this.kind, {
+    this.id = '', 
+    this.title = '', 
+    this.body = '', 
+    this.path, 
+    this.focal = const Rect.fromLTRB(.3, .3, .7, .7), 
+    this.aspect = 1, 
+    List<String>? items
+  }) : items = items ?? [];
+  
   Kind kind;
   String id, title, body;
   String? path;
   Rect focal;
   double aspect;
+  List<String> items;
 
-  Map toJson() => {'i': id, 'k': kind.index, 't': title, 'b': body, 'p': path, 'f': [focal.left, focal.top, focal.right, focal.bottom], 'a': aspect};
+  Map toJson() => {
+    'i': id, 
+    'k': kind.index, 
+    't': title, 
+    'b': body, 
+    'p': path, 
+    'f': [focal.left, focal.top, focal.right, focal.bottom], 
+    'a': aspect, 
+    'items': items
+  };
 
   factory Block.fromJson(Map j) {
     final f = (j['f'] as List).map((e) => (e as num).toDouble()).toList();
-    return Block(Kind.values[j['k']], id: j['i'] ?? '',
-        title: j['t'], body: j['b'], path: j['p'], focal: Rect.fromLTRB(f[0], f[1], f[2], f[3]), aspect: (j['a'] as num).toDouble());
+    return Block(
+      Kind.values[j['k']], 
+      id: j['i'] ?? '',
+      title: j['t'], 
+      body: j['b'], 
+      path: j['p'], 
+      focal: Rect.fromLTRB(f[0], f[1], f[2], f[3]), 
+      aspect: (j['a'] as num).toDouble(),
+      items: (j['items'] as List?)?.map((e) => e as String).toList()
+    );
   }
 }
 
