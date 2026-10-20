@@ -41,6 +41,29 @@ jobs:
           open(p, 'w').write(s)
           PY
 
+      - name: Fetch fonts (Google Sans Flex, Instrument Serif)
+        run: |
+          mkdir -p assets/fonts
+          get() { curl -fsSL "$1" -o "assets/fonts/$2" && echo "got $2" || { rm -f "assets/fonts/$2"; echo "MISSING $2"; }; }
+          B=https://raw.githubusercontent.com/google/fonts/main/ofl
+          get "$B/instrumentserif/InstrumentSerif-Regular.ttf" InstrumentSerif-Regular.ttf
+          get "$B/instrumentserif/InstrumentSerif-Italic.ttf" InstrumentSerif-Italic.ttf
+          get "$B/googlesansflex/GoogleSansFlex%5BGRAD,ROND,opsz,slnt,wdth,wght%5D.ttf" GoogleSansFlex.ttf
+          python3 - << 'PY'
+          import os
+          s = open('pubspec.yaml').read()
+          fam = []
+          if os.path.exists('assets/fonts/GoogleSansFlex.ttf'):
+              fam.append('    - family: GoogleSansFlex\n      fonts:\n        - asset: assets/fonts/GoogleSansFlex.ttf\n')
+          sf = [f for f in ('Regular', 'Italic') if os.path.exists('assets/fonts/InstrumentSerif-%s.ttf' % f)]
+          if sf:
+              body = ''.join('        - asset: assets/fonts/InstrumentSerif-%s.ttf\n%s' % (f, '          style: italic\n' if f == 'Italic' else '') for f in sf)
+              fam.append('    - family: InstrumentSerif\n      fonts:\n' + body)
+          if fam and 'fonts:' not in s.split('flutter:')[-1]:
+              s = s.rstrip('\n') + '\n  fonts:\n' + ''.join(fam)
+          open('pubspec.yaml', 'w').write(s)
+          PY
+
       - run: flutter pub get
       - run: flutter build apk --debug --target-platform android-arm64
 
