@@ -12,6 +12,7 @@ import 'home.dart';
 import 'palette.dart';
 import 'store.dart';
 import 'templates.dart';
+import 'type.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,17 +31,24 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> {
   int seed = 0;
+  ThemeMode mode = ThemeMode.system;
   @override
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
+        themeMode: mode,
         theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: seeds[seed])),
-        home: Home(store: widget.store, onSeed: () => setState(() => seed = (seed + 1) % seeds.length)),
+        darkTheme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: seeds[seed], brightness: Brightness.dark)),
+        home: Home(
+          store: widget.store,
+          onSeed: () => setState(() => seed = (seed + 1) % seeds.length),
+          onMode: () => setState(() => mode = ThemeMode.values[(mode.index + 1) % 3]),
+        ),
       );
 }
 
 enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster }
 
-TextStyle tStyle(double u, double size, [Color? c]) => TextStyle(fontFamily: 'serif', fontSize: u * size, height: 1.15, color: c);
+TextStyle tStyle(double u, double size, [Color? c]) => sans(u * size, color: c, wght: 650, h: 1.1);
 TextStyle bStyle(double u, [Color? c]) => TextStyle(fontSize: u * .034, height: 1.25, color: c);
 
 class Lay {
