@@ -7,6 +7,7 @@ import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart
 import 'package:image_picker/image_picker.dart';
 import 'editor.dart';
 import 'home.dart';
+import 'palette.dart';
 import 'store.dart';
 
 Future<void> main() async {
@@ -140,6 +141,8 @@ class _BoardState extends State<Board> {
   late List<NoteCard> cards = widget.store.cardsFor(widget.tag);
   bool showFocal = true, tidied = false;
   NoteCard? dragging;
+  Color? photoSeed;
+  bool usePhoto = true;
   double sx = 0, sy = 0, lastCw = 400;
   late Color bg;
   final vc = ScrollController();
@@ -198,10 +201,24 @@ class _BoardState extends State<Board> {
     widget.store.save();
   }
 
-  void reload() => setState(() {
-        cards = widget.store.cardsFor(widget.tag);
-        tidied = false;
+  void loadSeed() => seedFromPhotos(widget.store.photosFor(widget.tag)).then((c) {
+        if (mounted) setState(() => photoSeed = c);
       });
+
+  @override
+  void initState() {
+    super.initState();
+    photoSeed = peekSeed(widget.store.photosFor(widget.tag));
+    loadSeed();
+  }
+
+  void reload() {
+    setState(() {
+      cards = widget.store.cardsFor(widget.tag);
+      tidied = false;
+    });
+    loadSeed();
+  }
 
   Future<void> open(NoteCard c) async {
     final n = widget.store.notes.firstWhere((n) => n.id == c.id);
@@ -223,6 +240,12 @@ class _BoardState extends State<Board> {
 
   @override
   Widget build(BuildContext context) {
+    final base = Theme.of(context), sd = usePhoto ? photoSeed : null;
+    final t = sd == null ? base : base.copyWith(colorScheme: ColorScheme.fromSeed(seedColor: sd, brightness: base.brightness));
+    return Theme(data: t, child: Builder(builder: canvas));
+  }
+
+  Widget canvas(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     bg = Color.alphaBlend(cs.primary.withAlpha(18), cs.surface);
     return Scaffold(
@@ -233,7 +256,7 @@ class _BoardState extends State<Board> {
         scrolledUnderElevation: 0,
         actions: [
           IconButton(tooltip: 'Show subject areas', icon: const Icon(Icons.center_focus_strong), onPressed: () => setState(() => showFocal = !showFocal)),
-          IconButton(tooltip: 'Next palette', icon: const Icon(Icons.palette_outlined), onPressed: widget.onSeed),
+          IconButton(tooltip: 'Photo palette', icon: Icon(usePhoto ? Icons.palette : Icons.palette_outlined), onPressed: () => setState(() => usePhoto = !usePhoto)),
           IconButton(tooltip: 'Re-tidy', icon: const Icon(Icons.auto_fix_high), onPressed: () => setState(() => tidied = false)),
         ],
       ),
