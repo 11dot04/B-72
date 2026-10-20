@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'main.dart' show Kind, Lay, wide;
+import 'type.dart';
 
 bool isTpl(Kind k) => k == Kind.quote || k == Kind.stat || k == Kind.info || k == Kind.link || k == Kind.poster;
 
@@ -134,8 +135,9 @@ String tplSummary(Kind k, String title, String body) {
 
 // ---------- measuring and drawing (both use the same numbers) ----------
 
+/// Regular weights are editorial (Instrument Serif); heavy ones are display (Google Sans Flex).
 TextStyle _serif(double s, Color c, {FontWeight w = FontWeight.w400, double h = 1.15, FontStyle st = FontStyle.normal}) =>
-    TextStyle(fontFamily: 'serif', fontSize: s, fontWeight: w, height: h, fontStyle: st, color: c);
+    w.value >= 600 ? sans(s, color: c, wght: w.value.toDouble(), h: h) : serif(s, color: c, italic: st == FontStyle.italic, h: h);
 TextStyle _caps(double s, Color c) => TextStyle(fontSize: s, fontWeight: FontWeight.w700, letterSpacing: .8, height: 1.25, color: c);
 
 /// Height of a template card on the canvas (capped; long content is ellipsized).
