@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'editor.dart';
 import 'main.dart' show Kind;
 import 'palette.dart';
+import 'templates.dart';
+import 'type.dart';
 import 'store.dart';
 
 /// Reading view of a note: poster-style header that fills the width, tinted photos, info rows.
@@ -57,9 +59,12 @@ class _NotePageState extends State<NotePage> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = seed == null ? Theme.of(context).colorScheme : ColorScheme.fromSeed(seedColor: seed!);
+    final cs = seed == null ? Theme.of(context).colorScheme : ColorScheme.fromSeed(seedColor: seed!, brightness: Theme.of(context).brightness);
     final bg = cs.primaryContainer, fg = cs.onPrimaryContainer;
-    final title = n.blocks.map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => 'Note');
+    final title = n.blocks.where((b) => !isTpl(b.kind)).map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () {
+      final b = n.blocks.firstWhere((b) => b.body.isNotEmpty, orElse: () => n.blocks.first);
+      return b.title.isNotEmpty ? b.title : (b.body.isEmpty ? 'Note' : b.body.split(' ').take(3).join(' '));
+    });
     final texts = [for (final b in n.blocks) if (b.kind == Kind.text && b.body.isNotEmpty) b.body];
     final list = [for (final b in n.blocks) if (b.kind == Kind.checklist) ...b.items];
     final id = int.tryParse(n.id);
@@ -79,33 +84,23 @@ class _NotePageState extends State<NotePage> {
             GestureDetector(onTap: edit, child: CircleAvatar(backgroundColor: fg, child: Icon(Icons.edit_outlined, color: bg, size: 20))),
           ]),
           const SizedBox(height: 20),
-          for (final l in lines(title))
-            FittedBox(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.centerLeft,
-              child: Text(l, style: TextStyle(fontSize: 120, fontWeight: FontWeight.w900, height: .92, letterSpacing: -3, color: fg)),
-            ),
+          FitTitle(title, color: fg, wght: 800),
           if (photos.isNotEmpty) ...[
             const SizedBox(height: 20),
             SizedBox(
               height: 380,
-              child: PageView.builder(
-                controller: pc,
-                padEnds: false,
-                itemCount: photos.length,
-                itemBuilder: (_, i) => GestureDetector(
-                  onTap: () => setState(() => tint = !tint),
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.mode(tint ? cs.primary.withAlpha(170) : Colors.transparent, BlendMode.color),
-                        child: Image.file(File(photos[i]), fit: BoxFit.cover, width: double.infinity, height: double.infinity, cacheWidth: 1200),
-                      ),
+              child: CarouselView.weighted(
+                flexWeights: const [7, 3, 1],
+                itemSnapping: true,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                onTap: (_) => setState(() => tint = !tint),
+                children: [
+                  for (final p in photos)
+                    ColorFiltered(
+                      colorFilter: ColorFilter.mode(tint ? cs.primary.withAlpha(170) : Colors.transparent, BlendMode.color),
+                      child: Image.file(File(p), fit: BoxFit.cover, cacheWidth: 1200),
                     ),
-                  ),
-                ),
+                ],
               ),
             ),
           ],
@@ -118,6 +113,8 @@ class _NotePageState extends State<NotePage> {
             info('Photos', '${photos.length}'),
             info('Checklist', list.isEmpty ? '-' : '${list.where((s) => s.startsWith('x ')).length} of ${list.length} done'),
           ]),
+          for (final b in n.blocks)
+            if (isTpl(b.kind)) Padding(padding: const EdgeInsets.only(bottom: 14), child: tplCard(b.kind, b.title, b.body, MediaQuery.of(context).size.width * 1.1, cs)),
           for (final t in texts) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(t, style: TextStyle(fontSize: 18, height: 1.45, color: fg))),
           for (final s in list)
             Padding(
