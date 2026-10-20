@@ -1,7 +1,7 @@
 name: keep_canvas
 description: Focal-point-aware collage canvas prototype.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  image_picker: any
+  google_mlkit_face_detection: any
+  google_mlkit_object_detection: any
 
 flutter:
   uses-material-design: true
