@@ -90,6 +90,14 @@ class Store {
           if (n.tags.contains(tag) && n.cover != null) cardOf(n, tag),
       ];
 
+  /// Photos on a tag's canvas (used to derive its palette).
+  List<String> photosFor(String tag) => [
+        for (final n in notes)
+          if (n.tags.contains(tag))
+            for (final b in n.blocks)
+              if (b.kind == Kind.photo && b.path != null) b.path!,
+      ].take(4).toList();
+
   NoteCard cardOf(Note n, String tag) {
     final b = n.cover!, p = n.places[tag], photo = b.kind == Kind.photo;
     return NoteCard(n.id, b.kind, p?.x ?? .3, p?.y ?? 0, photo ? .38 : (b.kind == Kind.bare ? .5 : .36), photo ? b.aspect : 0,
