@@ -5,10 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:image_picker/image_picker.dart';
+import 'doodle.dart';
 import 'editor.dart';
+import 'note_page.dart';
 import 'home.dart';
 import 'palette.dart';
 import 'store.dart';
+import 'templates.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +38,7 @@ class _AppState extends State<App> {
       );
 }
 
-enum Kind { photo, text, checklist, bare }
+enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster }
 
 TextStyle tStyle(double u, double size, [Color? c]) => TextStyle(fontFamily: 'serif', fontSize: u * size, height: 1.15, color: c);
 TextStyle bStyle(double u, [Color? c]) => TextStyle(fontSize: u * .034, height: 1.25, color: c);
@@ -50,8 +53,9 @@ class Lay {
 /// text cards size themselves from content, capped at a square.
 class NoteCard {
   NoteCard(this.id, this.kind, this.x, this.y, this.w, this.aspect,
-      {this.angle = 0, this.hue = 0, this.focal = Rect.zero, this.path, this.title = '', this.titleSize = .05, this.body = ''});
-  final String id;
+      {this.noteId = '', this.order = 0, this.angle = 0, this.hue = 0, this.focal = Rect.zero, this.path, this.title = '', this.titleSize = .05, this.body = ''});
+  final String id, noteId;
+  final int order;
   final Kind kind;
   double x, y;
   final double w, aspect, angle, titleSize;
@@ -67,6 +71,10 @@ class NoteCard {
 
   Lay layout(double cw) {
     if (_l != null && _lw == cw) return _l!;
+    if (isTpl(kind)) {
+      _lw = cw;
+      return _l = tplLay(kind, title, body, w * cw, cw);
+    }
     final u = cw / wide, wpx = w * cw, o = u * .012, pad = u * .03, inner = wpx - 2 * o - 2 * pad;
     final t = TextPainter(text: TextSpan(text: title, style: tStyle(u, titleSize)), textDirection: TextDirection.ltr, maxLines: kind == Kind.bare ? null : 4)..layout(maxWidth: inner);
     final isList = kind == Kind.checklist;
@@ -154,6 +162,8 @@ class _BoardState extends State<Board> {
   bool ok(NoteCard m, double w) {
     final r = m.rect(w);
     if (r.left < 0 || r.top < 0 || r.right > w) return false;
+    // text stays inside the visible band; only photos may bleed off the edges
+    if (m.isText && (r.left < w * .083 || r.right > w * .917)) return false;
     final order = z;
     final mi = order.indexOf(m);
     for (var i = 0; i < order.length; i++) {
@@ -221,8 +231,8 @@ class _BoardState extends State<Board> {
   }
 
   Future<void> open(NoteCard c) async {
-    final n = widget.store.notes.firstWhere((n) => n.id == c.id);
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => Editor(store: widget.store, note: n)));
+    final n = widget.store.notes.firstWhere((n) => n.id == c.noteId);
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => NotePage(store: widget.store, note: n)));
     reload();
   }
 
@@ -274,12 +284,16 @@ class _BoardState extends State<Board> {
         }
         final bottom = cards.fold<double>(0, (m, c) => max(m, c.rect(cw).bottom));
         final ch = max(box.maxHeight, bottom + cw * .35);
+        final groups = <String, List<NoteCard>>{};
+        for (final c in cards) {
+          groups.putIfAbsent(c.noteId, () => []).add(c);
+        }
         return SingleChildScrollView(
           controller: vc,
           child: SingleChildScrollView(
             controller: hc,
             scrollDirection: Axis.horizontal,
-            child: SizedBox(width: cw, height: ch, child: Stack(children: [for (final c in z) card(c, cw, cs)])),
+            child: SizedBox(width: cw, height: ch, child: Stack(children: [Positioned.fill(child: CustomPaint(painter: Doodles(groups, cw, cs))), for (final c in z) card(c, cw, cs)])),
           ),
         );
       }),
@@ -360,6 +374,16 @@ class _BoardState extends State<Board> {
 
   Widget textBody(NoteCard c, double cw, ColorScheme cs) {
     final u = cw / wide, L = c.layout(cw), bare = c.kind == Kind.bare, isNote = c.kind == Kind.text;
+    if (isTpl(c.kind)) {
+      final (tb, tf) = tplColors(c.kind, cs);
+      return ColoredBox(
+        color: tb,
+        child: Padding(
+          padding: EdgeInsets.all(u * .035),
+          child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minHeight: 0, maxHeight: double.infinity, child: tplBody(c.kind, c.title, c.body, u, tf, cs, L))),
+        ),
+      );
+    }
     final bgc = bare ? Colors.transparent : isNote ? cs.tertiaryContainer : cs.secondaryContainer;
     final fg = bare ? cs.onSurface : isNote ? cs.onTertiaryContainer : cs.onSecondaryContainer;
     return ColoredBox(
