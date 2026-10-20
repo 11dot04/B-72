@@ -5,14 +5,21 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:image_picker/image_picker.dart';
+import 'editor.dart';
+import 'home.dart';
+import 'store.dart';
 
-void main() => runApp(const App());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(App(store: await Store.load()));
+}
 
 const seeds = [Color(0xFF6750A4), Color(0xFF2E7D32), Color(0xFFD84315), Color(0xFF00838F)];
 const wide = 1.2; // canvas is 1.2x as wide as the screen
 
 class App extends StatefulWidget {
-  const App({super.key});
+  const App({super.key, required this.store});
+  final Store store;
   @override
   State<App> createState() => _AppState();
 }
@@ -23,7 +30,7 @@ class _AppState extends State<App> {
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: seeds[seed])),
-        home: Board(onSeed: () => setState(() => seed = (seed + 1) % seeds.length)),
+        home: Home(store: widget.store, onSeed: () => setState(() => seed = (seed + 1) % seeds.length)),
       );
 }
 
@@ -60,7 +67,7 @@ class NoteCard {
   Lay layout(double cw) {
     if (_l != null && _lw == cw) return _l!;
     final u = cw / wide, wpx = w * cw, o = u * .012, pad = u * .03, inner = wpx - 2 * o - 2 * pad;
-    final t = TextPainter(text: TextSpan(text: title, style: tStyle(u, titleSize)), textDirection: TextDirection.ltr, maxLines: 4)..layout(maxWidth: inner);
+    final t = TextPainter(text: TextSpan(text: title, style: tStyle(u, titleSize)), textDirection: TextDirection.ltr, maxLines: kind == Kind.bare ? null : 4)..layout(maxWidth: inner);
     final isList = kind == Kind.checklist;
     final hasBody = kind != Kind.bare && body.trim().isNotEmpty;
     final base = 2 * o + 2 * pad + t.height + (hasBody ? u * .008 : 0);
@@ -74,7 +81,7 @@ class NoteCard {
     }
     var h = base + natural, lines = 0, rows = isList ? items.length : 0, hidden = 0;
     final cap = max(wpx, base + lineH); // 1:1 square at max lines
-    if (h > cap) {
+    if (h > cap && kind != Kind.bare) {
       h = cap;
       final fit = ((cap - base) / lineH).floor();
       if (isList) {
@@ -97,18 +104,6 @@ class NoteCard {
     return Rect.fromLTRB(r.left + focal.left * r.width, r.top + focal.top * r.height, r.left + focal.right * r.width, r.top + focal.bottom * r.height);
   }
 }
-
-List<NoteCard> seedCards() => [
-      NoteCard('p1', Kind.photo, .117, .025, .50, .75, angle: -.04, hue: 0, focal: const Rect.fromLTRB(.3, .25, .7, .7)),
-      NoteCard('p2', Kind.photo, .417, .30, .433, .80, angle: .05, hue: 1, focal: const Rect.fromLTRB(.25, .2, .75, .65)),
-      NoteCard('p3', Kind.photo, .517, .667, .367, .80, angle: -.03, hue: 2, focal: const Rect.fromLTRB(.3, .25, .7, .65)),
-      NoteCard('t1', Kind.bare, .117, .45, .30, 0, title: 'I have a planter from my ceramics class!', titleSize: .07),
-      NoteCard('t2', Kind.text, .117, .65, .38, 0,
-          title: 'Care tips',
-          body: 'Check soil moisture before watering. Avoid overwatering by feeling the soil; water when the top inch is dry. Provide adequate drainage, and use pots with drainage holes.'),
-      NoteCard('c1', Kind.checklist, .60, .033, .30, 0,
-          title: 'Varieties', body: 'Snake plant\nx Spider plant\nPothos\nMonstera\nZZ plant\nFiddle leaf fig\nPeace lily'),
-    ];
 
 /// Faces first, then prominent objects, then a centred fallback.
 Future<Rect> detectFocus(String path, Size size) async {
@@ -133,14 +128,16 @@ Future<Rect> detectFocus(String path, Size size) async {
 }
 
 class Board extends StatefulWidget {
-  const Board({super.key, required this.onSeed});
+  const Board({super.key, required this.store, required this.tag, required this.onSeed});
+  final Store store;
+  final String tag;
   final VoidCallback onSeed;
   @override
   State<Board> createState() => _BoardState();
 }
 
 class _BoardState extends State<Board> {
-  List<NoteCard> cards = seedCards();
+  late List<NoteCard> cards = widget.store.cardsFor(widget.tag);
   bool showFocal = true, tidied = false;
   NoteCard? dragging;
   double sx = 0, sy = 0, lastCw = 400;
@@ -194,124 +191,28 @@ class _BoardState extends State<Board> {
     }
   }
 
-  double get spawnY => (vc.hasClients ? vc.offset : 0) / lastCw + .03;
+  void persist() {
+    for (final c in cards) {
+      widget.store.setPlace(widget.tag, c.id, c.x, c.y);
+    }
+    widget.store.save();
+  }
 
-  void add(NoteCard c) => setState(() {
-        cards.add(c);
-        settle(c, lastCw);
+  void reload() => setState(() {
+        cards = widget.store.cardsFor(widget.tag);
+        tidied = false;
       });
 
-  Future<void> addPhoto() async {
-    final f = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (f == null) return;
-    final img = await decodeImageFromList(await f.readAsBytes());
-    final ai = img.height / img.width, ac = ai.clamp(.6, 1.4).toDouble();
-    var fo = await detectFocus(f.path, Size(img.width.toDouble(), img.height.toDouble()));
-    // map the subject box into card coordinates (BoxFit.cover crops)
-    if (ai > ac) {
-      final v = ac / ai;
-      fo = Rect.fromLTRB(fo.left, (fo.top - (1 - v) / 2) / v, fo.right, (fo.bottom - (1 - v) / 2) / v);
-    } else if (ai < ac) {
-      final h = ai / ac;
-      fo = Rect.fromLTRB((fo.left - (1 - h) / 2) / h, fo.top, (fo.right - (1 - h) / 2) / h, fo.bottom);
-    }
-    fo = fo.intersect(const Rect.fromLTRB(0, 0, 1, 1));
-    if (fo.width <= 0 || fo.height <= 0) fo = const Rect.fromLTRB(.3, .3, .7, .7);
-    add(NoteCard(DateTime.now().toIso8601String(), Kind.photo, .31, spawnY, .38, ac,
-        angle: ((f.path.hashCode % 9) - 4) * .01, focal: fo, path: f.path));
+  Future<void> open(NoteCard c) async {
+    final n = widget.store.notes.firstWhere((n) => n.id == c.id);
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Editor(store: widget.store, note: n)));
+    reload();
   }
 
-  Future<void> compose(Kind k) async {
-    final t = TextEditingController(), b = TextEditingController();
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: t, decoration: const InputDecoration(labelText: 'Title')),
-          if (k != Kind.bare)
-            TextField(
-              controller: b,
-              minLines: 2,
-              maxLines: 6,
-              decoration: InputDecoration(labelText: k == Kind.checklist ? 'One item per line (start with x if done)' : 'Text'),
-            ),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
-        ],
-      ),
-    );
-    if (saved != true || (t.text.trim().isEmpty && b.text.trim().isEmpty)) return;
-    add(NoteCard(DateTime.now().toIso8601String(), k, k == Kind.bare ? .25 : .32, spawnY, k == Kind.bare ? .5 : .36, 0,
-        title: t.text.trim(), titleSize: k == Kind.bare ? .07 : .05, body: b.text.trim()));
+  Future<void> create() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Editor(store: widget.store, tag: widget.tag)));
+    reload();
   }
-
-  void addMenu() => showModalBottomSheet(
-        context: context,
-        builder: (_) => SafeArea(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            for (final e in [
-              (Icons.photo_outlined, 'Photo', null),
-              (Icons.sticky_note_2_outlined, 'Note', Kind.text),
-              (Icons.checklist, 'Checklist', Kind.checklist),
-              (Icons.title, 'Text on canvas', Kind.bare),
-            ])
-              ListTile(
-                leading: Icon(e.$1),
-                title: Text(e.$2),
-                onTap: () {
-                  Navigator.pop(context);
-                  e.$3 == null ? addPhoto() : compose(e.$3!);
-                },
-              ),
-          ]),
-        ),
-      );
-
-  void open(NoteCard c) => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        builder: (_) => Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (c.kind == Kind.photo)
-              Flexible(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: c.path != null ? Image.file(File(c.path!)) : const Icon(Icons.face, size: 96),
-                ),
-              )
-            else ...[
-              Text(c.title, style: const TextStyle(fontFamily: 'serif', fontSize: 26)),
-              const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Text(
-                    c.kind == Kind.checklist
-                        ? c.items.map((s) => s.startsWith('x ') ? '✓ ${s.substring(2)}' : '○ $s').join('\n')
-                        : c.body,
-                    style: const TextStyle(fontSize: 16, height: 1.4),
-                  ),
-                ),
-              ),
-            ],
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  setState(() => cards.remove(c));
-                },
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Delete'),
-              ),
-            ),
-          ]),
-        ),
-      );
 
   @override
   void dispose() {
@@ -327,26 +228,26 @@ class _BoardState extends State<Board> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('Canvas prototype'),
+        title: Text(widget.tag),
         backgroundColor: Colors.transparent,
         scrolledUnderElevation: 0,
         actions: [
           IconButton(tooltip: 'Show subject areas', icon: const Icon(Icons.center_focus_strong), onPressed: () => setState(() => showFocal = !showFocal)),
           IconButton(tooltip: 'Next palette', icon: const Icon(Icons.palette_outlined), onPressed: widget.onSeed),
-          IconButton(tooltip: 'Reset', icon: const Icon(Icons.refresh), onPressed: () => setState(() {
-                cards = seedCards();
-                tidied = false;
-              })),
+          IconButton(tooltip: 'Re-tidy', icon: const Icon(Icons.auto_fix_high), onPressed: () => setState(() => tidied = false)),
         ],
       ),
-      floatingActionButton: FloatingActionButton(onPressed: addMenu, child: const Icon(Icons.add)),
+      floatingActionButton: FloatingActionButton(onPressed: create, child: const Icon(Icons.add)),
       body: LayoutBuilder(builder: (context, box) {
         final sw = box.maxWidth, cw = sw * wide;
         lastCw = cw;
         hc ??= ScrollController(initialScrollOffset: (cw - sw) / 2);
         if (!tidied) {
           tidied = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) => setState(() => tidy(cw)));
+          WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {
+            tidy(cw);
+            persist();
+          }));
         }
         final bottom = cards.fold<double>(0, (m, c) => max(m, c.rect(cw).bottom));
         final ch = max(box.maxHeight, bottom + cw * .35);
@@ -394,6 +295,7 @@ class _BoardState extends State<Board> {
         onLongPressEnd: (_) => setState(() {
           dragging = null;
           settle(c, cw);
+          persist();
         }),
         onLongPressCancel: () => setState(() => dragging = null),
         child: Transform.rotate(
@@ -444,7 +346,7 @@ class _BoardState extends State<Board> {
         child: SingleChildScrollView(
           physics: const NeverScrollableScrollPhysics(),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(c.title, maxLines: 4, overflow: TextOverflow.ellipsis, style: tStyle(u, c.titleSize, fg)),
+            Text(c.title, maxLines: bare ? null : 4, overflow: TextOverflow.ellipsis, style: tStyle(u, c.titleSize, fg)),
             if (!bare && c.body.trim().isNotEmpty) SizedBox(height: u * .008),
             if (c.kind == Kind.checklist) ...[
               for (final l in c.items.take(L.rows)) checkRow(l, u, fg),
