@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'main.dart' show Kind, detectFocus;
 import 'store.dart';
 import 'templates.dart';
+import 'type.dart';
 
 class _Extra {
   _Extra(this.kind, this.b)
@@ -169,7 +170,7 @@ class _EditorState extends State<Editor> {
         TextField(
           controller: title,
           textCapitalization: TextCapitalization.sentences,
-          style: const TextStyle(fontFamily: 'serif', fontSize: 30, height: 1.1),
+          style: sans(30, wght: 700),
           decoration: const InputDecoration(border: InputBorder.none, hintText: 'Title'),
         ),
         label('TEXT'),
