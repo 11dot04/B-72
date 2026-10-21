@@ -113,3 +113,53 @@ Future<List<String>> makeStickers(String src, Directory dir) async {
   }
   return out;
 }
+
+/// A full-frame PNG of the same picture with only the main subject opaque.
+/// Drawn over the original it lets a title sit *behind* the subject, or the subject
+/// break out of a shape. Returns null when no clear subject is found.
+Future<String?> cutoutFrame(String src, Directory dir) async {
+  try {
+    final codec = await ui.instantiateImageCodec(await File(src).readAsBytes(), targetWidth: 900);
+    final img = (await codec.getNextFrame()).image;
+    final w = img.width, h = img.height;
+    final rgba = (await img.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    final png = (await img.toByteData(format: ui.ImageByteFormat.png))!;
+    final tmp = File('${dir.path}/_cut.png')..writeAsBytesSync(png.buffer.asUint8List());
+    final seg = SubjectSegmenter(
+      options: SubjectSegmenterOptions(
+        enableForegroundConfidenceMask: true,
+        enableForegroundBitmap: false,
+        enableMultipleSubjects: SubjectResultOptions(enableConfidenceMask: false, enableSubjectBitmap: false),
+      ),
+    );
+    final SubjectSegmentationResult res;
+    try {
+      res = await seg.processImage(InputImage.fromFilePath(tmp.path));
+    } finally {
+      seg.close();
+      if (tmp.existsSync()) tmp.deleteSync();
+    }
+    final m = res.foregroundConfidenceMask;
+    if (m == null || m.length != w * h) return null;
+    var on = 0;
+    for (final v in m) {
+      if (v > .5) on++;
+    }
+    final frac = on / m.length;
+    if (frac < .03 || frac > .85) return null; // nothing, or everything
+    final px = Uint8List(w * h * 4);
+    for (var i = 0; i < w * h; i++) {
+      final a = ((m[i] - .3) / .4).clamp(0.0, 1.0), o = i * 4;
+      px[o] = rgba.getUint8(o);
+      px[o + 1] = rgba.getUint8(o + 1);
+      px[o + 2] = rgba.getUint8(o + 2);
+      px[o + 3] = (a * 255).round();
+    }
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(px, w, h, ui.PixelFormat.rgba8888, done.complete);
+    final bytes = (await (await done.future).toByteData(format: ui.ImageByteFormat.png))!;
+    return (File('${dir.path}/c_${DateTime.now().microsecondsSinceEpoch}.png')..writeAsBytesSync(bytes.buffer.asUint8List())).path;
+  } catch (_) {
+    return null;
+  }
+}
