@@ -38,6 +38,8 @@ jobs:
           s = open(p).read()
           if 'subject_segment' not in s:
               s = s.replace('</application>', '    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>', 1)
+          if 'android.intent.action.VIEW' not in s:
+              s = s.replace('<application', '<queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n    <application', 1)
           open(p, 'w').write(s)
           PY
 
@@ -48,7 +50,7 @@ jobs:
           B=https://raw.githubusercontent.com/google/fonts/main/ofl
           get "$B/instrumentserif/InstrumentSerif-Regular.ttf" InstrumentSerif-Regular.ttf
           get "$B/instrumentserif/InstrumentSerif-Italic.ttf" InstrumentSerif-Italic.ttf
-          get "$B/googlesansflex/GoogleSansFlex%5BGRAD,ROND,opsz,slnt,wdth,wght%5D.ttf" GoogleSansFlex.ttf
+          get "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" GoogleSansFlex.ttf
           python3 - << 'PY'
           import os
           s = open('pubspec.yaml').read()
