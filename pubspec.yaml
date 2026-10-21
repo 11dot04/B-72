@@ -1,7 +1,7 @@
 name: keep_canvas
 description: Focal-point-aware collage canvas prototype.
 publish_to: none
-version: 0.9.0+9
+version: 0.10.0+10
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
