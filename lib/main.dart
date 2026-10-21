@@ -46,7 +46,7 @@ class _AppState extends State<App> {
       );
 }
 
-enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster, film, track, recipe }
+enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster, film, track, recipe, book }
 
 TextStyle tStyle(double u, double size, [Color? c]) => sans(u * size, color: c, wght: 650, h: 1.1);
 TextStyle bStyle(double u, [Color? c]) => TextStyle(fontSize: u * .034, height: 1.25, color: c);
