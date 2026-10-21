@@ -6,6 +6,7 @@ import 'editor.dart';
 import 'main.dart' show Board, Kind;
 import 'note_page.dart';
 import 'palette.dart';
+import 'records.dart';
 import 'store.dart';
 import 'templates.dart';
 import 'type.dart';
@@ -72,36 +73,63 @@ class Home extends StatefulWidget {
 
 class _HomeState extends State<Home> {
   String q = '';
-  bool searching = false;
+  bool searching = false, fabOpen = false;
   int tab = 0; // 0 tags, 1 notes, 2 collection
+
+  static const menu = [
+    (Icons.notes, 'Note', Kind.text),
+    (Icons.photo_library_outlined, 'Photos', Kind.photo),
+    (Icons.format_quote, 'Quote', Kind.quote),
+    (Icons.movie_outlined, 'Film', Kind.film),
+    (Icons.music_note_outlined, 'Track', Kind.track),
+    (Icons.restaurant_menu, 'Recipe', Kind.recipe),
+    (Icons.link, 'Link', Kind.link),
+  ];
 
   Future<void> go(Widget page) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
     setState(() {});
   }
 
-  void edit([Note? n, String? tag]) => go(Editor(store: widget.store, note: n, tag: tag));
+  void edit([Note? n, String? tag, Kind? initial]) => go(Editor(store: widget.store, note: n, tag: tag, initial: initial));
 
-  List<String> photosOf(Note n) => [for (final b in n.blocks) if (b.kind == Kind.photo && b.path != null) b.path!];
-
+  /// Only real titles count; a note without one is shown by its text.
   String titleOf(Note n) {
-    final t = n.blocks.map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => n.blocks.map((b) => b.body).firstWhere((s) => s.isNotEmpty, orElse: () => ''));
+    final t = n.blocks.where((b) => b.kind != Kind.checklist).map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => '');
     return t.length > 44 ? '${t.substring(0, 44)}…' : t;
   }
 
   String snippet(Note n, String title) {
-    final s = n.blocks.map((b) => b.kind == Kind.checklist ? b.items.take(3).join(' · ') : isTpl(b.kind) ? tplSummary(b.kind, b.title, b.body) : b.body).firstWhere((s) => s.isNotEmpty, orElse: () => '');
-    return s.startsWith(title) ? s.substring(title.length).trim() : s;
+    for (final b in n.blocks) {
+      final s = isRec(b.kind)
+          ? recSub(b.kind, b.data)
+          : b.kind == Kind.checklist
+              ? b.items.take(3).join(' · ')
+              : isTpl(b.kind)
+                  ? tplSummary(b.kind, b.title, b.body)
+                  : b.body;
+      if (s.isNotEmpty && s != title) return s;
+    }
+    return '';
   }
 
   /// How big a note's card is, in grid cells (cols, rows), from what it contains.
   (int, int) spanFor(Note n) {
+    final rec = n.blocks.where((b) => isRec(b.kind)).firstOrNull;
+    if (rec != null) {
+      return switch (rec.kind) {
+        Kind.film => (2, 3),
+        Kind.track => (2, 2),
+        Kind.recipe => (3, 2),
+        _ => rec.path != null ? (3, 2) : (2, 2),
+      };
+    }
     final photos = [for (final b in n.blocks) if (b.kind == Kind.photo) b];
     final len = n.blocks.fold<int>(0, (s, b) => s + b.body.length);
     final tpl = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
     if (photos.length >= 3) return (3, 3);
     if (photos.isNotEmpty) return len > 140 ? (3, 3) : (photos.first.aspect < .95 ? (3, 2) : (2, 3));
-    if (tpl != null) return switch (tpl.kind) { Kind.stat || Kind.link => (2, 2), Kind.quote => len < 90 ? (2, 2) : (3, 2), _ => (2, 3) };
+    if (tpl != null) return switch (tpl.kind) { Kind.stat => (2, 2), Kind.quote => len < 90 ? (2, 2) : (3, 2), _ => (2, 3) };
     final items = n.blocks.where((b) => b.kind == Kind.checklist).firstOrNull?.items.length;
     if (items != null) return items <= 3 ? (2, 2) : (2, 3);
     return len <= 50 ? (2, 2) : len <= 160 ? (3, 2) : (3, 3);
@@ -116,12 +144,16 @@ class _HomeState extends State<Home> {
         padding: const EdgeInsets.fromLTRB(6, 6, 0, 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Expanded(child: Text(tab == 2 ? 'Collection' : tab == 1 ? 'Notes' : 'Tags', style: sans(44, wght: 800, wdth: 110, color: cs.onSurface, ls: -1))),
+          IconButton(icon: Icon(searching ? Icons.close : Icons.search, color: cs.onSurface), onPressed: () => setState(() {
+                searching = !searching;
+                if (!searching) q = '';
+              })),
           IconButton(icon: Icon(Icons.brightness_6_outlined, color: cs.onSurface), onPressed: widget.onMode),
           IconButton(icon: Icon(Icons.palette_outlined, color: cs.onSurface), onPressed: widget.onSeed),
         ]),
       );
 
-  /// Photo cards: photo as background, title top-left, snippet bottom-right.
+  /// Cards: photo (or poster, album art, dish) as background, title top-left, snippet bottom-right.
   Widget tile(Note n, double w, double h, ColorScheme cs, int i) {
     final roles = <(Color, Color)>[
       (cs.primaryContainer, cs.onPrimaryContainer),
@@ -129,10 +161,13 @@ class _HomeState extends State<Home> {
       (cs.tertiaryContainer, cs.onTertiaryContainer),
       (cs.surfaceContainerHighest, cs.onSurface),
     ];
-    final cover = n.blocks.where((b) => b.kind == Kind.photo && b.path != null).firstOrNull;
+    final rec = n.blocks.where((b) => isRec(b.kind)).firstOrNull;
+    final cover = n.blocks.where((b) => (b.kind == Kind.photo || isRec(b.kind)) && b.path != null && File(b.path!).existsSync()).firstOrNull;
     final tp = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
     final (Color bg, Color fg) = cover != null ? (Colors.black, Colors.white) : tp != null ? tplColors(tp.kind, cs) : roles[i % 4];
     final title = titleOf(n), snip = snippet(n, title);
+    final big = title.isEmpty && cover == null && snip.isNotEmpty, chip = rec != null && w > 200;
+    final fs = (w * .085).clamp(17.0, 28.0).toDouble();
     return GestureDetector(
       onTap: () => go(NotePage(store: widget.store, note: n)),
       child: ClipRRect(
@@ -140,7 +175,7 @@ class _HomeState extends State<Home> {
         child: Stack(fit: StackFit.expand, children: [
           ColoredBox(color: bg),
           if (cover != null) ...[
-            Image.file(File(cover.path!), fit: BoxFit.cover, alignment: Alignment(cover.focal.center.dx * 2 - 1, cover.focal.center.dy * 2 - 1), cacheWidth: 800),
+            Image.file(File(cover.path!), fit: BoxFit.cover, alignment: cover.kind == Kind.photo ? Alignment(cover.focal.center.dx * 2 - 1, cover.focal.center.dy * 2 - 1) : Alignment.center, cacheWidth: 800),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -153,12 +188,30 @@ class _HomeState extends State<Home> {
             ),
           ],
           if (title.isNotEmpty) Positioned(left: 16, top: 14, right: 16, child: FitTitle(title, color: fg, maxHeight: h * .46)),
-          if (snip.isNotEmpty)
+          if (big)
+            Positioned(
+              left: 16,
+              top: 16,
+              right: 16,
+              bottom: 16,
+              child: Text(snip, maxLines: ((h - 32) / (fs * 1.25)).floor().clamp(2, 14), overflow: TextOverflow.ellipsis, style: serif(fs, color: fg, h: 1.2)),
+            )
+          else if (snip.isNotEmpty)
             Positioned(
               right: 16,
               bottom: 14,
-              left: w * .3,
+              left: chip ? w * .42 : w * .3,
               child: Text(snip, textAlign: TextAlign.right, maxLines: h > 150 ? 4 : 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, height: 1.3, color: fg.withAlpha(230))),
+            ),
+          if (chip)
+            Positioned(
+              left: 14,
+              bottom: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(14)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(recMeta[rec.kind]!.$2, size: 14, color: Colors.white), const SizedBox(width: 5), Text(recMeta[rec.kind]!.$1, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600))]),
+              ),
             ),
         ]),
       ),
@@ -212,19 +265,104 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget circle(IconData i, ColorScheme cs, VoidCallback f) => GestureDetector(
+  // ---- floating toolbar and FAB menu ----
+
+  Widget navItem(IconData icon, String label, bool on, ColorScheme cs, VoidCallback f) => GestureDetector(
         onTap: f,
-        child: Container(width: 52, height: 52, decoration: BoxDecoration(color: cs.onPrimaryContainer, shape: BoxShape.circle), child: Icon(i, color: cs.primaryContainer)),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutBack,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(color: on ? cs.primaryContainer : Colors.transparent, borderRadius: BorderRadius.circular(26)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: on ? cs.onPrimaryContainer : cs.onSurfaceVariant),
+              if (on) Padding(padding: const EdgeInsets.only(left: 8), child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: cs.onPrimaryContainer))),
+            ]),
+          ),
+        ),
       );
 
-  Widget seg(String t, bool on, ColorScheme cs, VoidCallback f) => GestureDetector(
-        onTap: f,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
-          decoration: BoxDecoration(color: on ? cs.primaryContainer : Colors.transparent, borderRadius: BorderRadius.circular(30)),
-          child: Text(t, style: caps(on ? cs.onPrimaryContainer : cs.primaryContainer, 11)),
+  Widget bottomBar(ColorScheme cs) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
+          child: Row(children: [
+            Expanded(
+              child: Container(
+                height: 64,
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(32),
+                  boxShadow: [BoxShadow(color: Colors.black.withAlpha(45), blurRadius: 16, offset: const Offset(0, 4))],
+                ),
+                child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                  navItem(Icons.sell_outlined, 'Tags', tab == 0, cs, () => setState(() => tab = 0)),
+                  navItem(Icons.grid_view_rounded, 'Notes', tab == 1, cs, () => setState(() => tab = 1)),
+                  navItem(Icons.auto_awesome_outlined, 'Collection', tab == 2, cs, () => setState(() => tab = 2)),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () => setState(() => fabOpen = !fabOpen),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutBack,
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: fabOpen ? cs.tertiaryContainer : cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(fabOpen ? 32 : 22),
+                  boxShadow: [BoxShadow(color: Colors.black.withAlpha(45), blurRadius: 16, offset: const Offset(0, 4))],
+                ),
+                child: AnimatedRotation(
+                  turns: fabOpen ? .125 : 0,
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutBack,
+                  child: Icon(Icons.add, size: 32, color: fabOpen ? cs.onTertiaryContainer : cs.onPrimaryContainer),
+                ),
+              ),
+            ),
+          ]),
         ),
+      );
+
+  Widget fabMenu(ColorScheme cs) => Positioned(
+        right: 14,
+        bottom: 8,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+          for (var i = 0; i < menu.length; i++)
+            IgnorePointer(
+              ignoring: !fabOpen,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: fabOpen ? 1 : 0),
+                duration: Duration(milliseconds: 170 + (i + 1) * 30),
+                curve: Curves.easeOutBack,
+                builder: (_, t, child) => Opacity(opacity: t.clamp(0.0, 1.0), child: Transform.scale(scale: .55 + .45 * t, alignment: Alignment.bottomRight, child: child)),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => fabOpen = false);
+                      edit(null, null, menu[i].$3);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(16, 13, 20, 13),
+                      decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black.withAlpha(35), blurRadius: 10, offset: const Offset(0, 3))]),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(menu[i].$1, size: 22, color: cs.onSecondaryContainer),
+                        const SizedBox(width: 10),
+                        Text(menu[i].$2, style: TextStyle(fontWeight: FontWeight.w700, color: cs.onSecondaryContainer)),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 72),
+        ]),
       );
 
   @override
@@ -235,56 +373,42 @@ class _HomeState extends State<Home> {
     final tags = s.tags.where((t) => all.any((n) => n.tags.contains(t))).toList()..sort();
     return Scaffold(
       backgroundColor: cs.surface,
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            circle(Icons.add, cs, () => edit()),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: cs.onPrimaryContainer, borderRadius: BorderRadius.circular(40)),
-              child: Row(children: [
-                seg('TAGS', tab == 0, cs, () => setState(() => tab = 0)),
-                seg('NOTES', tab == 1, cs, () => setState(() => tab = 1)),
-                seg('COLLECTION', tab == 2, cs, () => setState(() => tab = 2)),
-              ]),
-            ),
-            circle(searching ? Icons.close : Icons.search, cs, () => setState(() {
-                  searching = !searching;
-                  if (!searching) q = '';
-                })),
-          ]),
+      bottomNavigationBar: bottomBar(cs),
+      body: Stack(children: [
+        Positioned.fill(
+          child: SafeArea(
+            child: ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 16), children: [
+              header(cs),
+              if (searching)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TextField(
+                    autofocus: true,
+                    onChanged: (v) => setState(() => q = v),
+                    decoration: InputDecoration(hintText: 'Search notes and tags', filled: true, prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none)),
+                  ),
+                ),
+              if (tab == 2)
+                CollectionView(store: widget.store)
+              else if (tab == 0)
+                GridView.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [for (var i = 0; i < tags.length; i++) tagTile(tags[i], i, cs)],
+                )
+              else if (all.isNotEmpty)
+                LayoutBuilder(builder: (_, c) => bento(all, cs, c.maxWidth)),
+              if (tab != 2 && (tab == 0 ? tags.isEmpty : all.isEmpty))
+                Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(tab == 0 ? 'Tag a note to create its canvas.' : 'Nothing here yet. Tap + to add a note.'))),
+            ]),
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 16), children: [
-          header(cs),
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: TextField(
-                autofocus: true,
-                onChanged: (v) => setState(() => q = v),
-                decoration: InputDecoration(hintText: 'Search notes and tags', filled: true, prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none)),
-              ),
-            ),
-          if (tab == 2)
-            CollectionView(store: widget.store)
-          else if (tab == 0)
-            GridView.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [for (var i = 0; i < tags.length; i++) tagTile(tags[i], i, cs)],
-            )
-          else if (all.isNotEmpty)
-            LayoutBuilder(builder: (_, c) => bento(all, cs, c.maxWidth)),
-          if (tab != 2 && (tab == 0 ? tags.isEmpty : all.isEmpty))
-            Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(tab == 0 ? 'Tag a note to create its canvas.' : 'Nothing here yet. Tap + to add a note.'))),
-        ]),
-      ),
+        if (fabOpen) Positioned.fill(child: GestureDetector(onTap: () => setState(() => fabOpen = false), child: ColoredBox(color: cs.scrim.withAlpha(110)))),
+        fabMenu(cs),
+      ]),
     );
   }
 }
