@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'editor.dart';
 import 'main.dart' show Kind;
 import 'palette.dart';
+import 'records.dart';
 import 'templates.dart';
 import 'type.dart';
 import 'store.dart';
@@ -61,10 +62,7 @@ class _NotePageState extends State<NotePage> {
   Widget build(BuildContext context) {
     final cs = seed == null ? Theme.of(context).colorScheme : ColorScheme.fromSeed(seedColor: seed!, brightness: Theme.of(context).brightness);
     final bg = cs.primaryContainer, fg = cs.onPrimaryContainer;
-    final title = n.blocks.where((b) => !isTpl(b.kind)).map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () {
-      final b = n.blocks.firstWhere((b) => b.body.isNotEmpty, orElse: () => n.blocks.first);
-      return b.title.isNotEmpty ? b.title : (b.body.isEmpty ? 'Note' : b.body.split(' ').take(3).join(' '));
-    });
+    final title = n.blocks.where((b) => !isTpl(b.kind) && b.kind != Kind.checklist).map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => '');
     final texts = [for (final b in n.blocks) if (b.kind == Kind.text && b.body.isNotEmpty) b.body];
     final list = [for (final b in n.blocks) if (b.kind == Kind.checklist) ...b.items];
     final id = int.tryParse(n.id);
@@ -84,13 +82,13 @@ class _NotePageState extends State<NotePage> {
             GestureDetector(onTap: edit, child: CircleAvatar(backgroundColor: fg, child: Icon(Icons.edit_outlined, color: bg, size: 20))),
           ]),
           const SizedBox(height: 20),
-          FitTitle(title, color: fg, wght: 800),
+          if (title.isNotEmpty) FitTitle(title, color: fg, wght: 800),
           if (photos.isNotEmpty) ...[
             const SizedBox(height: 20),
             SizedBox(
-              height: 380,
+              height: (MediaQuery.of(context).size.width - 32) * .7,
               child: CarouselView.weighted(
-                flexWeights: const [7, 3, 1],
+                flexWeights: const [8, 3, 1],
                 itemSnapping: true,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                 onTap: (_) => setState(() => tint = !tint),
@@ -115,6 +113,8 @@ class _NotePageState extends State<NotePage> {
           ]),
           for (final b in n.blocks)
             if (isTpl(b.kind)) Padding(padding: const EdgeInsets.only(bottom: 14), child: tplCard(b.kind, b.title, b.body, MediaQuery.of(context).size.width * 1.1, cs)),
+          for (final b in n.blocks)
+            if (isRec(b.kind)) recSection(context, b.kind, b, cs, MediaQuery.of(context).size.width, title != b.title),
           for (final t in texts) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(t, style: TextStyle(fontSize: 18, height: 1.45, color: fg))),
           for (final s in list)
             Padding(
