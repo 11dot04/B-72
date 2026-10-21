@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'editor.dart';
 import 'main.dart' show Kind;
 import 'palette.dart';
+import 'popout.dart';
 import 'records.dart';
 import 'templates.dart';
 import 'type.dart';
@@ -82,7 +83,7 @@ class _NotePageState extends State<NotePage> {
             GestureDetector(onTap: edit, child: CircleAvatar(backgroundColor: fg, child: Icon(Icons.edit_outlined, color: bg, size: 20))),
           ]),
           const SizedBox(height: 20),
-          if (title.isNotEmpty) FitTitle(title, color: fg, wght: 800),
+          if (title.isNotEmpty) FitTitle(title, color: fg, wght: 800, variant: vOf(n.id)),
           if (photos.isNotEmpty) ...[
             const SizedBox(height: 20),
             SizedBox(
@@ -90,14 +91,18 @@ class _NotePageState extends State<NotePage> {
               child: CarouselView.weighted(
                 flexWeights: const [8, 3, 1],
                 itemSnapping: true,
+                backgroundColor: Colors.transparent,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                 onTap: (_) => setState(() => tint = !tint),
                 children: [
-                  for (final p in photos)
-                    ColorFiltered(
-                      colorFilter: ColorFilter.mode(tint ? cs.primary.withAlpha(170) : Colors.transparent, BlendMode.color),
-                      child: Image.file(File(p), fit: BoxFit.cover, cacheWidth: 1200),
-                    ),
+                  for (final b in n.blocks)
+                    if (b.kind == Kind.photo && b.path != null)
+                      (b.data['cut'] != null && File('${b.data['cut']}').existsSync())
+                          ? PopOut(photo: b.path!, cut: '${b.data['cut']}', fill: cs.primary.withAlpha(90), tint: tint ? cs.primary.withAlpha(170) : null, shape: vOf(b.id))
+                          : ColorFiltered(
+                              colorFilter: ColorFilter.mode(tint ? cs.primary.withAlpha(170) : Colors.transparent, BlendMode.color),
+                              child: Image.file(File(b.path!), fit: BoxFit.cover, cacheWidth: 1200),
+                            ),
                 ],
               ),
             ),
@@ -107,7 +112,7 @@ class _NotePageState extends State<NotePage> {
             info('Tags', n.tags.isEmpty ? 'None' : n.tags.join(', ')),
             info('Created', d == null ? '-' : '${d.day} ${mon[d.month - 1]} ${d.year}'),
           ]),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (photos.isNotEmpty || list.isNotEmpty) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             info('Photos', '${photos.length}'),
             info('Checklist', list.isEmpty ? '-' : '${list.where((s) => s.startsWith('x ')).length} of ${list.length} done'),
           ]),
