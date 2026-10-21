@@ -62,7 +62,7 @@ Future<List<dynamic>> _itunes(String q, String entity) async {
   }
 }
 
-Future<List<Cand>> searchFilms(String q) async => [
+Future<List<Cand>> _itunesFilms(String q) async => [
       for (final r in await _itunes(q, 'movie'))
         if (r['trackName'] != null)
           Cand('${r['trackName']}', '${_year(r['releaseDate'])} · ${r['artistName'] ?? ''}', _art(r['artworkUrl100'], 600), {
@@ -176,4 +176,67 @@ Future<Map<String, dynamic>> importRecipe(String url) async {
     'servings': RegExp(r'\d+').firstMatch('${y is List && y.isNotEmpty ? y.first : y ?? ''}')?[0] ?? '',
     'url': url,
   };
+}
+
+/// Films come from Wikipedia (no key, big catalogue); iTunes is the fallback.
+Future<List<Cand>> searchFilms(String q) async {
+  final t = await fetchText(
+      'https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${Uri.encodeQueryComponent('$q film')}&gsrlimit=8&prop=pageimages%7Cextracts&piprop=thumbnail&pithumbsize=600&pilicense=any&exintro=1&explaintext=1&exchars=800&redirects=1');
+  final out = <Cand>[];
+  try {
+    final pages = ((jsonDecode(t ?? '{}')['query']?['pages'] as Map?) ?? {}).values.toList()
+      ..sort((a, b) => ((a['index'] ?? 0) as num).compareTo((b['index'] ?? 0) as num));
+    for (final p in pages) {
+      final ex = '${p['extract'] ?? ''}';
+      if (!RegExp(r'\bfilm\b', caseSensitive: false).hasMatch(ex)) continue;
+      final year = RegExp(r'\b(1[89]\d\d|20\d\d)\b').firstMatch(ex)?[1] ?? '';
+      final dir = RegExp(r"directed by ([A-Z][^,.;()]*?)(?= and | starring| from | with | based|,|\.|;|\(|$)").firstMatch(ex)?[1]?.trim() ?? '';
+      final genre = RegExp(r'(?:is|was) an? (?:\d{4} )?(.+?) film').firstMatch(ex)?[1]?.trim() ?? '';
+      out.add(Cand('${p['title']}'.replaceAll(RegExp(r'\s*\([^)]*film\)'), ''), [year, dir].where((e) => e.isNotEmpty).join(' · '), p['thumbnail']?['source'] as String?, {
+        'year': year,
+        'director': dir,
+        'genre': genre,
+        'runtime': '',
+        'overview': ex.split(RegExp(r'(?<=\.)\s+')).take(2).join(' '),
+      }));
+    }
+  } catch (_) {}
+  return out.isNotEmpty ? out : await _itunesFilms(q);
+}
+
+/// Books come from Google Books (no key), with Open Library as the fallback.
+Future<List<Cand>> searchBooks(String q) async {
+  final out = <Cand>[];
+  final t = await fetchText('https://www.googleapis.com/books/v1/volumes?q=${Uri.encodeQueryComponent(q)}&maxResults=8&printType=books');
+  try {
+    for (final it in (jsonDecode(t ?? '{}')['items'] as List? ?? [])) {
+      final v = (it['volumeInfo'] as Map?) ?? {};
+      if (v['title'] == null) continue;
+      final links = (v['imageLinks'] as Map?) ?? {};
+      final img = '${links['thumbnail'] ?? links['smallThumbnail'] ?? ''}'.replaceAll('http://', 'https://').replaceAll('&edge=curl', '').replaceAll('zoom=1', 'zoom=2');
+      final author = ((v['authors'] as List?) ?? []).join(', '), year = _year(v['publishedDate']);
+      out.add(Cand('${v['title']}', [author, year].where((e) => e.isNotEmpty).join(' · '), img.isEmpty ? null : img, {
+        'author': author,
+        'year': year,
+        'pages': '${v['pageCount'] ?? ''}',
+        'genre': ((v['categories'] as List?) ?? []).take(1).join(),
+        'overview': '${v['description'] ?? ''}',
+      }));
+    }
+  } catch (_) {}
+  if (out.isNotEmpty) return out;
+  final o = await fetchText('https://openlibrary.org/search.json?q=${Uri.encodeQueryComponent(q)}&limit=8&fields=title,author_name,first_publish_year,cover_i,number_of_pages_median,subject');
+  try {
+    for (final d in (jsonDecode(o ?? '{}')['docs'] as List? ?? [])) {
+      final author = ((d['author_name'] as List?) ?? []).take(2).join(', '), year = '${d['first_publish_year'] ?? ''}';
+      out.add(Cand('${d['title']}', [author, year].where((e) => e.isNotEmpty).join(' · '), d['cover_i'] == null ? null : 'https://covers.openlibrary.org/b/id/${d['cover_i']}-L.jpg', {
+        'author': author,
+        'year': year,
+        'pages': '${d['number_of_pages_median'] ?? ''}',
+        'genre': ((d['subject'] as List?) ?? []).take(1).join(),
+        'overview': '',
+      }));
+    }
+  } catch (_) {}
+  return out;
 }
