@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'main.dart' show Kind, Lay, wide;
 import 'type.dart';
 
-bool isTpl(Kind k) => k == Kind.quote || k == Kind.stat || k == Kind.info || k == Kind.link || k == Kind.poster;
+bool isTpl(Kind k) => k == Kind.quote || k == Kind.stat || k == Kind.info || k == Kind.poster;
 
 double tplWidth(Kind k) => switch (k) {
       Kind.bare || Kind.quote => .5,
       Kind.stat => .34,
-      Kind.info || Kind.link => .46,
+      Kind.info => .46,
+      Kind.link || Kind.recipe => .5,
+      Kind.film => .4,
+      Kind.track => .44,
       Kind.poster => .62,
       _ => .36,
     };
