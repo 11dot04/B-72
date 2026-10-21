@@ -5,7 +5,7 @@ const kSans = 'GoogleSansFlex', kSerif = 'InstrumentSerif';
 
 /// Google Sans Flex with all six axes: weight, width, optical size (follows the size),
 /// roundness, grade and slant. Falls back to the system font if the file is missing.
-TextStyle sans(double size, {Color? color, double wght = 600, double wdth = 100, double rond = 45, double grade = 0, double h = 1.1, double ls = 0}) => TextStyle(
+TextStyle sans(double size, {Color? color, double wght = 600, double wdth = 100, double rond = 45, double grade = 0, double slnt = 0, double h = 1.1, double ls = 0}) => TextStyle(
       fontFamily: kSans,
       fontSize: size,
       height: h,
@@ -17,7 +17,7 @@ TextStyle sans(double size, {Color? color, double wght = 600, double wdth = 100,
         FontVariation('opsz', size.clamp(6.0, 144.0).toDouble()),
         FontVariation('ROND', rond),
         FontVariation('GRAD', grade),
-        FontVariation('slnt', 0),
+        FontVariation('slnt', slnt),
       ],
     );
 
@@ -70,9 +70,22 @@ List<String> breakTitle(String t, {int maxLines = 3}) {
   return best;
 }
 
+int vOf(String id) => id.codeUnits.fold(0, (a, b) => a + b) % 6;
+
+/// How each line of a title is styled in each variant: size multiplier, weight, roundness, slant.
+(double, double, double, double) _line(int v, int i, double wght) => switch (v % 6) {
+      1 => i.isEven ? (1.12, 850.0, 20.0, 0.0) : (.78, 320.0, 100.0, 0.0), // heavy / airy contrast
+      2 => (.8, 720.0, 100.0, 0.0), // wide and round
+      3 => (1.3, 900.0, 0.0, 0.0), // tall condensed poster
+      4 => (.95, 300.0, 100.0, -10.0), // light italic
+      5 => i.isEven ? (1.0, 800.0, 40.0, 0.0) : (.85, 400.0, 80.0, -10.0), // staggered
+      _ => (1.0, wght, 45.0, 0.0),
+    };
+
 /// Picks the width axis (and, if needed, the size) so a line fills [w] exactly.
-(double, double) _fit(String line, double w, double size, double wght, double grade, bool grow) {
-  double width(double s, double wd) => (TextPainter(text: TextSpan(text: line, style: sans(s, wght: wght, wdth: wd, grade: grade)), textDirection: TextDirection.ltr)..layout()).width;
+(double, double) _fit(String line, double w, double size, double wght, double rond, double slnt, double grade, bool grow) {
+  double width(double s, double wd) =>
+      (TextPainter(text: TextSpan(text: line, style: sans(s, wght: wght, wdth: wd, rond: rond, slnt: slnt, grade: grade)), textDirection: TextDirection.ltr)..layout()).width;
   var lo = 25.0, hi = 151.0;
   final widest = width(size, hi);
   if (widest < w) return grow ? (min(size * w / max(widest, 1), size * 2.4), hi) : (size, hi);
@@ -90,20 +103,22 @@ List<String> breakTitle(String t, {int maxLines = 3}) {
 }
 
 /// A title that always fills its width: balanced lines, with the width axis tuned per line.
+/// [variant] picks one of six typographic personalities.
 class FitTitle extends StatelessWidget {
-  const FitTitle(this.text, {super.key, required this.color, this.maxLines = 3, this.maxHeight, this.wght = 760});
+  const FitTitle(this.text, {super.key, required this.color, this.maxLines = 3, this.maxHeight, this.wght = 760, this.variant = 0});
   final String text;
   final Color color;
-  final int maxLines;
+  final int maxLines, variant;
   final double? maxHeight;
   final double wght;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (ctx, c) {
         final w = c.maxWidth, grade = Theme.of(ctx).brightness == Brightness.dark ? -25.0 : 0.0;
-        final lines = breakTitle(text, maxLines: maxLines);
-        final size = w * (lines.length == 1 ? .26 : lines.length == 2 ? .19 : .15);
-        final f = [for (final l in lines) _fit(l, w, size, wght, grade, lines.length == 1)];
+        final lines = breakTitle(variant % 6 == 3 ? text.toUpperCase() : text, maxLines: maxLines);
+        final base = w * (lines.length == 1 ? .26 : lines.length == 2 ? .19 : .15);
+        final sp = [for (var i = 0; i < lines.length; i++) _line(variant, i, wght)];
+        final f = [for (var i = 0; i < lines.length; i++) _fit(lines[i], w, base * sp[i].$1, sp[i].$2, sp[i].$3, sp[i].$4, grade, lines.length == 1)];
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight ?? double.infinity),
           child: FittedBox(
@@ -116,7 +131,7 @@ class FitTitle extends StatelessWidget {
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
-                    child: Text(lines[i], maxLines: 1, softWrap: false, style: sans(f[i].$1, wght: wght, wdth: f[i].$2, grade: grade, h: .98, ls: -f[i].$1 * .01, color: color)),
+                    child: Text(lines[i], maxLines: 1, softWrap: false, style: sans(f[i].$1, wght: sp[i].$2, wdth: f[i].$2, rond: sp[i].$3, slnt: sp[i].$4, grade: grade, h: .98, ls: -f[i].$1 * .01, color: color)),
                   ),
               ]),
             ),
