@@ -7,60 +7,58 @@ import 'main.dart' show Board, Kind;
 import 'note_page.dart';
 import 'palette.dart';
 import 'records.dart';
+import 'sticker.dart';
 import 'store.dart';
 import 'templates.dart';
 import 'type.dart';
 
-/// Packs spans (cols, rows) into a 4-column grid, first fit, then stretches tiles into leftover holes.
-List<(int, int, int, int)> pack(List<(int, int)> spans) {
-  final grid = <List<bool>>[];
-  bool free(int x, int y, int w, int h) {
-    for (var r = y; r < y + h; r++) {
-      if (r >= grid.length) continue;
-      for (var c = x; c < x + w; c++) {
-        if (grid[r][c]) return false;
-      }
+/// Two columns; each card goes under the shorter one. Full-width cards span both.
+List<Rect> masonry(List<(bool, double)> items, double width) {
+  const gap = 8.0;
+  final cw = (width - gap) / 2, out = <Rect>[];
+  var l = 0.0, r = 0.0;
+  for (final (full, h) in items) {
+    if (full) {
+      final y = max(l, r);
+      out.add(Rect.fromLTWH(0, y, width, h));
+      l = r = y + h + gap;
+    } else if (l <= r) {
+      out.add(Rect.fromLTWH(0, l, cw, h));
+      l += h + gap;
+    } else {
+      out.add(Rect.fromLTWH(cw + gap, r, cw, h));
+      r += h + gap;
     }
-    return true;
-  }
-
-  void mark(int x, int y, int w, int h) {
-    while (grid.length < y + h) {
-      grid.add(List.filled(4, false));
-    }
-    for (var r = y; r < y + h; r++) {
-      for (var c = x; c < x + w; c++) {
-        grid[r][c] = true;
-      }
-    }
-  }
-
-  final out = <(int, int, int, int)>[];
-  for (final s in spans) {
-    var placed = false;
-    for (var y = 0; !placed; y++) {
-      for (var x = 0; x + s.$1 <= 4 && !placed; x++) {
-        if (free(x, y, s.$1, s.$2)) {
-          mark(x, y, s.$1, s.$2);
-          out.add((x, y, s.$1, s.$2));
-          placed = true;
-        }
-      }
-    }
-  }
-  for (var i = 0; i < out.length; i++) {
-    var (x, y, w, h) = out[i];
-    while (x + w < 4 && [for (var r = y; r < y + h; r++) grid[r][x + w]].every((v) => !v)) {
-      mark(x + w, y, 1, h);
-      w++;
-    }
-    while (y + h < grid.length && [for (var c = x; c < x + w; c++) grid[y + h][c]].every((v) => !v)) {
-      mark(x, y + h, w, 1);
-      h++;
-    }
-    out[i] = (x, y, w, h);
   }
   return out;
+}
+
+/// Press feedback and a springy entrance for a card.
+class _Pop extends StatefulWidget {
+  const _Pop({required this.index, required this.onTap, required this.child});
+  final int index;
+  final VoidCallback onTap;
+  final Widget child;
+  @override
+  State<_Pop> createState() => _PopState();
+}
+
+class _PopState extends State<_Pop> {
+  bool down = false;
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: Duration(milliseconds: 380 + widget.index.clamp(0, 8) * 50),
+        curve: Curves.easeOutCubic,
+        builder: (_, t, child) => Opacity(opacity: t, child: Transform.translate(offset: Offset(0, 28 * (1 - t)), child: child)),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => down = true),
+          onTapUp: (_) => setState(() => down = false),
+          onTapCancel: () => setState(() => down = false),
+          child: AnimatedScale(scale: down ? .96 : 1, duration: const Duration(milliseconds: 140), curve: Curves.easeOut, child: widget.child),
+        ),
+      );
 }
 
 class Home extends StatefulWidget {
@@ -73,14 +71,39 @@ class Home extends StatefulWidget {
 
 class _HomeState extends State<Home> {
   String q = '';
-  bool searching = false, fabOpen = false;
+  bool searching = false, fabOpen = false, _filling = false;
   int tab = 0; // 0 tags, 1 notes, 2 collection
+
+  @override
+  void initState() {
+    super.initState();
+    backfill();
+  }
+
+  /// Gives photos that were added earlier a subject cut-out too (once, in the background).
+  Future<void> backfill() async {
+    if (_filling) return;
+    _filling = true;
+    for (final n in [...widget.store.notes]) {
+      for (final b in n.blocks) {
+        if ((b.kind == Kind.photo || b.kind == Kind.recipe) && b.path != null && b.data['cutTried'] != true && File(b.path!).existsSync()) {
+          final c = await cutoutFrame(b.path!, widget.store.dir);
+          b.data['cutTried'] = true;
+          if (c != null) b.data['cut'] = c;
+          widget.store.save();
+          if (mounted) setState(() {});
+        }
+      }
+    }
+    _filling = false;
+  }
 
   static const menu = [
     (Icons.notes, 'Note', Kind.text),
     (Icons.photo_library_outlined, 'Photos', Kind.photo),
     (Icons.format_quote, 'Quote', Kind.quote),
     (Icons.movie_outlined, 'Film', Kind.film),
+    (Icons.menu_book_outlined, 'Book', Kind.book),
     (Icons.music_note_outlined, 'Track', Kind.track),
     (Icons.restaurant_menu, 'Recipe', Kind.recipe),
     (Icons.link, 'Link', Kind.link),
@@ -113,26 +136,47 @@ class _HomeState extends State<Home> {
     return '';
   }
 
-  /// How big a note's card is, in grid cells (cols, rows), from what it contains.
-  (int, int) spanFor(Note n) {
-    final rec = n.blocks.where((b) => isRec(b.kind)).firstOrNull;
+  Block? recOf(Note n) => n.blocks.where((b) => isRec(b.kind)).firstOrNull;
+  int photoCount(Note n) => n.blocks.where((b) => b.kind == Kind.photo).length;
+
+  /// A few kinds of card take the full width.
+  bool isFull(Note n) {
+    final rec = recOf(n);
+    if (rec != null) return (rec.kind == Kind.recipe || rec.kind == Kind.link) && rec.path != null;
+    if (photoCount(n) >= 3) return true;
+    final tpl = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
+    if (tpl != null) return tpl.kind == Kind.quote && tpl.body.length > 90;
+    return photoCount(n) == 0 && n.blocks.every((b) => b.kind != Kind.checklist) && n.blocks.fold<int>(0, (s, b) => s + b.body.length) > 260;
+  }
+
+  /// Fixed shapes where the content has one (album art is square, posters are portrait).
+  double heightFor(Note n, double w, double width, bool full) {
+    final rec = recOf(n);
     if (rec != null) {
       return switch (rec.kind) {
-        Kind.film => (2, 3),
-        Kind.track => (2, 2),
-        Kind.recipe => (3, 2),
-        _ => rec.path != null ? (3, 2) : (2, 2),
+        Kind.track => w,
+        Kind.film || Kind.book => w * 1.5,
+        Kind.recipe => full ? width * .62 : w * 1.1,
+        _ => full ? width * .55 : w * .9,
       };
     }
     final photos = [for (final b in n.blocks) if (b.kind == Kind.photo) b];
-    final len = n.blocks.fold<int>(0, (s, b) => s + b.body.length);
+    if (photos.length >= 3) return width * .75;
+    if (photos.isNotEmpty) return w * photos.first.aspect.clamp(.8, 1.35);
     final tpl = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
-    if (photos.length >= 3) return (3, 3);
-    if (photos.isNotEmpty) return len > 140 ? (3, 3) : (photos.first.aspect < .95 ? (3, 2) : (2, 3));
-    if (tpl != null) return switch (tpl.kind) { Kind.stat => (2, 2), Kind.quote => len < 90 ? (2, 2) : (3, 2), _ => (2, 3) };
+    if (tpl != null) return switch (tpl.kind) { Kind.stat => w * .85, Kind.quote => full ? width * .5 : w, Kind.info => w * 1.2, _ => w * 1.3 };
     final items = n.blocks.where((b) => b.kind == Kind.checklist).firstOrNull?.items.length;
-    if (items != null) return items <= 3 ? (2, 2) : (2, 3);
-    return len <= 50 ? (2, 2) : len <= 160 ? (3, 2) : (3, 3);
+    if (items != null) return (110 + items * 26.0).clamp(w * .8, w * 1.5).toDouble();
+    final text = n.blocks.map((b) => b.body).firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    if (titleOf(n).isNotEmpty) return w;
+    final fs = (w * .085).clamp(17.0, 28.0).toDouble();
+    final tp = TextPainter(text: TextSpan(text: text, style: serif(fs, h: 1.2)), textDirection: TextDirection.ltr)..layout(maxWidth: w - 32);
+    return (tp.height + 44).clamp(w * .72, width * 1.2).toDouble();
+  }
+
+  int variantFor(Note n) {
+    final rec = recOf(n);
+    return rec == null ? vOf(n.id) : switch (rec.kind) { Kind.track => 2, Kind.film => 3, Kind.book => 4, Kind.recipe => 1, _ => 0 };
   }
 
   TextStyle caps(Color c, [double size = 11]) => TextStyle(fontSize: size, fontWeight: FontWeight.w700, letterSpacing: .6, color: c);
@@ -143,7 +187,7 @@ class _HomeState extends State<Home> {
   Widget header(ColorScheme cs) => Padding(
         padding: const EdgeInsets.fromLTRB(6, 6, 0, 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: Text(tab == 2 ? 'Collection' : tab == 1 ? 'Notes' : 'Tags', style: sans(44, wght: 800, wdth: 110, color: cs.onSurface, ls: -1))),
+          Expanded(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(tab == 2 ? 'Collection' : tab == 1 ? 'Notes' : 'Tags', maxLines: 1, style: sans(44, wght: 800, wdth: 110, color: cs.onSurface, ls: -1)))),
           IconButton(icon: Icon(searching ? Icons.close : Icons.search, color: cs.onSurface), onPressed: () => setState(() {
                 searching = !searching;
                 if (!searching) q = '';
@@ -168,26 +212,32 @@ class _HomeState extends State<Home> {
     final title = titleOf(n), snip = snippet(n, title);
     final big = title.isEmpty && cover == null && snip.isNotEmpty, chip = rec != null && w > 200;
     final fs = (w * .085).clamp(17.0, 28.0).toDouble();
-    return GestureDetector(
+    final cutPath = cover == null ? '' : '${cover.data['cut'] ?? ''}';
+    final behind = title.isNotEmpty && cutPath.isNotEmpty && File(cutPath).existsSync();
+    final al = cover != null && cover.kind == Kind.photo ? Alignment(cover.focal.center.dx * 2 - 1, cover.focal.center.dy * 2 - 1) : Alignment.center;
+    return _Pop(
+      index: i,
       onTap: () => go(NotePage(store: widget.store, note: n)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
         child: Stack(fit: StackFit.expand, children: [
           ColoredBox(color: bg),
           if (cover != null) ...[
-            Image.file(File(cover.path!), fit: BoxFit.cover, alignment: cover.kind == Kind.photo ? Alignment(cover.focal.center.dx * 2 - 1, cover.focal.center.dy * 2 - 1) : Alignment.center, cacheWidth: 800),
+            Image.file(File(cover.path!), fit: BoxFit.cover, alignment: al, cacheWidth: 800),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(150), Colors.transparent, Colors.transparent, Colors.black.withAlpha(170)],
+                  colors: [Colors.black.withAlpha(behind ? 90 : 150), Colors.transparent, Colors.transparent, Colors.black.withAlpha(170)],
                   stops: const [0, .42, .6, 1],
                 ),
               ),
             ),
           ],
-          if (title.isNotEmpty) Positioned(left: 16, top: 14, right: 16, child: FitTitle(title, color: fg, maxHeight: h * .46)),
+          if (title.isNotEmpty) Positioned(left: 16, top: 14, right: 16, child: FitTitle(title, color: fg, maxHeight: h * .5, variant: variantFor(n))),
+          // the subject goes back on top, so the title sits behind it
+          if (behind) Image.file(File(cutPath), fit: BoxFit.cover, alignment: al, cacheWidth: 800),
           if (big)
             Positioned(
               left: 16,
@@ -218,21 +268,20 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget bento(List<Note> notes, ColorScheme cs, double width) {
+  Widget grid(List<Note> notes, ColorScheme cs, double width) {
     const gap = 8.0;
-    final cell = (width - 3 * gap) / 4, slots = pack([for (final n in notes) spanFor(n)]);
-    final rows = slots.fold<int>(0, (m, s) => max(m, s.$2 + s.$4));
+    final cw = (width - gap) / 2, items = <(bool, double)>[];
+    for (final n in notes) {
+      final f = isFull(n);
+      items.add((f, heightFor(n, f ? width : cw, width, f)));
+    }
+    final rects = masonry(items, width);
+    final total = rects.fold<double>(0, (m, r) => max(m, r.bottom));
     return SizedBox(
-      height: rows * (cell + gap) - gap,
+      height: total,
       child: Stack(children: [
         for (var i = 0; i < notes.length; i++)
-          Positioned(
-            left: slots[i].$1 * (cell + gap),
-            top: slots[i].$2 * (cell + gap),
-            width: slots[i].$3 * cell + (slots[i].$3 - 1) * gap,
-            height: slots[i].$4 * cell + (slots[i].$4 - 1) * gap,
-            child: tile(notes[i], slots[i].$3 * cell + (slots[i].$3 - 1) * gap, slots[i].$4 * cell + (slots[i].$4 - 1) * gap, cs, i),
-          ),
+          Positioned.fromRect(key: ValueKey(notes[i].id), rect: rects[i], child: tile(notes[i], rects[i].width, rects[i].height, cs, i)),
       ]),
     );
   }
@@ -400,7 +449,7 @@ class _HomeState extends State<Home> {
                   children: [for (var i = 0; i < tags.length; i++) tagTile(tags[i], i, cs)],
                 )
               else if (all.isNotEmpty)
-                LayoutBuilder(builder: (_, c) => bento(all, cs, c.maxWidth)),
+                LayoutBuilder(builder: (_, c) => grid(all, cs, c.maxWidth)),
               if (tab != 2 && (tab == 0 ? tags.isEmpty : all.isEmpty))
                 Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(tab == 0 ? 'Tag a note to create its canvas.' : 'Nothing here yet. Tap + to add a note.'))),
             ]),
