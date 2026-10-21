@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:image_picker/image_picker.dart';
-import 'doodle.dart';
 import 'editor.dart';
+import 'records.dart';
 import 'note_page.dart';
 import 'home.dart';
 import 'palette.dart';
@@ -46,7 +46,7 @@ class _AppState extends State<App> {
       );
 }
 
-enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster }
+enum Kind { photo, text, checklist, bare, quote, stat, info, link, poster, film, track, recipe }
 
 TextStyle tStyle(double u, double size, [Color? c]) => sans(u * size, color: c, wght: 650, h: 1.1);
 TextStyle bStyle(double u, [Color? c]) => TextStyle(fontSize: u * .034, height: 1.25, color: c);
@@ -61,7 +61,7 @@ class Lay {
 /// text cards size themselves from content, capped at a square.
 class NoteCard {
   NoteCard(this.id, this.kind, this.x, this.y, this.w, this.aspect,
-      {this.noteId = '', this.order = 0, this.angle = 0, this.hue = 0, this.focal = Rect.zero, this.path, this.title = '', this.titleSize = .05, this.body = ''});
+      {this.noteId = '', this.order = 0, this.angle = 0, this.hue = 0, this.focal = Rect.zero, this.path, this.title = '', this.titleSize = .05, this.body = '', this.data = const {}});
   final String id, noteId;
   final int order;
   final Kind kind;
@@ -71,6 +71,7 @@ class NoteCard {
   final Rect focal; // normalized 0..1 inside the card (photos)
   final String? path;
   final String title, body;
+  final Map<String, dynamic> data;
   Lay? _l;
   double _lw = 0;
 
@@ -79,6 +80,10 @@ class NoteCard {
 
   Lay layout(double cw) {
     if (_l != null && _lw == cw) return _l!;
+    if (isRec(kind)) {
+      _lw = cw;
+      return _l = Lay(w * cw * recAspect(kind), 0, 0, 0);
+    }
     if (isTpl(kind)) {
       _lw = cw;
       return _l = tplLay(kind, title, body, w * cw, cw);
@@ -292,16 +297,12 @@ class _BoardState extends State<Board> {
         }
         final bottom = cards.fold<double>(0, (m, c) => max(m, c.rect(cw).bottom));
         final ch = max(box.maxHeight, bottom + cw * .35);
-        final groups = <String, List<NoteCard>>{};
-        for (final c in cards) {
-          groups.putIfAbsent(c.noteId, () => []).add(c);
-        }
         return SingleChildScrollView(
           controller: vc,
           child: SingleChildScrollView(
             controller: hc,
             scrollDirection: Axis.horizontal,
-            child: SizedBox(width: cw, height: ch, child: Stack(children: [Positioned.fill(child: CustomPaint(painter: Doodles(groups, cw, cs))), for (final c in z) card(c, cw, cs)])),
+            child: SizedBox(width: cw, height: ch, child: Stack(children: [for (final c in z) card(c, cw, cs)])),
           ),
         );
       }),
@@ -382,6 +383,7 @@ class _BoardState extends State<Board> {
 
   Widget textBody(NoteCard c, double cw, ColorScheme cs) {
     final u = cw / wide, L = c.layout(cw), bare = c.kind == Kind.bare, isNote = c.kind == Kind.text;
+    if (isRec(c.kind)) return recCard(c.kind, c.title, c.data, c.path, u, cs);
     if (isTpl(c.kind)) {
       final (tb, tf) = tplColors(c.kind, cs);
       return ColoredBox(
