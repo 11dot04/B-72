@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'main.dart' show Kind, detectFocus;
 import 'store.dart';
+import 'records.dart';
 import 'templates.dart';
 import 'type.dart';
 
@@ -17,10 +18,11 @@ class _Extra {
 
 /// One-screen composer: title, text, checklist, photos and tags all at once.
 class Editor extends StatefulWidget {
-  const Editor({super.key, required this.store, this.note, this.tag});
+  const Editor({super.key, required this.store, this.note, this.tag, this.initial});
   final Store store;
   final Note? note;
   final String? tag; // pre-filled tag for new notes
+  final Kind? initial; // template to start with
   @override
   State<Editor> createState() => _EditorState();
 }
@@ -48,13 +50,21 @@ class _EditorState extends State<Editor> {
       } else if (b.kind == Kind.checklist && listB == null) {
         listB = b;
         items.text = b.body;
-      } else if (b.kind != Kind.poster && isTpl(b.kind)) {
+      } else if (b.kind != Kind.poster && (isTpl(b.kind) || isRec(b.kind))) {
         extras.add(_Extra(b.kind, b));
       } else if (textB == null) {
         textB = b;
         smart = b.kind == Kind.poster;
         body.text = b.body;
         if (title.text.isEmpty) title.text = b.title;
+      }
+    }
+    final ini = widget.initial;
+    if (n == null && ini != null) {
+      if (ini == Kind.photo) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => addPhotos());
+      } else if (ini != Kind.text) {
+        extras.add(_Extra(ini, Block(ini, id: fresh())));
       }
     }
   }
@@ -90,28 +100,44 @@ class _EditorState extends State<Editor> {
     if (mounted) setState(() => busy = false);
   }
 
-  void save() {
+  bool filled(_Extra e) => isRec(e.kind)
+      ? e.b.title.trim().isNotEmpty || e.b.body.trim().isNotEmpty || '${e.b.data['ingredients'] ?? ''}'.isNotEmpty
+      : e.t.text.trim().isNotEmpty || e.x.text.trim().isNotEmpty;
+
+  Future<void> save() async {
     final s = widget.store;
+    final t = title.text.trim(), tx = body.text.trim(), it = items.text.trim();
+    if (tx.isEmpty && it.isEmpty && photos.isEmpty && !extras.any(filled)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add some text or media. A title on its own is not enough.')));
+      return;
+    }
+    setState(() => busy = true);
+    // links in the text become link cards with a preview
+    for (final m in RegExp(r'https?://[^\s]+').allMatches(tx).take(2)) {
+      final u = m[0]!;
+      if (extras.any((e) => e.kind == Kind.link && e.b.body == u)) continue;
+      final lb = Block(Kind.link, id: fresh(), body: u);
+      await fillLink(lb, s);
+      extras.add(_Extra(Kind.link, lb));
+    }
     final n = widget.note ?? Note('${DateTime.now().microsecondsSinceEpoch}');
     Block upsert(Block? old, Kind k, {String t = '', String b = ''}) => (old ?? Block(k, id: fresh()))
       ..kind = k
       ..title = t
       ..body = b;
-    final t = title.text.trim(), tx = body.text.trim(), it = items.text.trim();
     final blocks = <Block>[
       if (t.isNotEmpty) upsert(bareB, Kind.bare, t: t),
       if (tx.isNotEmpty) upsert(textB, smart ? Kind.poster : Kind.text, b: tx),
       if (it.isNotEmpty) upsert(listB, Kind.checklist, t: (listB?.title.isNotEmpty ?? false) ? listB!.title : 'List', b: it),
       for (final e in extras)
-        if (e.t.text.trim().isNotEmpty || e.x.text.trim().isNotEmpty) upsert(e.b, e.kind, t: e.t.text.trim(), b: e.x.text.trim()),
+        if (filled(e)) (isRec(e.kind) ? e.b : upsert(e.b, e.kind, t: e.t.text.trim(), b: e.x.text.trim())),
       ...photos,
     ];
-    if (blocks.isEmpty) return Navigator.pop(context);
     n.blocks = blocks;
     n.tags = tags.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toSet();
     if (!s.notes.contains(n)) s.notes.add(n);
     s.save();
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -171,7 +197,7 @@ class _EditorState extends State<Editor> {
           controller: title,
           textCapitalization: TextCapitalization.sentences,
           style: sans(30, wght: 700),
-          decoration: const InputDecoration(border: InputBorder.none, hintText: 'Title'),
+          decoration: const InputDecoration(border: InputBorder.none, hintText: 'Title (optional)'),
         ),
         label('TEXT'),
         TextField(controller: body, minLines: 3, maxLines: 10, decoration: box('Write something')),
@@ -198,10 +224,11 @@ class _EditorState extends State<Editor> {
           ),
         ]),
         label('MORE'),
-        for (final e in extras) extraCard(e),
+        for (final e in extras)
+          isRec(e.kind) ? RecordForm(key: ValueKey(e.b.id), block: e.b, store: widget.store, onRemove: () => setState(() => extras.remove(e))) : extraCard(e),
         Wrap(spacing: 8, children: [
-          for (final k in [Kind.quote, Kind.stat, Kind.info, Kind.link])
-            ActionChip(label: Text(tplLabel(k)), onPressed: () => setState(() => extras.add(_Extra(k, Block(k, id: fresh()))))),
+          for (final k in [Kind.quote, Kind.stat, Kind.info, Kind.film, Kind.track, Kind.recipe, Kind.link])
+            ActionChip(label: Text(isRec(k) ? recMeta[k]!.$1 : tplLabel(k)), onPressed: () => setState(() => extras.add(_Extra(k, Block(k, id: fresh()))))),
         ]),
         label('TAGS'),
         TextField(controller: tags, decoration: box('Comma separated')),
