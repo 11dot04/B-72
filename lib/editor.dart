@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'main.dart' show Kind, detectFocus;
 import 'store.dart';
 import 'records.dart';
+import 'sticker.dart';
 import 'templates.dart';
 import 'type.dart';
 
@@ -84,7 +85,8 @@ class _EditorState extends State<Editor> {
     }
     fo = fo.intersect(const Rect.fromLTRB(0, 0, 1, 1));
     if (fo.width <= 0 || fo.height <= 0) fo = const Rect.fromLTRB(.3, .3, .7, .7);
-    return Block(Kind.photo, id: fresh(), path: path, focal: fo, aspect: ac);
+    final cut = await cutoutFrame(path, widget.store.dir);
+    return Block(Kind.photo, id: fresh(), path: path, focal: fo, aspect: ac, data: {'cutTried': true, if (cut != null) 'cut': cut});
   }
 
   Future<void> addPhotos() async {
@@ -227,7 +229,7 @@ class _EditorState extends State<Editor> {
         for (final e in extras)
           isRec(e.kind) ? RecordForm(key: ValueKey(e.b.id), block: e.b, store: widget.store, onRemove: () => setState(() => extras.remove(e))) : extraCard(e),
         Wrap(spacing: 8, children: [
-          for (final k in [Kind.quote, Kind.stat, Kind.info, Kind.film, Kind.track, Kind.recipe, Kind.link])
+          for (final k in [Kind.quote, Kind.stat, Kind.info, Kind.film, Kind.book, Kind.track, Kind.recipe, Kind.link])
             ActionChip(label: Text(isRec(k) ? recMeta[k]!.$1 : tplLabel(k)), onPressed: () => setState(() => extras.add(_Extra(k, Block(k, id: fresh()))))),
         ]),
         label('TAGS'),
