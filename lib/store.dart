@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart' show Rect;
 import 'package:path_provider/path_provider.dart';
 import 'main.dart' show Kind, NoteCard;
+import 'records.dart';
 import 'sticker.dart';
 import 'templates.dart';
 
@@ -14,14 +15,17 @@ class Block {
     this.path, 
     this.focal = const Rect.fromLTRB(.3, .3, .7, .7), 
     this.aspect = 1, 
+    Map<String, dynamic>? data,
     List<String>? items
-  }) : items = items ?? [];
-  
+  }) : data = data ?? {},
+       items = items ?? [];
+       
   Kind kind;
   String id, title, body;
   String? path;
   Rect focal;
   double aspect;
+  Map<String, dynamic> data;
   List<String> items;
 
   Map toJson() => {
@@ -32,6 +36,7 @@ class Block {
     'p': path, 
     'f': [focal.left, focal.top, focal.right, focal.bottom], 
     'a': aspect, 
+    'd': data,
     'items': items
   };
 
@@ -44,11 +49,13 @@ class Block {
       body: j['b'], 
       path: j['p'], 
       focal: Rect.fromLTRB(f[0], f[1], f[2], f[3]), 
-      aspect: (j['a'] as num).toDouble(),
+      aspect: (j['a'] as num).toDouble(), 
+      data: Map<String, dynamic>.from(j['d'] ?? {}),
       items: (j['items'] as List?)?.map((e) => e as String).toList()
     );
   }
 }
+
 
 class Place {
   Place(this.x, this.y);
@@ -132,7 +139,7 @@ class Store {
         for (final n in notes)
           if (n.tags.contains(tag))
             for (final b in n.blocks)
-              if (b.kind == Kind.photo && b.path != null) b.path!,
+              if ((b.kind == Kind.photo || isRec(b.kind)) && b.path != null) b.path!,
       ].take(4).toList();
 
   /// One canvas card per block of every note with this tag. Unplaced cards
@@ -153,6 +160,7 @@ class Store {
         path: b.path,
         title: b.title,
         titleSize: b.kind == Kind.bare ? .07 : .05,
-        body: b.body);
+        body: b.body,
+        data: b.data);
   }
 }
