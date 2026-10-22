@@ -80,7 +80,8 @@ Future<List<Cand>> searchFilms(String q) async {
           'overview': '${r['longDescription'] ?? r['shortDescription'] ?? ''}',
         }),
   ];
-  return out.isNotEmpty ? out : _wikiFilms(q);
+  if (out.isNotEmpty) return out;
+  return _wikiFilms(q);
 }
 
 Future<List<Cand>> _wikiFilms(String q) async {
