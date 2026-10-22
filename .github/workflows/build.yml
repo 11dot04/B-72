@@ -1,4 +1,4 @@
-name: Build debug APK
+name: Build APK
 
 on:
   push:
@@ -21,26 +21,43 @@ jobs:
           channel: stable
           cache: true
 
-      # The repo only holds lib/ and pubspec.yaml; generate the Android
-      # project files in CI, then restore our own two files.
+      # The repo only holds lib/, keystore/ and pubspec.yaml; generate the Android
+      # project files in CI, then restore our own files.
       - name: Generate Android scaffolding
         run: |
           cp lib/main.dart /tmp/main.dart
           cp pubspec.yaml /tmp/pubspec.yaml
-          flutter create --platforms=android --project-name keep_canvas .
+          flutter create --platforms=android --project-name keep_canvas --org com.b72 .
           cp /tmp/main.dart lib/main.dart
           cp /tmp/pubspec.yaml pubspec.yaml
+          rm -rf test
           # ML Kit needs a higher minSdk than some Flutter defaults
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle* || true
-          # ask Google Play services to fetch the subject-segmentation model
           python3 - << 'PY'
+          import glob, re
+          # ask Google Play services to fetch the subject-segmentation model; allow opening links
           p = 'android/app/src/main/AndroidManifest.xml'
           s = open(p).read()
           if 'subject_segment' not in s:
               s = s.replace('</application>', '    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>', 1)
+          if '<uses-permission android:name="android.permission.INTERNET"' not in s:
+              s = s.replace('<application', '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
           if 'android.intent.action.VIEW' not in s:
               s = s.replace('<application', '<queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n    <application', 1)
           open(p, 'w').write(s)
+
+          # Sign with the committed keystore so every build installs over the last one.
+          g = glob.glob('android/app/build.gradle*')[0]
+          s = open(g).read()
+          if 'b72.jks' not in s:
+              if g.endswith('.kts'):
+                  cfg = ('    signingConfigs {\n        getByName("debug") {\n            storeFile = file("../../keystore/b72.jks")\n'
+                         '            storePassword = "b72-sideload"\n            keyAlias = "b72"\n            keyPassword = "b72-sideload"\n        }\n    }\n')
+              else:
+                  cfg = ('    signingConfigs {\n        debug {\n            storeFile file("../../keystore/b72.jks")\n'
+                         '            storePassword "b72-sideload"\n            keyAlias "b72"\n            keyPassword "b72-sideload"\n        }\n    }\n')
+              s = re.sub(r'(^android\s*\{\s*\n)', lambda m: m.group(1) + cfg, s, count=1, flags=re.M)
+              open(g, 'w').write(s)
           PY
 
       - name: Fetch fonts (Google Sans Flex, Instrument Serif)
@@ -66,10 +83,15 @@ jobs:
           open('pubspec.yaml', 'w').write(s)
           PY
 
+      # Packages the new code needs; a no-op for any pubspec already lists.
+      - run: flutter pub add http url_launcher google_mlkit_commons google_mlkit_subject_segmentation
       - run: flutter pub get
       - run: flutter build apk --debug --target-platform android-arm64
 
+      - name: Show signing certificate
+        run: keytool -printcert -jarfile build/app/outputs/flutter-apk/app-debug.apk | grep -E "Owner|SHA256"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: keep-canvas-debug-apk
+          name: b72-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
