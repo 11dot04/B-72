@@ -33,23 +33,26 @@ TextStyle sans(double size, {Color? color, double wght = 600, double wdth = 100,
 TextStyle serif(double size, {Color? color, bool italic = false, double h = 1.1}) =>
     TextStyle(fontFamily: kSerif, fontSize: size, height: h, color: color, fontStyle: italic ? FontStyle.italic : FontStyle.normal);
 
+/// How the last word of a title is set apart. Only one look uses the serif italic; the rest differ.
+enum Accent { none, serif, flip, marker, outline }
+
 /// One personality for a title. Each note picks one from its id, so a grid of
 /// titles reads like a magazine rack instead of one repeated style.
 class TitleLook {
-  const TitleLook(this.wght, this.rond, this.slnt, {this.upper = false, this.accent = false});
+  const TitleLook(this.wght, this.rond, this.slnt, {this.upper = false, this.accent = Accent.none});
   final double wght, rond, slnt;
   final bool upper; // ALL CAPS
-  final bool accent; // last word in italic serif, like an editorial pull word
+  final Accent accent;
 }
 
 const _looks = [
   TitleLook(800, 100, 0), // soft heavy
   TitleLook(900, 0, 0, upper: true), // hard poster caps
-  TitleLook(300, 0, 0, accent: true), // light + serif accent
+  TitleLook(300, 0, 0, accent: Accent.flip), // light, last word heavy
   TitleLook(720, 100, -10), // slanted, round
-  TitleLook(560, 45, 0, accent: true), // mid weight + serif accent
-  TitleLook(880, 0, 0, accent: true), // heavy + serif accent
-  TitleLook(420, 100, 0, upper: true), // light rounded caps
+  TitleLook(560, 45, 0, accent: Accent.marker), // highlighter swipe on the last word
+  TitleLook(880, 0, 0, accent: Accent.serif), // the one serif-italic look
+  TitleLook(420, 100, 0, upper: true, accent: Accent.outline), // rounded caps, outlined last word
   TitleLook(650, 0, -8), // slanted, sharp
 ];
 
@@ -106,11 +109,14 @@ TextSpan _mk(String line, double s, double wd, TitleLook k, double grade, Color?
   final t = k.upper ? line.toUpperCase() : line;
   final base = sans(s, color: c, wght: k.wght, wdth: wd, grade: grade, rond: k.rond, slnt: k.slnt, h: .98, ls: -s * .01);
   final i = t.lastIndexOf(' ');
-  if (!accent || i < 0) return TextSpan(text: t, style: base);
-  return TextSpan(style: base, children: [
-    TextSpan(text: t.substring(0, i + 1)),
-    TextSpan(text: t.substring(i + 1), style: serif(s * 1.1, color: c, italic: true, h: .98)),
-  ]);
+  if (!accent || i < 0 || k.accent == Accent.none) return TextSpan(text: t, style: base);
+  final TextStyle last = switch (k.accent) {
+    Accent.serif => serif(s * 1.1, color: c, italic: true, h: .98),
+    Accent.flip => sans(s, color: c, wght: k.wght < 500 ? 900 : 200, wdth: wd, grade: grade, rond: k.rond, slnt: k.slnt, h: .98, ls: -s * .01),
+    Accent.marker => base.copyWith(backgroundColor: (c ?? Colors.black).withAlpha(55)),
+    _ => sans(s, wght: k.wght, wdth: wd, grade: grade, rond: k.rond, slnt: k.slnt, h: .98, ls: -s * .01).copyWith(foreground: Paint()..style = PaintingStyle.stroke..strokeWidth = max(1.2, s * .02)..color = c ?? Colors.black),
+  };
+  return TextSpan(style: base, children: [TextSpan(text: t.substring(0, i + 1)), TextSpan(text: t.substring(i + 1), style: last)]);
 }
 
 /// Picks the width axis (and, if needed, the size) so a line fills [w] exactly.
@@ -132,24 +138,47 @@ TextSpan _mk(String line, double s, double wd, TitleLook k, double grade, Color?
   return (size, lo);
 }
 
-/// A title that always fills its width: balanced lines, with the width axis tuned per line.
-/// [seed] (usually the note id) picks its look: weight, roundness, slant, caps, serif accent.
+/// The measured title: balanced lines, each with the size and width axis that fill [w].
+class TitleLay {
+  TitleLay(this.look, this.lines, this.sizes, this.wdths, this.height, this.grade);
+  final TitleLook look;
+  final List<String> lines;
+  final List<double> sizes, wdths;
+  final double height, grade;
+  bool accentAt(int i) => look.accent != Accent.none && i == lines.length - 1 && lines[i].contains(' ');
+  TextSpan span(int i, Color c, [double flex = 1]) => _mk(lines[i], sizes[i], 25 + (wdths[i] - 25) * flex, look, grade, c, accentAt(i));
+}
+
+TitleLay titleLay(String text, double w, String seed, {int maxLines = 3, double grade = 0}) {
+  final k = lookFor(seed.isEmpty ? text : seed);
+  final lines = breakTitle(k.upper ? text.toUpperCase() : text, maxLines: maxLines);
+  final size = w * (lines.length == 1 ? .26 : lines.length == 2 ? .19 : .15);
+  final sz = <double>[], wd = <double>[];
+  var h = 0.0;
+  for (var i = 0; i < lines.length; i++) {
+    final acc = k.accent != Accent.none && i == lines.length - 1 && lines[i].contains(' ');
+    final f = _fit((s, x) => _mk(lines[i], s, x, k, grade, null, acc), w, size, lines.length == 1);
+    sz.add(f.$1);
+    wd.add(f.$2);
+    h += (TextPainter(text: _mk(lines[i], f.$1, f.$2, k, grade, null, acc), textDirection: TextDirection.ltr)..layout()).height;
+  }
+  return TitleLay(k, lines, sz, wd, h, grade);
+}
+
+/// A title that always fills its width. [flex] (0..1) animates the width axis from condensed to full.
 class FitTitle extends StatelessWidget {
-  const FitTitle(this.text, {super.key, required this.color, this.maxLines = 3, this.maxHeight, this.seed = ''});
+  const FitTitle(this.text, {super.key, required this.color, this.maxLines = 3, this.maxHeight, this.seed = '', this.flex = 1});
   final String text;
   final Color color;
   final int maxLines;
   final double? maxHeight;
   final String seed;
+  final double flex;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (ctx, c) {
         final w = c.maxWidth, grade = Theme.of(ctx).brightness == Brightness.dark ? -25.0 : 0.0;
-        final k = lookFor(seed.isEmpty ? text : seed);
-        final lines = breakTitle(k.upper ? text.toUpperCase() : text, maxLines: maxLines);
-        final size = w * (lines.length == 1 ? .26 : lines.length == 2 ? .19 : .15);
-        bool acc(int i) => k.accent && i == lines.length - 1;
-        final f = [for (var i = 0; i < lines.length; i++) _fit((s, wd) => _mk(lines[i], s, wd, k, grade, color, acc(i)), w, size, lines.length == 1)];
+        final l = titleLay(text, w, seed, maxLines: maxLines, grade: grade);
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight ?? double.infinity),
           child: FittedBox(
@@ -158,12 +187,8 @@ class FitTitle extends StatelessWidget {
             child: SizedBox(
               width: w,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                for (var i = 0; i < lines.length; i++)
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text.rich(_mk(lines[i], f[i].$1, f[i].$2, k, grade, color, acc(i)), maxLines: 1, softWrap: false),
-                  ),
+                for (var i = 0; i < l.lines.length; i++)
+                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text.rich(l.span(i, color, flex), maxLines: 1, softWrap: false)),
               ]),
             ),
           ),

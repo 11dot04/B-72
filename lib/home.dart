@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:math' show max;
+import 'dart:math' show max, min;
 import 'package:flutter/material.dart';
 import 'collection.dart';
 import 'cutout.dart';
@@ -12,49 +12,39 @@ import 'store.dart';
 import 'templates.dart';
 import 'type.dart';
 
-/// Two-column masonry. Each span is (cols, height as a ratio of the tile's own width, rigid).
-/// Rigid tiles (album art, posters, covers) keep their exact proportions; others may be
-/// stretched a little so a full-width tile never leaves a hole beside it.
+/// Two-column masonry. Every tile is one column wide; its height is a ratio of its width,
+/// always one of [ratios] so the grid stays calm and no tile gets extremely tall.
+/// Rigid tiles (album art, posters, covers) keep their ratio; others may stretch a little at the end.
+const ratios = [1.0, 1.25, 1.5];
+
 /// Returns (x, y, w, h) in pixels.
-List<(double, double, double, double)> pack(List<(int, double, bool)> spans, double colW, double gap, double fullW) {
+List<(double, double, double, double)> pack(List<(double, bool)> spans, double colW, double gap) {
   final y = [0.0, 0.0];
   final last = [-1, -1];
-  final rigid = <bool>[];
   final out = <(double, double, double, double)>[];
-  void stretch(int c, double to) {
-    if (last[c] < 0 || y[c] >= to || rigid[last[c]]) return;
-    final (x, yy, w, h) = out[last[c]];
-    out[last[c]] = (x, yy, w, h + (to - y[c]));
-    y[c] = to;
-  }
-
   for (var i = 0; i < spans.length; i++) {
-    var (cols, r, rg) = spans[i];
-    // a full-width tile with one column still empty would leave a hole at the top: make it a half tile
-    if (cols == 2 && (last[0] < 0) != (last[1] < 0)) {
-      cols = 1;
-      r = 1.2;
-    }
-    rigid.add(rg);
-    if (cols == 2) {
-      final top = max(y[0], y[1]);
-      stretch(0, top);
-      stretch(1, top);
-      final h = r * fullW;
-      out.add((0, top, fullW, h));
-      y[0] = y[1] = top + h + gap;
-      last[0] = last[1] = i;
-    } else {
-      final c = y[0] <= y[1] ? 0 : 1, h = r * colW;
-      out.add((c * (colW + gap), y[c], colW, h));
-      y[c] += h + gap;
-      last[c] = i;
-    }
+    final c = y[0] <= y[1] ? 0 : 1, h = spans[i].$1 * colW;
+    out.add((c * (colW + gap), y[c], colW, h));
+    y[c] += h + gap;
+    last[c] = i;
   }
-  final end = max(y[0], y[1]);
-  stretch(0, end);
-  stretch(1, end);
+  // even out the bottom: stretch the shorter column's last tile a little, if it is allowed to
+  final s = y[0] < y[1] ? 0 : 1, d = (y[1 - s] - y[s]);
+  if (d > 0 && last[s] >= 0 && !spans[last[s]].$2) {
+    final (x, yy, w, h) = out[last[s]];
+    if (d < h * .4) out[last[s]] = (x, yy, w, h + d);
+  }
   return out;
+}
+
+double fitSize(String text, TextStyle Function(double) st, double w, double h, double maxS, double minS) {
+  var s = maxS;
+  while (s > minS) {
+    final tp = TextPainter(text: TextSpan(text: text, style: st(s)), textDirection: TextDirection.ltr)..layout(maxWidth: w);
+    if (tp.height <= h) break;
+    s -= 1;
+  }
+  return s;
 }
 
 class Home extends StatefulWidget {
@@ -65,10 +55,11 @@ class Home extends StatefulWidget {
   State<Home> createState() => _HomeState();
 }
 
-class _HomeState extends State<Home> {
+class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   String q = '';
   bool searching = false, fabOpen = false, cutting = false;
   int tab = 0; // 0 tags, 1 notes, 2 collection
+  late final AnimationController fab = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
 
   static const menu = [
     (Icons.notes, 'Note', Kind.text),
@@ -85,6 +76,17 @@ class _HomeState extends State<Home> {
   void initState() {
     super.initState();
     backfill();
+  }
+
+  @override
+  void dispose() {
+    fab.dispose();
+    super.dispose();
+  }
+
+  void setFab(bool open) {
+    setState(() => fabOpen = open);
+    open ? fab.forward() : fab.reverse();
   }
 
   /// Cuts the subject out of every photo / recipe image that has not been cut yet (one at a time).
@@ -111,9 +113,17 @@ class _HomeState extends State<Home> {
 
   void edit([Note? n, String? tag, Kind? initial]) => go(Editor(store: widget.store, note: n, tag: tag, initial: initial));
 
-  /// Only real titles count; a note without one is shown by its text.
+  /// Only real titles count (a smart-layout note shows the headline it found); a note without one is shown by its text.
   String titleOf(Note n) {
-    final t = n.blocks.where((b) => b.kind != Kind.checklist).map((b) => b.title).firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    var t = '';
+    for (final b in n.blocks) {
+      if (b.kind == Kind.checklist) continue;
+      final s = tplHead(b.kind, b.title, b.body);
+      if (s.isNotEmpty) {
+        t = s;
+        break;
+      }
+    }
     return t.length > 44 ? '${t.substring(0, 44)}…' : t;
   }
 
@@ -131,37 +141,33 @@ class _HomeState extends State<Home> {
     return '';
   }
 
-  /// Tile shape on the two-column grid: (columns, height / width, rigid).
-  /// Music is always a square, films and books a 2:3 portrait; the rest flex.
-  (int, double, bool) spanFor(Note n) {
+  /// Tile shape: (height / width, rigid). Music is always a square, films and books a 2:3 portrait.
+  (double, bool) spanFor(Note n) {
     final rec = n.blocks.where((b) => isRec(b.kind)).firstOrNull;
     if (rec != null) {
       return switch (rec.kind) {
-        Kind.film || Kind.book => (1, 1.5, true),
-        Kind.track => (1, 1.0, true),
-        Kind.recipe => cutPath(rec) != null ? (2, .85, false) : (2, .7, false),
-        _ => rec.path != null ? (2, .6, false) : (1, 1.0, false),
+        Kind.film || Kind.book => (1.5, true),
+        Kind.track => (1.0, true),
+        Kind.recipe => (cutPath(rec) != null ? 1.5 : 1.25, false),
+        _ => (rec.path != null ? 1.25 : 1.0, false),
       };
     }
     final photos = [for (final b in n.blocks) if (b.kind == Kind.photo) b];
     final len = n.blocks.fold<int>(0, (s, b) => s + b.body.length);
     final tpl = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
-    if (photos.length >= 3) return (2, .9, false);
-    if (photos.isNotEmpty) {
-      if (len > 140) return (2, .85, false);
-      return photos.first.aspect < .95 || cutPath(photos.first) != null ? (1, 1.4, false) : (1, 1.0, false);
-    }
+    if (photos.length >= 2) return (1.25, false);
+    if (photos.isNotEmpty) return (photos.first.aspect < .95 || cutPath(photos.first) != null ? 1.5 : photos.first.aspect < 1.1 ? 1.25 : 1.0, false);
     if (tpl != null) {
       return switch (tpl.kind) {
-        Kind.stat => (1, 1.0, false),
-        Kind.quote => len < 90 ? (1, 1.0, false) : (2, .55, false),
-        Kind.poster => (2, .95, false),
-        _ => (1, 1.3, false),
+        Kind.stat => (1.0, false),
+        Kind.quote => (len < 60 ? 1.0 : len < 140 ? 1.25 : 1.5, false),
+        Kind.poster => (len < 90 ? 1.25 : 1.5, false),
+        _ => (1.25, false),
       };
     }
     final items = n.blocks.where((b) => b.kind == Kind.checklist).firstOrNull?.items.length;
-    if (items != null) return items <= 3 ? (1, 1.0, false) : (1, 1.3, false);
-    return len <= 50 ? (1, 1.0, false) : len <= 160 ? (1, 1.3, false) : (2, .8, false);
+    if (items != null) return (items <= 3 ? 1.0 : items <= 7 ? 1.25 : 1.5, false);
+    return (len <= 50 ? 1.0 : len <= 160 ? 1.25 : 1.5, false);
   }
 
   TextStyle caps(Color c, [double size = 11]) => TextStyle(fontSize: size, fontWeight: FontWeight.w700, letterSpacing: .6, color: c);
@@ -171,8 +177,14 @@ class _HomeState extends State<Home> {
 
   Widget header(ColorScheme cs) => Padding(
         padding: const EdgeInsets.fromLTRB(6, 6, 0, 14),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: Text(tab == 2 ? 'Collection' : tab == 1 ? 'Notes' : 'Tags', maxLines: 1, style: sans(44, wght: 800, wdth: 110, color: cs.onSurface, ls: -1))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(tab == 2 ? 'Collection' : tab == 1 ? 'Notes' : 'Tags', maxLines: 1, softWrap: false, style: sans(44, wght: 800, wdth: 110, color: cs.onSurface, ls: -1)),
+            ),
+          ),
           IconButton(icon: Icon(searching ? Icons.close : Icons.search, color: cs.onSurface), onPressed: () => setState(() {
                 searching = !searching;
                 if (!searching) q = '';
@@ -182,8 +194,30 @@ class _HomeState extends State<Home> {
         ]),
       );
 
-  /// Cards: photo (or poster, album art, dish) as background. Film, music and book art stay clean with the
-  /// title at the bottom; photos with a clear subject get the title behind the subject.
+  /// A quote tile is the quote itself, sized to fit whole; the author (the title) is a small credit.
+  Widget quoteTile(Block qb, double w, double h, ColorScheme cs) {
+    final fg = cs.onPrimary, body = qb.body.trim();
+    return ColoredBox(
+      color: cs.primary,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('“', style: serif(46, color: fg.withAlpha(150), h: .8)),
+          Expanded(
+            child: LayoutBuilder(builder: (_, c) {
+              final s = fitSize(body, (f) => serif(f, italic: true, h: 1.2), c.maxWidth, c.maxHeight, 30, 12);
+              return Align(alignment: Alignment.centerLeft, child: Text(body, style: serif(s, color: fg, italic: true, h: 1.2)));
+            }),
+          ),
+          if (qb.title.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('— ${qb.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: fg.withAlpha(210)))),
+        ]),
+      ),
+    );
+  }
+
+  /// Photo (or poster, album art, dish) as background. Film, music and book art stay clean with the
+  /// title at the bottom. Now and then (about one note in four) a photo with a clear subject gets the title
+  /// tucked behind its top edge: that is the only place the depth effect shows.
   Widget tile(Note n, double w, double h, ColorScheme cs, int i) {
     final roles = <(Color, Color)>[
       (cs.primaryContainer, cs.onPrimaryContainer),
@@ -194,17 +228,26 @@ class _HomeState extends State<Home> {
     final rec = n.blocks.where((b) => isRec(b.kind)).firstOrNull;
     final cover = n.blocks.where((b) => (b.kind == Kind.photo || isRec(b.kind)) && b.path != null && File(b.path!).existsSync()).firstOrNull;
     final tp = n.blocks.where((b) => isTpl(b.kind)).firstOrNull;
+    final qb = n.blocks.where((b) => b.kind == Kind.quote && b.body.trim().isNotEmpty).firstOrNull;
+    if (qb != null && cover == null) return GestureDetector(onTap: () => go(NotePage(store: widget.store, note: n)), child: ClipRRect(borderRadius: BorderRadius.circular(28), child: quoteTile(qb, w, h, cs)));
     final art = cover != null && rec != null && (rec.kind == Kind.film || rec.kind == Kind.track || rec.kind == Kind.book);
-    final cut = cover == null || art ? null : cutPath(cover);
     final (Color bg, Color fg) = cover != null ? (Colors.black, Colors.white) : tp != null ? tplColors(tp.kind, cs) : roles[i % 4];
     final title = titleOf(n), snip = snippet(n, title);
     final big = title.isEmpty && cover == null && snip.isNotEmpty, chip = rec != null && !art && w > 200;
     final fs = (w * .085).clamp(17.0, 28.0).toDouble();
     final al = cover != null && cover.kind == Kind.photo ? Alignment(cover.focal.center.dx * 2 - 1, cover.focal.center.dy * 2 - 1) : Alignment.center;
+
+    // depth effect: needs a real cut-out, a title, and a spot where the title fits above the subject
+    final cut = cover == null || art ? null : cutPath(cover);
     final cr = cut == null ? null : cutRectIn(cover!, Size(w, h), al);
+    double? depthTop;
+    if (cr != null && title.isNotEmpty && seedOf(n.id) % 4 == 0) {
+      final tl = titleLay(title, w - 32, n.id, maxLines: 2, grade: -25);
+      final t = cr.top - tl.height * .88; // the subject covers only the bottom of the last line
+      if (t >= 10 && t + tl.height <= h * .6) depthTop = t;
+    }
+    final depth = depthTop != null;
     Widget img(String p, int cw) => Image.file(File(p), fit: BoxFit.cover, alignment: al, cacheWidth: cw);
-    // with a cut-out the title is centred on the upper part of the subject, so the subject covers it
-    final titleTop = cr == null ? 14.0 : (cr.top + cr.height * .12).clamp(10.0, h * .55).toDouble();
     return GestureDetector(
       onTap: () => go(NotePage(store: widget.store, note: n)),
       child: ClipRRect(
@@ -217,9 +260,7 @@ class _HomeState extends State<Home> {
               decoration: BoxDecoration(
                 gradient: art
                     ? LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withAlpha(200)], stops: const [.5, 1])
-                    : cut != null
-                        ? LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withAlpha(70), Colors.black.withAlpha(40), Colors.black.withAlpha(150)], stops: const [0, .5, 1])
-                        : LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withAlpha(150), Colors.transparent, Colors.transparent, Colors.black.withAlpha(170)], stops: const [0, .42, .6, 1]),
+                    : LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withAlpha(150), Colors.transparent, Colors.transparent, Colors.black.withAlpha(170)], stops: const [0, .42, .6, 1]),
               ),
             ),
           ],
@@ -239,15 +280,18 @@ class _HomeState extends State<Home> {
               ]),
             ),
           ] else if (title.isNotEmpty)
-            Positioned(left: 16, top: titleTop, right: 16, child: FitTitle(title, color: fg, maxHeight: h * (cut != null ? .4 : .46), seed: n.id)),
-          if (cut != null) img(cut, 800), // subject on top of the title
+            Positioned(left: 16, top: depth ? depthTop : 14, right: 16, child: FitTitle(title, color: fg, maxLines: depth ? 2 : 3, maxHeight: h * .4, seed: n.id)),
+          if (depth) img(cut!, 800), // the subject rides over the bottom of the title
           if (!art && big)
             Positioned(
               left: 16,
               top: 16,
               right: 16,
               bottom: 16,
-              child: Text(snip, maxLines: ((h - 32) / (fs * 1.25)).floor().clamp(2, 14), overflow: TextOverflow.ellipsis, style: serif(fs, color: fg, h: 1.2)),
+              child: LayoutBuilder(builder: (_, c) {
+                final s = fitSize(snip, (f) => serif(f, h: 1.2), c.maxWidth, c.maxHeight, fs + 4, 12);
+                return Text(snip, style: serif(s, color: fg, h: 1.2));
+              }),
             )
           else if (!art && snip.isNotEmpty)
             Positioned(
@@ -263,7 +307,7 @@ class _HomeState extends State<Home> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(14)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(recMeta[rec!.kind]!.$2, size: 14, color: Colors.white), const SizedBox(width: 5), Text(recMeta[rec!.kind]!.$1, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600))]),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(recMeta[rec!.kind]!.$2, size: 14, color: Colors.white), const SizedBox(width: 5), Text(recMeta[rec.kind]!.$1, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600))]),
               ),
             ),
         ]),
@@ -273,7 +317,7 @@ class _HomeState extends State<Home> {
 
   Widget bento(List<Note> notes, ColorScheme cs, double width) {
     const gap = 10.0;
-    final colW = (width - gap) / 2, slots = pack([for (final n in notes) spanFor(n)], colW, gap, width);
+    final colW = (width - gap) / 2, slots = pack([for (final n in notes) spanFor(n)], colW, gap);
     final total = slots.fold<double>(0, (m, s) => max(m, s.$2 + s.$4));
     return SizedBox(
       height: total,
@@ -312,7 +356,7 @@ class _HomeState extends State<Home> {
     );
   }
 
-  // ---- floating toolbar and FAB menu ----
+  // ---- floating toolbar and add menu ----
 
   Widget navItem(IconData icon, String label, bool on, ColorScheme cs, VoidCallback f) => GestureDetector(
         onTap: f,
@@ -325,7 +369,7 @@ class _HomeState extends State<Home> {
             decoration: BoxDecoration(color: on ? cs.primaryContainer : Colors.transparent, borderRadius: BorderRadius.circular(26)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(icon, size: 22, color: on ? cs.onPrimaryContainer : cs.onSurfaceVariant),
-              if (on) Padding(padding: const EdgeInsets.only(left: 8), child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: cs.onPrimaryContainer))),
+              if (on) Padding(padding: const EdgeInsets.only(left: 8), child: Text(label, maxLines: 1, softWrap: false, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: cs.onPrimaryContainer))),
             ]),
           ),
         ),
@@ -353,7 +397,7 @@ class _HomeState extends State<Home> {
             ),
             const SizedBox(width: 12),
             GestureDetector(
-              onTap: () => setState(() => fabOpen = !fabOpen),
+              onTap: () => setFab(!fabOpen),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 320),
                 curve: Curves.easeOutBack,
@@ -376,40 +420,54 @@ class _HomeState extends State<Home> {
         ),
       );
 
+  /// The add menu: equal-width items stacked right above the + button, each springing out of it in turn
+  /// (the nearest first). It sits in the body, so it never covers the toolbar.
   Widget fabMenu(ColorScheme cs) => Positioned(
         right: 14,
-        bottom: 8,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
-          for (var i = 0; i < menu.length; i++)
-            IgnorePointer(
-              ignoring: !fabOpen,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: fabOpen ? 1 : 0),
-                duration: Duration(milliseconds: 170 + (i + 1) * 30),
-                curve: Curves.easeOutBack,
-                builder: (_, t, child) => Opacity(opacity: t.clamp(0.0, 1.0), child: Transform.scale(scale: .55 + .45 * t, alignment: Alignment.bottomRight, child: child)),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() => fabOpen = false);
-                      edit(null, null, menu[i].$3);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(16, 13, 20, 13),
-                      decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black.withAlpha(35), blurRadius: 10, offset: const Offset(0, 3))]),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(menu[i].$1, size: 22, color: cs.onSecondaryContainer),
-                        const SizedBox(width: 10),
-                        Text(menu[i].$2, style: TextStyle(fontWeight: FontWeight.w700, color: cs.onSecondaryContainer)),
-                      ]),
+        bottom: 6,
+        child: AnimatedBuilder(
+          animation: fab,
+          builder: (_, __) => Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < menu.length; i++)
+              () {
+                final j = menu.length - 1 - i; // 0 = the item nearest the + button
+                final t = Interval(min(.5, j * .06), min(1.0, j * .06 + .5), curve: Curves.easeOutBack).transform(fab.value);
+                return IgnorePointer(
+                  ignoring: !fabOpen,
+                  child: Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * 36),
+                      child: Transform.scale(
+                        scale: .6 + .4 * t,
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: GestureDetector(
+                            onTap: () {
+                              setFab(false);
+                              edit(null, null, menu[i].$3);
+                            },
+                            child: Container(
+                              width: 172,
+                              height: 52,
+                              padding: const EdgeInsets.symmetric(horizontal: 18),
+                              decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(26), boxShadow: [BoxShadow(color: Colors.black.withAlpha(40), blurRadius: 10, offset: const Offset(0, 3))]),
+                              child: Row(children: [
+                                Icon(menu[i].$1, size: 22, color: cs.onSecondaryContainer),
+                                const SizedBox(width: 12),
+                                Text(menu[i].$2, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: cs.onSecondaryContainer)),
+                              ]),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 72),
-        ]),
+                );
+              }(),
+          ]),
+        ),
       );
 
   @override
@@ -453,7 +511,7 @@ class _HomeState extends State<Home> {
             ]),
           ),
         ),
-        if (fabOpen) Positioned.fill(child: GestureDetector(onTap: () => setState(() => fabOpen = false), child: ColoredBox(color: cs.scrim.withAlpha(110)))),
+        if (fabOpen) Positioned.fill(child: GestureDetector(onTap: () => setFab(false), child: ColoredBox(color: cs.scrim.withAlpha(110)))),
         fabMenu(cs),
       ]),
     );

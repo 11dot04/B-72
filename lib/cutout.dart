@@ -11,6 +11,8 @@ import 'store.dart';
 
 /// Photos and recipe images get a subject cut-out so titles can sit behind the subject
 /// and the note page can let it break out of a shape.
+const _ver = 2; // bump to re-cut existing photos
+
 bool wantsCut(Block b) => b.path != null && (b.kind == Kind.photo || b.kind == Kind.recipe);
 
 /// Path of the transparent cut-out, or null if there is none (yet, or no clear subject).
@@ -24,19 +26,29 @@ String? cutPath(Block b) {
 Future<void> ensureCut(Block b, Store s) async {
   if (!wantsCut(b) || !File(b.path!).existsSync()) return;
   final c = b.data['cut'];
-  if (c is String && (c.isEmpty || File(c).existsSync())) return;
+  if (b.data['cutV'] == _ver && c is String && (c.isEmpty || File(c).existsSync())) return;
   try {
     final r = await _cut(b.path!, s.dir);
+    if (c is String && c.isNotEmpty) {
+      try {
+        File(c).deleteSync();
+      } catch (_) {}
+    }
     if (r == null) {
       b.data['cut'] = '';
     } else {
       b.data['cut'] = r.$1;
       b.data['cutBox'] = r.$2;
       b.data['cutAspect'] = r.$3;
+      b.data['cutFrac'] = r.$4;
     }
+    b.data['cutV'] = _ver;
     s.save();
   } catch (_) {}
 }
+
+/// How much of the frame the subject covers (0..1), or 0 when there is no cut-out.
+double cutFrac(Block b) => cutPath(b) == null ? 0 : ((b.data['cutFrac'] as num?)?.toDouble() ?? .3);
 
 /// Where the subject lands inside a tile that shows the photo with BoxFit.cover and [al] alignment.
 Rect? cutRectIn(Block b, Size tile, Alignment al) {
@@ -51,7 +63,7 @@ Rect? cutRectIn(Block b, Size tile, Alignment al) {
 }
 
 /// (png path, subject box 0..1 as [l, t, r, b], image aspect w/h), or null when there is no clear subject.
-Future<(String, List<double>, double)?> _cut(String src, Directory dir) async {
+Future<(String, List<double>, double, double)?> _cut(String src, Directory dir) async {
   // Upright, downscaled copy so mask coordinates are unambiguous (same trick as the stickers).
   final codec = await ui.instantiateImageCodec(await File(src).readAsBytes(), targetWidth: 1024);
   final img = (await codec.getNextFrame()).image;
@@ -107,9 +119,32 @@ Future<(String, List<double>, double)?> _cut(String src, Directory dir) async {
   final frac = n / (w * h);
   if (frac < .05 || frac > .8) return null; // nothing clear, or the subject is the whole frame
 
+  // Soften the rim so the subject doesn't sit outlined over the photo: pull the mask in by a pixel
+  // (drops the background-coloured fringe), then feather it with a small blur.
+  final e = Float32List(w * h);
+  for (var y = 1; y < h - 1; y++) {
+    for (var x = 1; x < w - 1; x++) {
+      final i = y * w + x;
+      e[i] = math.min(math.min(a[i], a[i - 1]), math.min(math.min(a[i + 1], a[i - w]), a[i + w]));
+    }
+  }
+  final blur = Float32List(w * h);
+  for (var y = 0; y < h; y++) {
+    for (var x = 1; x < w - 1; x++) {
+      final i = y * w + x;
+      blur[i] = (e[i - 1] + 2 * e[i] + e[i + 1]) / 4;
+    }
+  }
+  for (var y = 1; y < h - 1; y++) {
+    for (var x = 0; x < w; x++) {
+      final i = y * w + x;
+      a[i] = (blur[i - w] + 2 * blur[i] + blur[i + w]) / 4;
+    }
+  }
+
   final px = Uint8List(w * h * 4);
   for (var i = 0; i < w * h; i++) {
-    final o = i * 4, al = ((a[i] - .3) / .4).clamp(0.0, 1.0);
+    final o = i * 4, al = ((a[i] - .25) / .6).clamp(0.0, 1.0);
     px[o] = rgba.getUint8(o);
     px[o + 1] = rgba.getUint8(o + 1);
     px[o + 2] = rgba.getUint8(o + 2);
@@ -119,5 +154,5 @@ Future<(String, List<double>, double)?> _cut(String src, Directory dir) async {
   ui.decodeImageFromPixels(px, w, h, ui.PixelFormat.rgba8888, done.complete);
   final bytes = (await (await done.future).toByteData(format: ui.ImageByteFormat.png))!;
   final f = File('${dir.path}/cut_${DateTime.now().microsecondsSinceEpoch}.png')..writeAsBytesSync(bytes.buffer.asUint8List());
-  return (f.path, [l / w, t / h, (r + 1) / w, (bt + 1) / h], w / h);
+  return (f.path, [l / w, t / h, (r + 1) / w, (bt + 1) / h], w / h, frac);
 }

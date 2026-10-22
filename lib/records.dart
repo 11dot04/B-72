@@ -143,8 +143,8 @@ Widget recSection(BuildContext ctx, Kind k, Block b, ColorScheme cs, double u, b
     final cut = cutPath(b);
     body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // a dish with a clear subject breaks out of an expressive shape; otherwise a plain photo
-      if (has && cut != null)
-        SizedBox(height: u * 1.0, child: PopOut(photo: p!, cut: cut, fill: cs.primary, tint: cs.primary.withAlpha(120), shape: seedOf(b.id)))
+      if (has && canPopOut(b))
+        SizedBox(height: u * .95, child: PopOut(block: b, fill: cs.primary, tint: cs.primary.withAlpha(120), shape: seedOf(b.id)))
       else if (has)
         img(4 / 3),
       title(b.title),

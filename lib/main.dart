@@ -53,8 +53,8 @@ TextStyle tStyle(double u, double size, [Color? c]) => sans(u * size, color: c, 
 TextStyle bStyle(double u, [Color? c]) => TextStyle(fontSize: u * .034, height: 1.25, color: c);
 
 class Lay {
-  Lay(this.h, this.lines, this.rows, this.hidden);
-  final double h;
+  Lay(this.h, this.lines, this.rows, this.hidden, {this.fs = 0});
+  final double h, fs; // fs: font size picked for a quote so it fits whole (0 = default)
   final int lines, rows, hidden; // lines: note body max lines (0 = all); rows/hidden: checklist
 }
 

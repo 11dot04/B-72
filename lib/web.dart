@@ -67,8 +67,44 @@ Future<List<dynamic>> _itunes(String q, String media, String entity) async {
   return j is Map && j['results'] is List ? j['results'] as List : [];
 }
 
-/// Films: iTunes first, then Wikipedia (no key, good posters and one-line facts) if iTunes is empty or down.
+const _tmdbKey = String.fromEnvironment('TMDB_KEY');
+
+/// TMDB (needs a free key, passed with --dart-define=TMDB_KEY=...): best posters, director and runtime.
+Future<List<Cand>> _tmdbFilms(String q) async {
+  if (_tmdbKey.isEmpty) return [];
+  final j = await _json('https://api.themoviedb.org/3/search/movie?api_key=$_tmdbKey&include_adult=false&query=${Uri.encodeQueryComponent(q)}');
+  if (j is! Map || j['results'] is! List) return [];
+  final top = (j['results'] as List).whereType<Map>().take(8).toList();
+  // one extra call per result for the director and runtime
+  final details = await Future.wait([for (final r in top) _json('https://api.themoviedb.org/3/movie/${r['id']}?api_key=$_tmdbKey&append_to_response=credits')]);
+  final out = <Cand>[];
+  for (var i = 0; i < top.length; i++) {
+    final r = top[i], d = details[i];
+    final title = '${r['title'] ?? ''}';
+    if (title.isEmpty) continue;
+    var director = '', genre = '', runtime = '';
+    if (d is Map) {
+      final crew = d['credits'] is Map && d['credits']['crew'] is List ? d['credits']['crew'] as List : [];
+      director = '${crew.whereType<Map>().firstWhere((c) => c['job'] == 'Director', orElse: () => {})['name'] ?? ''}';
+      genre = d['genres'] is List && (d['genres'] as List).isNotEmpty ? '${(d['genres'] as List).first['name']}' : '';
+      runtime = d['runtime'] is num && d['runtime'] > 0 ? '${d['runtime']}' : '';
+    }
+    final year = _year(r['release_date']), poster = r['poster_path'];
+    out.add(Cand(title, '$year · $director', poster == null ? null : 'https://image.tmdb.org/t/p/w500$poster', {
+      'year': year,
+      'director': director,
+      'genre': genre,
+      'runtime': runtime,
+      'overview': '${r['overview'] ?? ''}',
+    }));
+  }
+  return out;
+}
+
+/// Films: TMDB if a key is set, else iTunes, else Wikipedia (no key; posters need pilicense=any).
 Future<List<Cand>> searchFilms(String q) async {
+  final t = await _tmdbFilms(q);
+  if (t.isNotEmpty) return t;
   final out = <Cand>[
     for (final r in await _itunes(q, 'movie', 'movie'))
       if (r['trackName'] != null)
@@ -88,7 +124,7 @@ Future<List<Cand>> _wikiFilms(String q) async {
   final out = <Cand>[];
   final j = await _json('https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=8'
       '&gsrsearch=${Uri.encodeQueryComponent('$q film')}&prop=pageimages%7Cextracts%7Cdescription'
-      '&piprop=thumbnail&pithumbsize=600&exintro=1&explaintext=1&exsentences=3&exlimit=max');
+      '&piprop=thumbnail&pilicense=any&pithumbsize=600&exintro=1&explaintext=1&exsentences=3&exlimit=max');
   try {
     final pages = ((j['query']['pages'] as Map).values.toList())..sort((a, b) => ((a['index'] as num?) ?? 99).compareTo((b['index'] as num?) ?? 99));
     for (final p in pages) {

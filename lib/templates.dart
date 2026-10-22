@@ -59,7 +59,7 @@ final _pct = RegExp(r'\b\d+(?:\.\d+)?\s?%');
 final _unit = RegExp(r'\b\d[\d,.]*\s?(?:km|kg|mins?|hrs?|hours?|ms|MB|GB|cm|kcal|reps|pages?|miles?|°C|°F)\b', caseSensitive: false);
 final _phone = RegExp(r'\+?\d[\d\s().-]{8,}\d');
 final _place = RegExp(r"(?:\b(?:at|in|to|near|from)|@)\s+((?:the\s+)?[A-Z][\w']+(?:\s+[A-Z][\w']+){0,3})");
-const _notPlace = {'i', 'the', 'a', 'an', 'it', 'this', 'that', 'my', 'we', 'you', 'he', 'she', 'they', 'me', 'us', 'our', 'your'};
+const _notPlace = {'i', 'the', 'a', 'an', 'it', 'this', 'that', 'my', 'we', 'you', 'he', 'she', 'they', 'me', 'us', 'our', 'your', 'will', 'would', 'can', 'could', 'shall', 'should', 'may', 'might', 'must', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'going', 'then', 'also', 'and', 'but', 'so', 'if', 'when', 'where', 'there', 'here'};
 
 String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
@@ -71,7 +71,12 @@ String _unitLabel(String s) {
 
 String? _findPlace(String t) {
   for (final m in _place.allMatches(t)) {
-    final p = m[1]!.trim(), first = p.split(RegExp(r'\s+')).first.toLowerCase();
+    final words = m[1]!.trim().split(RegExp(r'\s+'));
+    // drop trailing words that are really the start of the next clause ("Haridwar Will")
+    while (words.length > 1 && _notPlace.contains(words.last.toLowerCase())) {
+      words.removeLast();
+    }
+    final p = words.join(' '), first = words.first.toLowerCase();
     if (_notPlace.contains(first)) continue;
     if (RegExp('^$_mon\$', caseSensitive: false).hasMatch(first) || RegExp('^${_day.pattern}\$', caseSensitive: false).hasMatch(first)) continue;
     return p;
@@ -191,16 +196,20 @@ List<(String, String)> pairs(String body) => [
           if (l.contains(':')) (l.substring(0, l.indexOf(':')).trim(), l.substring(l.indexOf(':') + 1).trim()) else ('', l.trim()),
     ];
 
+/// One line about a template block, for tiles. The title (or the poster headline) is already shown
+/// as the tile's title, so it is never repeated here.
 String tplSummary(Kind k, String title, String body) {
-  if (k == Kind.quote) return '“$body”${title.isEmpty ? '' : ' — $title'}';
-  if (k == Kind.stat) return '$body${title.isEmpty ? '' : ' · $title'}';
-  if (k == Kind.link) return '${title.isEmpty ? '' : '$title\n'}$body';
+  if (k == Kind.quote) return '“$body”';
+  if (k == Kind.stat || k == Kind.link) return body;
   if (k == Kind.poster) {
     final p = parsePoster(title, body);
-    return [if (p.head.isNotEmpty) p.head, if (p.big != null) '${p.big!.label}: ${p.big!.value}', for (final f in p.facts.take(4)) '${f.label}: ${f.value}'].join(' · ');
+    return [if (p.big != null) '${p.big!.label}: ${p.big!.value}', for (final f in p.facts.take(4)) '${f.label}: ${f.value}', if (p.facts.isEmpty && p.big == null && p.rest.isNotEmpty) p.rest.replaceAll('\n', ' ')].join(' · ');
   }
   return body.replaceAll('\n', ' · ');
 }
+
+/// The headline a tile should show for a template block (smart layout derives one when there is no title).
+String tplHead(Kind k, String title, String body) => k == Kind.poster ? parsePoster(title, body).head : title;
 
 // ---------- measuring and drawing (both use the same numbers) ----------
 
@@ -209,28 +218,21 @@ TextStyle _serif(double s, Color c, {FontWeight w = FontWeight.w400, double h = 
     w.value >= 600 ? sans(s, color: c, wght: w.value.toDouble(), h: h) : serif(s, color: c, italic: st == FontStyle.italic, h: h);
 TextStyle _caps(double s, Color c) => TextStyle(fontSize: s, fontWeight: FontWeight.w700, letterSpacing: .8, height: 1.25, color: c);
 
-/// Zine headline: wide heavy sans with the last word in italic serif.
-TextSpan _headSpan(String head, double s, Color c) {
-  final base = sans(s, color: c, wght: 820, wdth: 118, h: 1.0, ls: -s * .02), i = head.lastIndexOf(' ');
-  if (i < 0) return TextSpan(text: head, style: base);
-  return TextSpan(style: base, children: [
-    TextSpan(text: head.substring(0, i + 1)),
-    TextSpan(text: head.substring(i + 1), style: serif(s * 1.1, color: c, italic: true, h: 1.0)),
-  ]);
-}
+/// Zine headline: wide heavy sans.
+TextSpan _headSpan(String head, double s, Color c) => TextSpan(text: head, style: sans(s, color: c, wght: 820, wdth: 118, h: 1.0, ls: -s * .02));
 
 /// Height of a template card on the canvas (capped; long content is ellipsized).
 Lay tplLay(Kind k, String title, String body, double wpx, double cw) {
   final u = cw / wide, o = u * .012, pad = u * .035, inner = wpx - 2 * o - 2 * pad, rowH = u * .1, frame = 2 * o + 2 * pad;
   double text(String s, TextStyle st, int? lines) => (TextPainter(text: TextSpan(text: s, style: st), textDirection: TextDirection.ltr, maxLines: lines)..layout(maxWidth: inner)).height;
   if (k == Kind.quote) {
-    final line = u * .05 * 1.28, base = frame + u * .112 + (title.isEmpty ? 0.0 : u * .02 + u * .036 * 1.25);
-    var h = base + text(body, _serif(u * .05, Colors.black, h: 1.28, st: FontStyle.italic), null), lines = 0;
-    if (h > wpx) {
-      h = max(wpx, base + line);
-      lines = max(1, ((h - base) / line).floor());
+    final base = frame + u * .112 + (title.isEmpty ? 0.0 : u * .02 + u * .036 * 1.25), maxText = max(wpx * 1.15 - base, u * .1);
+    var fs = u * .055;
+    double th(double f) => text(body, _serif(f, Colors.black, h: 1.28, st: FontStyle.italic), null);
+    while (fs > u * .03 && th(fs) > maxText) {
+      fs -= u * .003;
     }
-    return Lay(h, lines, 0, 0);
+    return Lay(base + th(fs), 0, 0, 0, fs: fs);
   }
   if (k == Kind.stat) return Lay(frame + u * .2, 0, 0, 0);
   if (k == Kind.link) return Lay(frame + u * .22, 0, 0, 0);
@@ -269,7 +271,7 @@ Widget tplBody(Kind k, String title, String body, double u, Color fg, ColorSchem
   if (k == Kind.quote) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('“', style: _serif(u * .16, fg.withAlpha(150), h: .7)),
-      Text(body, maxLines: (lay?.lines ?? 0) == 0 ? null : lay!.lines, overflow: TextOverflow.ellipsis, style: _serif(u * .05, fg, h: 1.28, st: FontStyle.italic)),
+      SizedBox(width: double.infinity, child: Text(body, softWrap: true, style: _serif((lay?.fs ?? 0) > 0 ? lay!.fs : u * .055, fg, h: 1.28, st: FontStyle.italic))),
       if (title.isNotEmpty) Padding(padding: EdgeInsets.only(top: u * .02), child: Text('— $title', style: TextStyle(fontSize: u * .036, height: 1.25, color: fg.withAlpha(200)))),
     ]);
   }
