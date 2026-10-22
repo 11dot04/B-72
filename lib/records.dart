@@ -1,25 +1,26 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'cutout.dart';
 import 'main.dart' show Kind;
-import 'sticker.dart';
+import 'popout.dart';
 import 'store.dart';
 import 'type.dart';
 import 'web.dart';
 
 /// Templates that hold structured data and can be filled from the web.
-bool isRec(Kind k) => k == Kind.film || k == Kind.book || k == Kind.track || k == Kind.recipe || k == Kind.link;
+bool isRec(Kind k) => k == Kind.film || k == Kind.track || k == Kind.recipe || k == Kind.link || k == Kind.book;
 
 const recMeta = {
   Kind.film: ('Film', Icons.movie_outlined),
   Kind.track: ('Track', Icons.music_note_outlined),
   Kind.recipe: ('Recipe', Icons.restaurant_menu),
-  Kind.book: ('Book', Icons.menu_book_outlined),
   Kind.link: ('Link', Icons.link),
+  Kind.book: ('Book', Icons.menu_book_outlined),
 };
 
-/// Canvas card height / width.
-double recAspect(Kind k) => switch (k) { Kind.film || Kind.book => 1.5, Kind.track => 1.0, Kind.recipe => 1.15, _ => .85 };
+/// Canvas card height / width. Music is always a square; films and books are portrait rectangles (2:3).
+double recAspect(Kind k) => switch (k) { Kind.film => 1.5, Kind.book => 1.5, Kind.track => 1.0, Kind.recipe => 1.15, _ => .85 };
 
 String _v(Map d, String k) => '${d[k] ?? ''}'.trim();
 bool _has(String? p) => p != null && File(p).existsSync();
@@ -27,8 +28,8 @@ bool _has(String? p) => p != null && File(p).existsSync();
 String recSub(Kind k, Map d) {
   final parts = switch (k) {
     Kind.film => [_v(d, 'year'), _v(d, 'director')],
-    Kind.book => [_v(d, 'author'), _v(d, 'year')],
     Kind.track => [_v(d, 'artist'), _v(d, 'album')],
+    Kind.book => [_v(d, 'author'), _v(d, 'year')],
     Kind.recipe => [if (_v(d, 'time').isNotEmpty && _v(d, 'time') != '0') '${_v(d, 'time')} min', if (_v(d, 'servings').isNotEmpty) 'serves ${_v(d, 'servings')}'],
     _ => [_v(d, 'site')],
   };
@@ -73,7 +74,7 @@ Widget recCard(Kind k, String title, Map d, String? path, double u, ColorScheme 
     Positioned(
       top: u * .035,
       left: u * .035,
-      child: Container(padding: EdgeInsets.all(u * .02), decoration: BoxDecoration(color: Colors.black38, shape: BoxShape.circle), child: Icon(recMeta[k]!.$2, size: u * .045, color: Colors.white)),
+      child: Container(padding: EdgeInsets.all(u * .02), decoration: const BoxDecoration(color: Colors.black38, shape: BoxShape.circle), child: Icon(recMeta[k]!.$2, size: u * .045, color: Colors.white)),
     ),
     if (rating > 0)
       Positioned(
@@ -100,7 +101,11 @@ Widget recSection(BuildContext ctx, Kind k, Block b, ColorScheme cs, double u, b
   Widget notes(String l, String text) => text.isEmpty ? const SizedBox.shrink() : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [label(l), Text(text, style: TextStyle(fontSize: 18, height: 1.45, color: fg))]);
   Widget body;
   if (k == Kind.film || k == Kind.book) {
-    final r = (d['rating'] as num?)?.toInt() ?? 0;
+    final isBook = k == Kind.book, r = (d['rating'] as num?)?.toInt() ?? 0;
+    final meta = isBook
+        ? [v('year'), if (v('pages').isNotEmpty && v('pages') != '0') '${v('pages')} pages', v('genre')]
+        : [v('year'), if (v('runtime').isNotEmpty) '${v('runtime')} min', v('genre')];
+    final by = isBook ? (v('author').isEmpty ? '' : 'By ${v('author')}') : (v('director').isEmpty ? '' : 'Directed by ${v('director')}');
     body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (has) SizedBox(width: u * .38, child: img(2 / 3, r: 22)),
@@ -109,14 +114,13 @@ Widget recSection(BuildContext ctx, Kind k, Block b, ColorScheme cs, double u, b
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             if (showTitle) Text(b.title, style: sans(26, wght: 760, color: fg, h: 1.05)),
             const SizedBox(height: 8),
-            Text([v('year'), if (k == Kind.book && v('pages').isNotEmpty) '${v('pages')} pages', if (k == Kind.film && v('runtime').isNotEmpty) '${v('runtime')} min', v('genre')].where((e) => e.isNotEmpty).join(' · '), style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: fg.withAlpha(200))),
-            if ((k == Kind.book ? v('author') : v('director')).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${k == Kind.book ? 'By' : 'Directed by'} ${k == Kind.book ? v('author') : v('director')}', style: TextStyle(fontSize: 15, color: fg))),
-            if (k == Kind.book && v('status').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: chip(Icons.bookmark_outline, v('status'))),
+            Text(meta.where((e) => e.isNotEmpty).join(' · '), style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: fg.withAlpha(200))),
+            if (by.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(by, style: TextStyle(fontSize: 15, color: fg))),
             if (r > 0) Padding(padding: const EdgeInsets.only(top: 12), child: _stars(r, fg, 26)),
           ]),
         ),
       ]),
-      if (v('overview').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 16), child: Text(v('overview'), maxLines: 6, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, height: 1.4, color: fg.withAlpha(200)))),
+      if (!isBook && v('overview').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 16), child: Text(v('overview'), maxLines: 6, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, height: 1.4, color: fg.withAlpha(200)))),
       notes('YOUR THOUGHTS', b.body),
     ]);
   } else if (k == Kind.track) {
@@ -136,19 +140,11 @@ Widget recSection(BuildContext ctx, Kind k, Block b, ColorScheme cs, double u, b
     ]);
   } else if (k == Kind.recipe) {
     final ing = v('ingredients').split('\n').where((e) => e.trim().isNotEmpty).toList(), st = v('steps').split('\n').where((e) => e.trim().isNotEmpty).toList();
+    final cut = cutPath(b);
     body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      if (has && _has('${d['cut'] ?? ''}'))
-        ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: AspectRatio(
-            aspectRatio: 4 / 3,
-            child: Stack(fit: StackFit.expand, children: [
-              Image.file(File(p!), fit: BoxFit.cover, cacheWidth: 1000),
-              Positioned(left: 18, top: 14, right: 18, child: FitTitle(b.title, color: Colors.white, maxHeight: 150, variant: vOf(b.id))),
-              Image.file(File('${d['cut']}'), fit: BoxFit.cover, cacheWidth: 1000),
-            ]),
-          ),
-        )
+      // a dish with a clear subject breaks out of an expressive shape; otherwise a plain photo
+      if (has && cut != null)
+        SizedBox(height: u * 1.0, child: PopOut(photo: p!, cut: cut, fill: cs.primary, tint: cs.primary.withAlpha(120), shape: seedOf(b.id)))
       else if (has)
         img(4 / 3),
       title(b.title),
@@ -208,8 +204,8 @@ Widget recSection(BuildContext ctx, Kind k, Block b, ColorScheme cs, double u, b
 
 const _fields = {
   Kind.film: [('year', 'Year'), ('director', 'Director'), ('genre', 'Genre'), ('runtime', 'Runtime (min)')],
-  Kind.book: [('author', 'Author'), ('year', 'Year'), ('pages', 'Pages'), ('genre', 'Genre')],
   Kind.track: [('artist', 'Artist'), ('album', 'Album'), ('year', 'Year'), ('genre', 'Genre')],
+  Kind.book: [('author', 'Author'), ('year', 'Year'), ('genre', 'Genre'), ('pages', 'Pages')],
   Kind.recipe: [('time', 'Time (min)'), ('servings', 'Serves')],
 };
 
@@ -250,7 +246,7 @@ class _RecordFormState extends State<RecordForm> {
     final q = (ctrl['title']?.text ?? b.title).trim();
     if (q.isEmpty) return;
     setState(() => busy = true);
-    final res = k == Kind.film ? await searchFilms(q) : k == Kind.book ? await searchBooks(q) : await searchTracks(q);
+    final res = switch (k) { Kind.film => await searchFilms(q), Kind.book => await searchBooks(q), _ => await searchTracks(q) };
     if (!mounted) return;
     setState(() => busy = false);
     if (res.isEmpty) return snack("Nothing found. Check the title and your connection.");
@@ -295,9 +291,8 @@ class _RecordFormState extends State<RecordForm> {
     final path = await saveImage(r['image'] as String?, widget.store.dir);
     if (path != null) {
       b.path = path;
-      final c = await cutoutFrame(path, widget.store.dir);
-      if (c != null) b.data['cut'] = c;
-      b.data['cutTried'] = true;
+      b.data.remove('cut');
+      ensureCut(b, widget.store); // cut the dish out in the background so the title can sit behind it
     }
     if (mounted) setState(() => busy = false);
   }
@@ -370,13 +365,6 @@ class _RecordFormState extends State<RecordForm> {
             field('ingredients', 'Ingredients (one per line)', lines: 4),
             field('steps', 'Steps (one per line)', lines: 4),
           ],
-          if (k == Kind.book)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Wrap(spacing: 8, children: [
-                for (final s in const ['Want to read', 'Reading', 'Read']) ChoiceChip(label: Text(s), selected: b.data['status'] == s, onSelected: (_) => setState(() => b.data['status'] = b.data['status'] == s ? '' : s)),
-              ]),
-            ),
           field(k == Kind.link ? 'note' : 'body', k == Kind.film || k == Kind.book ? 'Your thoughts' : k == Kind.track ? 'Why you love it' : 'Notes', lines: 2),
         ]),
       ),
