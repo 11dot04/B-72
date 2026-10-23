@@ -13,8 +13,6 @@ android {
             minorApiLevel = 1
         }
     }
-}
-
 
     defaultConfig {
         applicationId = "com.b72.keep_canvas"
