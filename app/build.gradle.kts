@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
@@ -37,8 +36,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
-
-kotlin { jvmToolchain(17) }
 
 dependencies {
     val compose = "1.13.0-beta02"
