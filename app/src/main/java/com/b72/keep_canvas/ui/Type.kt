@@ -11,19 +11,26 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.R
 
+private val families = HashMap<String, FontFamily>()
+
 /**
- * Google Sans Flex is one variable file; each call picks a point on its axes.
- * wght 1..1000, wdth 25..151, ROND 0..100, opsz 6..144, slnt -10..0.
+ * Google Sans Flex is one variable file; each call picks a point on its axes and is cached,
+ * because building a typeface per frame is what made the old animation stutter.
+ * wght 1..1000, wdth 25..151, ROND 0..100, opsz 6..144, GRAD, slnt -10..0.
  */
-fun flex(wght: Int = 400, wdth: Float = 100f, rond: Float = 0f, opsz: Float? = null, slnt: Float = 0f): FontFamily {
-    val s = buildList {
-        add(FontVariation.weight(wght))
-        add(FontVariation.width(wdth))
-        add(FontVariation.Setting("ROND", rond))
-        add(FontVariation.slant(slnt))
-        if (opsz != null) add(FontVariation.Setting("opsz", opsz))
+fun flex(wght: Int = 400, wdth: Float = 100f, rond: Float = 0f, slnt: Float = 0f, grade: Float = 0f, opsz: Float? = null): FontFamily {
+    val key = "$wght|${wdth.toInt()}|${rond.toInt()}|${slnt.toInt()}|${grade.toInt()}|${opsz?.toInt()}"
+    return families.getOrPut(key) {
+        val s = buildList {
+            add(FontVariation.weight(wght))
+            add(FontVariation.width(wdth.coerceIn(25f, 151f)))
+            add(FontVariation.Setting("ROND", rond))
+            add(FontVariation.Setting("GRAD", grade))
+            add(FontVariation.slant(slnt))
+            if (opsz != null) add(FontVariation.Setting("opsz", opsz.coerceIn(6f, 144f)))
+        }
+        FontFamily(Font(R.font.googlesansflex, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
     }
-    return FontFamily(Font(R.font.googlesansflex, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
 }
 
 val Serif = FontFamily(
