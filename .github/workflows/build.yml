@@ -16,83 +16,33 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: subosito/flutter-action@v2
+      - uses: android-actions/setup-android@v3
+
+      - name: Android platform
+        run: yes | sdkmanager "platforms;android-37" "build-tools;36.0.0" || true
+
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          channel: stable
-          cache: true
+          gradle-version: "8.13"
 
-      # The repo only holds lib/, keystore/ and pubspec.yaml; generate the Android
-      # project files in CI, then restore our own files.
-      - name: Generate Android scaffolding
+      # Google Sans Flex (variable) and Instrument Serif go into res/font; a missing file must fail the build.
+      - name: Fetch fonts
         run: |
-          cp lib/main.dart /tmp/main.dart
-          cp pubspec.yaml /tmp/pubspec.yaml
-          flutter create --platforms=android --project-name keep_canvas --org com.b72 .
-          cp /tmp/main.dart lib/main.dart
-          cp /tmp/pubspec.yaml pubspec.yaml
-          rm -rf test
-          # ML Kit needs a higher minSdk than some Flutter defaults
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle* || true
-          python3 - << 'PY'
-          import glob, re
-          # ask Google Play services to fetch the subject-segmentation model; allow opening links
-          p = 'android/app/src/main/AndroidManifest.xml'
-          s = open(p).read()
-          if 'subject_segment' not in s:
-              s = s.replace('</application>', '    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>', 1)
-          if '<uses-permission android:name="android.permission.INTERNET"' not in s:
-              s = s.replace('<application', '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
-          if 'android.intent.action.VIEW' not in s:
-              s = s.replace('<application', '<queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n    <application', 1)
-          open(p, 'w').write(s)
-
-          # Sign with the committed keystore so every build installs over the last one.
-          g = glob.glob('android/app/build.gradle*')[0]
-          s = open(g).read()
-          if 'b72.jks' not in s:
-              if g.endswith('.kts'):
-                  cfg = ('    signingConfigs {\n        getByName("debug") {\n            storeFile = file("../../keystore/b72.jks")\n'
-                         '            storePassword = "b72-sideload"\n            keyAlias = "b72"\n            keyPassword = "b72-sideload"\n        }\n    }\n')
-              else:
-                  cfg = ('    signingConfigs {\n        debug {\n            storeFile file("../../keystore/b72.jks")\n'
-                         '            storePassword "b72-sideload"\n            keyAlias "b72"\n            keyPassword "b72-sideload"\n        }\n    }\n')
-              s = re.sub(r'(^android\s*\{\s*\n)', lambda m: m.group(1) + cfg, s, count=1, flags=re.M)
-              open(g, 'w').write(s)
-          PY
-
-      - name: Fetch fonts (Google Sans Flex, Instrument Serif)
-        run: |
-          mkdir -p assets/fonts
-          get() { curl -fsSL "$1" -o "assets/fonts/$2" && echo "got $2" || { rm -f "assets/fonts/$2"; echo "MISSING $2"; }; }
+          set -e
+          d=app/src/main/res/font
+          mkdir -p $d
           B=https://raw.githubusercontent.com/google/fonts/main/ofl
-          get "$B/instrumentserif/InstrumentSerif-Regular.ttf" InstrumentSerif-Regular.ttf
-          get "$B/instrumentserif/InstrumentSerif-Italic.ttf" InstrumentSerif-Italic.ttf
-          get "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" GoogleSansFlex.ttf
-          python3 - << 'PY'
-          import os
-          s = open('pubspec.yaml').read()
-          fam = []
-          if os.path.exists('assets/fonts/GoogleSansFlex.ttf'):
-              fam.append('    - family: GoogleSansFlex\n      fonts:\n        - asset: assets/fonts/GoogleSansFlex.ttf\n')
-          sf = [f for f in ('Regular', 'Italic') if os.path.exists('assets/fonts/InstrumentSerif-%s.ttf' % f)]
-          if sf:
-              body = ''.join('        - asset: assets/fonts/InstrumentSerif-%s.ttf\n%s' % (f, '          style: italic\n' if f == 'Italic' else '') for f in sf)
-              fam.append('    - family: InstrumentSerif\n      fonts:\n' + body)
-          if fam and 'fonts:' not in s.split('flutter:')[-1]:
-              s = s.rstrip('\n') + '\n  fonts:\n' + ''.join(fam)
-          open('pubspec.yaml', 'w').write(s)
-          PY
+          curl -fsSL "$B/instrumentserif/InstrumentSerif-Regular.ttf" -o $d/instrumentserif_regular.ttf
+          curl -fsSL "$B/instrumentserif/InstrumentSerif-Italic.ttf" -o $d/instrumentserif_italic.ttf
+          curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
+          ls -l $d
 
-      # Packages the new code needs; a no-op for any pubspec already lists.
-      - run: flutter pub add http url_launcher google_mlkit_commons google_mlkit_subject_segmentation
-      - run: flutter pub get
-      # TMDB_KEY is a repository secret (Settings > Secrets and variables > Actions); empty is fine, films then use iTunes/Wikipedia.
-      - name: Build APK
+      - name: Build
         env:
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
-        run: flutter build apk --debug --target-platform android-arm64 --dart-define=TMDB_KEY="$TMDB_KEY"
+        run: gradle :app:assembleDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
           name: b72-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
