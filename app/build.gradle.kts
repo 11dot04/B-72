@@ -7,7 +7,14 @@ plugins {
 android {
     // Same id as the Flutter build, so this installs over it and can read its files.
     namespace = "com.b72.keep_canvas"
-    compileSdk = "37.1"
+    // Defines the precise 37.1 minor API level
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
+}
+
 
     defaultConfig {
         applicationId = "com.b72.keep_canvas"
