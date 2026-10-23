@@ -49,3 +49,20 @@ data class Library(
     /** Stickers are carried through untouched until the canvas is ported. */
     val stickers: List<JsonElement> = emptyList(),
 )
+
+// ---- helpers for the loose `data` map the Flutter app used (cut-outs, ratings, record fields) ----
+fun Block.str(key: String): String? = (data[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+fun Block.dbl(key: String): Double? = (data[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.isString }?.content?.toDoubleOrNull()
+fun Block.nums(key: String): List<Double>? =
+    (data[key] as? kotlinx.serialization.json.JsonArray)?.map { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0 }
+
+/** Path of the transparent subject cut-out, if the Flutter build made one and the file is still there. */
+fun Block.cutPath(): String? = str("cut")?.takeIf { it.isNotEmpty() && java.io.File(it).exists() }
+fun Block.cutFrac(): Double = if (cutPath() == null) 0.0 else (dbl("cutFrac") ?: .3)
+
+/** Stable across runs and identical to the Flutter app's hash, so each note keeps its look. */
+fun seedOf(s: String): Int {
+    var h = 7L
+    for (c in s) h = (h * 31 + c.code) and 0x7fffffffL
+    return h.toInt()
+}
