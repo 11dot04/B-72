@@ -22,7 +22,13 @@ data class Block(
     val items: List<String> = emptyList(),
 ) {
     val kind: Kind get() = Kind.entries.getOrElse(k) { Kind.Text }
+
+    /** Checklist rows: older notes kept them in `body` (one per line), newer ones in `items`. */
+    val checkItems: List<String> get() = items.ifEmpty { body.lines().filter { it.isNotBlank() } }
 }
+
+fun newBlock(kind: Kind, id: String, title: String = "", body: String = "", path: String? = null, aspect: Double = 1.0, items: List<String> = emptyList()) =
+    Block(id = id, k = kind.ordinal, title = title, body = body, path = path, aspect = aspect, items = items)
 
 @Serializable
 data class Note(
