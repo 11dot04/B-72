@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Star
@@ -83,7 +84,7 @@ private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "ratin
  * you scroll; one photo with one clear subject sits in a Material shape and the subject breaks out at the top.
  */
 @Composable
-fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit) {
+fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
     var tint by remember { mutableStateOf(true) }
@@ -102,7 +103,7 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit) {
     val photos = note.photos
     val hero = if (photos.size == 1 && canPopOut(photos[0])) photos[0] else null
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
-    val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.items }
+    val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
     val created = note.id.toLongOrNull()?.let { Instant.ofEpochMilli(it / 1000).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM yyyy")) } ?: "-"
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -233,8 +234,11 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit) {
             note.tags.firstOrNull()?.let { t ->
                 Text(
                     t, style = MaterialTheme.typography.labelLarge, color = pal.fg,
-                    modifier = Modifier.padding(end = 12.dp).clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).padding(horizontal = 14.dp, vertical = 8.dp),
                 )
+            }
+            IconButton(onClick = onEdit, colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(containerColor = pal.fg, contentColor = pal.bg)) {
+                Icon(Icons.Rounded.Edit, "Edit")
             }
         }
     }

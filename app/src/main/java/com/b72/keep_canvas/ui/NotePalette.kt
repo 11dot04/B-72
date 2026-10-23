@@ -29,7 +29,7 @@ private fun tone(argb: Int, l: Float, sMax: Float): Color {
 fun rememberNotePalette(note: Note): NotePalette {
     val cs = MaterialTheme.colorScheme
     val dark = isSystemInDarkTheme()
-    val seed by produceState<Int?>(null, note.id) {
+    val seed by produceState<Int?>(null, note.cover?.path) {
         val p = note.cover?.path ?: return@produceState
         val bmp = Images.load(p, 160) ?: return@produceState
         value = withContext(Dispatchers.Default) {

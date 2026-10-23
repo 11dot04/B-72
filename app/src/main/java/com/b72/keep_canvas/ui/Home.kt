@@ -2,7 +2,24 @@
 
 package com.b72.keep_canvas.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,7 +79,10 @@ private fun tileRatio(n: Note): Double {
 }
 
 @Composable
-fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit) {
+fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit) {
+  var menu by remember { mutableStateOf(false) }
+  BackHandler(menu) { menu = false }
+  Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
         LazyVerticalStaggeredGrid(
             state = grid,
@@ -71,7 +91,7 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = inner.calculateTopPadding() + 8.dp,
-                bottom = inner.calculateBottomPadding() + 24.dp,
+                bottom = inner.calculateBottomPadding() + 112.dp,
             ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalItemSpacing = 8.dp,
@@ -93,7 +113,35 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
             }
         }
     }
+
+    if (menu) Box(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .32f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = false },
+    )
+    FloatingActionButtonMenu(
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp),
+        expanded = menu,
+        button = {
+            ToggleFloatingActionButton(checked = menu, onCheckedChange = { menu = it }) {
+                val icon by remember { derivedStateOf { if (checkedProgress > .5f) Icons.Rounded.Close else Icons.Rounded.Add } }
+                Icon(icon, contentDescription = "Add", modifier = Modifier.animateIcon({ checkedProgress }))
+            }
+        },
+    ) {
+        for ((kind, label, icon) in ADD_ITEMS) {
+            FloatingActionButtonMenuItem(onClick = { menu = false; onAdd(kind) }, icon = { Icon(icon, null) }, text = { Text(label) })
+        }
+    }
+  }
 }
+
+private val ADD_ITEMS = listOf(
+    Triple(Kind.Text, "Note", Icons.Rounded.Edit),
+    Triple(Kind.Photo, "Photos", Icons.Rounded.AddPhotoAlternate),
+    Triple(Kind.Checklist, "Checklist", Icons.Rounded.Checklist),
+    Triple(Kind.Quote, "Quote", Icons.Rounded.FormatQuote),
+    Triple(Kind.Link, "Link", Icons.Rounded.Link),
+)
 
 @Composable
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
