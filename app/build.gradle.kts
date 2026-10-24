@@ -20,6 +20,8 @@ android {
         targetSdk = 36
         versionCode = 100    // above the Flutter build's, so the update is accepted
         versionName = "2.0.0"
+        // free key from themoviedb.org, stored as the TMDB_KEY repository secret; empty is fine
+        buildConfigField("String", "TMDB_KEY", "\"${System.getenv("TMDB_KEY") ?: ""}\"")
     }
 
     signingConfigs {
@@ -35,7 +37,10 @@ android {
         debug { signingConfig = signingConfigs.getByName("debug") }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
