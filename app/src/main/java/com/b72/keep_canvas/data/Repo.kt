@@ -28,6 +28,26 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         commit(l.copy(notes = notes))
     }
 
+    /** Reads the text out of every photo that has not been read yet and stores it with the photo, one note write each. */
+    suspend fun indexPhotos() {
+        val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { it.kind == Kind.Photo && it.path != null && "ocr" !in it.data }.map { n.id to it.id } }
+        for ((nid, bid) in todo) {
+            val b = note(nid)?.blocks?.firstOrNull { it.id == bid } ?: continue
+            val text = Ocr.read(ctx, b.path!!) ?: continue
+            val n = note(nid) ?: continue
+            upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = it.data + ("ocr" to kotlinx.serialization.json.JsonPrimitive(text))) else it }))
+        }
+    }
+
+    /** Adds the notes of a restored backup that are not here yet; existing notes are never overwritten. Returns how many were added. */
+    fun merge(lib: Library): Int {
+        val cur = loaded?.library ?: return 0
+        val have = cur.notes.map { it.id }.toSet()
+        val fresh = lib.notes.filter { it.id !in have }
+        if (fresh.isNotEmpty()) commit(cur.copy(notes = cur.notes + fresh))
+        return fresh.size
+    }
+
     /** Several notes in one write (the canvas stores every card it had to move at once). */
     fun upsertAll(ns: List<Note>) {
         val l = loaded?.library ?: return
