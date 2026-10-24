@@ -160,7 +160,7 @@ private class EditState(n: Note?, initial: Kind?, tag: String?) {
 }
 
 @Composable
-fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, onDone: (deleted: Boolean) -> Unit) {
+fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, share: com.b72.keep_canvas.data.Share? = null, onDone: (deleted: Boolean) -> Unit) {
     val old = remember { noteId?.let { repo.note(it) } }
     val st = remember { EditState(old, initial, tag) }
     val startSig = remember { st.sig() }
@@ -181,7 +181,16 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, onD
         }
     }
     fun addPhotos() = pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-    LaunchedEffect(Unit) { if (old == null && initial == Kind.Photo) addPhotos() }
+    LaunchedEffect(Unit) { if (old == null && initial == Kind.Photo && share == null) addPhotos() }
+    LaunchedEffect(share?.token) {
+        if (share != null && old == null) {
+            if (share.title.isNotEmpty()) st.title = share.title
+            if (share.text.isNotEmpty()) st.body = share.text
+            busy = true
+            for (u in share.uris) repo.importPhoto(u, st.fresh())?.let { st.photos.add(it) }
+            busy = false
+        }
+    }
 
     fun close() { if (st.sig() != startSig) askDiscard = true else onDone(false) }
     BackHandler { close() }
@@ -199,6 +208,8 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, onD
                 st.recs.add(r)
             }
             busy = false
+            // a note that is only a shared link is just the link card
+            if (st.recs.any { it.kind == Kind.Link && it.body == st.body.trim() }) st.body = ""
             repo.upsert(st.build(old))
             onDone(false)
         }

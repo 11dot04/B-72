@@ -32,18 +32,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
-fun App() {
+fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { Repo(ctx.applicationContext, scope) }
     LaunchedEffect(Unit) { repo.init() }
     val loaded = repo.loaded
+    // photos that have not been read yet are read once, in the background, so search can find their text
+    val unread = loaded?.library?.notes?.sumOf { n -> n.blocks.count { it.kind == Kind.Photo && it.path != null && "ocr" !in it.data } } ?: 0
+    LaunchedEffect(unread) { if (unread > 0) repo.indexPhotos() }
+    // null = no editor; (null, kind) = a new note; (id, null) = editing that note
+    var editing by remember { mutableStateOf<Pair<String?, Kind?>?>(null) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     // the tag whose canvas is showing; a note opened from it returns here
     var board by rememberSaveable { mutableStateOf<String?>(null) }
     var editTag by remember { mutableStateOf<String?>(null) }
+    var shareIn by remember { mutableStateOf<com.b72.keep_canvas.data.Share?>(null) }
+    // something shared from another app opens a new note, ready to save
+    LaunchedEffect(share) {
+        if (share != null) { shareIn = share; editTag = null; editing = null to null; onShareHandled() }
+    }
     // null = no editor; (null, kind) = a new note; (id, null) = editing that note
-    var editing by remember { mutableStateOf<Pair<String?, Kind?>?>(null) }
     val grid = rememberLazyStaggeredGridState()
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     BackHandler((open != null || board != null) && editing == null) { if (open != null) open = null else board = null }
@@ -64,7 +73,7 @@ fun App() {
                     onBack = { board = null }, onOpen = { open = it },
                     onAdd = { editTag = tag; editing = null to null },
                 )
-                else HomeScreen(loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it })
+                else HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it })
             }
         }
         AnimatedVisibility(
@@ -78,7 +87,8 @@ fun App() {
             val target = hold.v
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                 target?.let { (id, kind) ->
-                    Editor(repo, id, kind, tag = editTag) { deleted ->
+                    Editor(repo, id, kind, tag = editTag, share = shareIn) { deleted ->
+                        shareIn = null
                         if (deleted) open = null
                         editing = null
                     }

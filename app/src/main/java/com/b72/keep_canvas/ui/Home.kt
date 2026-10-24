@@ -10,6 +10,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MoreVert
+import com.b72.keep_canvas.data.Repo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Link
@@ -28,11 +33,15 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.rounded.Search
+import com.b72.keep_canvas.data.matchesQuery
+import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -80,8 +89,11 @@ private fun tileRatio(n: Note): Double {
 }
 
 @Composable
-fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}) {
+fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}) {
   var menu by remember { mutableStateOf(false) }
+  var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+  val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
+  val shown = remember(loaded?.library, q) { loaded?.library?.notes.orEmpty().asReversed().filter { q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q) } }
   BackHandler(menu) { menu = false }
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
@@ -99,7 +111,10 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
         ) {
             item(span = StaggeredGridItemSpan.FullLine) {
                 Column(Modifier.padding(top = 24.dp, bottom = 16.dp)) {
-                    Text("Collection", style = flexStyle(44.sp, wght = 700, wdth = 112f, rond = 40f), color = MaterialTheme.colorScheme.onSurface)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Collection", style = flexStyle(44.sp, wght = 700, wdth = 112f, rond = 40f), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                        BackupMenu(repo)
+                    }
                     val line = when {
                         loaded == null -> "Loading…"
                         loaded.error != null -> loaded.error
@@ -107,6 +122,17 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
                         else -> "${loaded.library.notes.size} notes"
                     }
                     Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    androidx.compose.material3.TextField(
+                        q, { q = it }, Modifier.fillMaxWidth().padding(top = 16.dp), singleLine = true,
+                        placeholder = { Text("Search notes, tags and text in photos") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                        trailingIcon = { if (q.isNotEmpty()) androidx.compose.material3.IconButton({ q = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
+                        shape = RoundedCornerShape(28.dp),
+                        colors = androidx.compose.material3.TextFieldDefaults.colors(
+                            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                    )
                     // every tag is the door to its canvas
                     val tags = remember(loaded?.library) {
                         loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedBy { it.key.lowercase() }
@@ -119,7 +145,10 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
                 }
             }
             if (loaded != null) {
-                items(loaded.library.notes.asReversed(), key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
+                items(shown, key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
+                if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
+                    Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+                }
             }
         }
     }
@@ -205,3 +234,32 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
 }
 
 private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % n
+
+/** Export and restore the whole collection as one zip, through the system file picker. */
+@Composable
+private fun BackupMenu(repo: Repo) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    fun say(t: String) = android.widget.Toast.makeText(ctx, t, android.widget.Toast.LENGTH_LONG).show()
+    val save = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val lib = repo.loaded?.library
+        if (uri != null && lib != null) scope.launch {
+            val ok = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.openOutputStream(uri)!!.use { com.b72.keep_canvas.data.Backup.export(lib, it) } }.isSuccess }
+            say(if (ok) "Backup saved" else "Could not save the backup")
+        }
+    }
+    val load = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val lib = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.openInputStream(uri)!!.use { com.b72.keep_canvas.data.Backup.read(ctx, it) } }.getOrNull() }
+            say(if (lib == null) "That is not a B-72 backup" else "Restored ${repo.merge(lib)} new notes")
+        }
+    }
+    Box {
+        androidx.compose.material3.IconButton({ open = true }) { Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More") }
+        androidx.compose.material3.DropdownMenu(open, { open = false }) {
+            androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
+            androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
+        }
+    }
+}

@@ -17,7 +17,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.graphics.shapes.RoundedPolygon
@@ -86,7 +88,7 @@ private fun RoundedPolygon.pathIn(dst: Rect, stretch: Boolean): Path {
     return p
 }
 
-private fun DrawScope.drawCover(img: ImageBitmap, filter: ColorFilter?) {
+private fun DrawScope.drawCover(img: ImageBitmap, filter: ColorFilter?, blend: BlendMode = BlendMode.SrcOver) {
     val ia = img.width.toFloat() / img.height
     val ta = size.width / size.height
     val sw: Float
@@ -98,6 +100,7 @@ private fun DrawScope.drawCover(img: ImageBitmap, filter: ColorFilter?) {
         srcSize = IntSize(sw.toInt().coerceAtLeast(1), sh.toInt().coerceAtLeast(1)),
         dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)),
         colorFilter = filter,
+        blendMode = blend,
     )
 }
 
@@ -118,6 +121,17 @@ fun PopOut(block: Block, fill: Color, tint: Color?, shapeSeed: Int, modifier: Mo
         val open = Path.combine(PathOperation.Union, region, Path().apply { addRect(Rect(0f, 0f, w, top)) })
         drawPath(region, fill)
         photo?.let { clipPath(region) { drawCover(it, filter) } }
-        cut?.let { clipPath(open) { drawCover(it, filter) } }
+        // A Color-blend tint also paints transparent pixels, which showed up as a grey slab above the shape.
+        // So the tinted subject is drawn in its own layer and then cut back to the subject's own alpha.
+        cut?.let { c ->
+            clipPath(open) {
+                drawIntoCanvas { cv ->
+                    cv.saveLayer(Rect(0f, 0f, w, h), Paint())
+                    drawCover(c, filter)
+                    if (filter != null) drawCover(c, null, BlendMode.DstIn)
+                    cv.restore()
+                }
+            }
+        }
     }
 }
