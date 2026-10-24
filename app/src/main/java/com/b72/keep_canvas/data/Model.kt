@@ -40,6 +40,7 @@ data class Note(
     /** First block that has a title, else the first line of a text block. */
     val title: String
         get() = blocks.firstOrNull { it.kind != Kind.Checklist && it.title.isNotBlank() }?.title
+            ?: blocks.firstOrNull { it.kind == Kind.Poster }?.let { tplHead(Kind.Poster, it.title, it.body) }?.takeIf { it.isNotBlank() }
             ?: blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body?.lineSequence()?.first()?.take(80)
             ?: ""
 
@@ -71,4 +72,30 @@ fun seedOf(s: String): Int {
     var h = 7L
     for (c in s) h = (h * 31 + c.code) and 0x7fffffffL
     return h.toInt()
+}
+
+/** Kinds that hold structured data and can be filled from the web. */
+val RECORD_KINDS = setOf(Kind.Film, Kind.Track, Kind.Recipe, Kind.Link, Kind.Book)
+
+/** Canvas/tile height / width: music is always square, films and books are 2:3 portraits. */
+fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1.0; Kind.Recipe -> 1.15; else -> .85 }
+
+/** Data keys that belong to the image, not to the record's text fields. */
+val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac")
+
+fun Block.field(key: String): String = when (val v = data[key]) {
+    is kotlinx.serialization.json.JsonPrimitive -> v.content.trim()
+    else -> ""
+}
+
+/** The one-line subtitle under a record's title. */
+fun Block.recSub(): String {
+    val parts = when (kind) {
+        Kind.Film -> listOf(field("year"), field("director"))
+        Kind.Track -> listOf(field("artist"), field("album"))
+        Kind.Book -> listOf(field("author"), field("year"))
+        Kind.Recipe -> listOfNotNull(field("time").takeIf { it.isNotEmpty() && it != "0" }?.let { "$it min" }, field("servings").takeIf { it.isNotEmpty() }?.let { "serves $it" })
+        else -> listOf(field("site"))
+    }
+    return parts.filter { it.isNotEmpty() }.joinToString(" · ")
 }

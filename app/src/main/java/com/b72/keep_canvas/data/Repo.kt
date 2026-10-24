@@ -28,6 +28,13 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         commit(l.copy(notes = notes))
     }
 
+    /** Several notes in one write (the canvas stores every card it had to move at once). */
+    fun upsertAll(ns: List<Note>) {
+        val l = loaded?.library ?: return
+        val by = ns.associateBy { it.id }
+        commit(l.copy(notes = l.notes.map { by[it.id] ?: it }))
+    }
+
     fun delete(id: String) {
         val l = loaded?.library ?: return
         commit(l.copy(notes = l.notes.filter { it.id != id }))
@@ -53,3 +60,6 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         }.getOrNull()
     }
 }
+
+/** Where downloaded posters, covers and link images are kept. */
+fun imageDir(ctx: Context) = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
