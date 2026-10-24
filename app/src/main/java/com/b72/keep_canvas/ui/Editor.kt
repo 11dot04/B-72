@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +41,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -64,12 +67,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.b72.keep_canvas.data.Block
+import com.b72.keep_canvas.data.Cand
+import com.b72.keep_canvas.data.RECORD_KINDS
 import com.b72.keep_canvas.data.Images
 import com.b72.keep_canvas.data.Kind
 import com.b72.keep_canvas.data.Note
@@ -83,10 +89,9 @@ private class Extra(val kind: Kind, val src: Block) {
     var title by mutableStateOf(src.title)
 }
 
-private val EXTRA_KINDS = setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Link)
-private val RECORD_KINDS = setOf(Kind.Film, Kind.Track, Kind.Recipe, Kind.Book)
+private val EXTRA_KINDS = setOf(Kind.Quote, Kind.Stat, Kind.Info)
 
-private fun label(k: Kind) = when (k) { Kind.Quote -> "Quote"; Kind.Stat -> "Figure"; Kind.Info -> "Info"; Kind.Link -> "Link"; else -> k.name }
+private fun label(k: Kind) = when (k) { Kind.Quote -> "Quote"; Kind.Stat -> "Figure"; Kind.Info -> "Info"; else -> k.name }
 private fun hints(k: Kind) = when (k) {
     Kind.Quote -> "Who said it" to "Quote"
     Kind.Stat -> "What it measures" to "Figure, e.g. 319 ms"
@@ -94,18 +99,19 @@ private fun hints(k: Kind) = when (k) {
     else -> "Title" to "https://..."
 }
 
-private class EditState(n: Note?, initial: Kind?) {
+private class EditState(n: Note?, initial: Kind?, tag: String?) {
     private var c = 0
     fun fresh() = "${System.currentTimeMillis() * 1000}_${c++}"
 
     var title by mutableStateOf("")
     var body by mutableStateOf("")
     var list by mutableStateOf("")
-    var tags by mutableStateOf(n?.tags?.joinToString(", ") ?: "")
+    var tags by mutableStateOf(n?.tags?.joinToString(", ") ?: (tag ?: ""))
     var smart by mutableStateOf(false)
     val photos = mutableStateListOf<Block>()
     val extras = mutableStateListOf<Extra>()
-    /** Blocks this form can't edit yet (films, books, recipes, extra text). They are kept as they are. */
+    val recs = mutableStateListOf<Rec>()
+    /** Blocks this form doesn't edit (extra text blocks). They are kept as they are. */
     val kept = mutableListOf<Block>()
     var bareB: Block? = null
     var textB: Block? = null
@@ -118,7 +124,7 @@ private class EditState(n: Note?, initial: Kind?) {
                 b.kind == Kind.Bare && bareB == null -> { bareB = b; title = b.title }
                 b.kind == Kind.Checklist && listB == null -> { listB = b; list = b.checkItems.joinToString("\n") }
                 b.kind in EXTRA_KINDS -> extras.add(Extra(b.kind, b))
-                b.kind in RECORD_KINDS -> kept.add(b)
+                b.kind in RECORD_KINDS -> recs.add(Rec(b.kind, b))
                 (b.kind == Kind.Text || b.kind == Kind.Poster) && textB == null -> {
                     textB = b; smart = b.kind == Kind.Poster; body = b.body
                     if (title.isEmpty()) title = b.title
@@ -127,11 +133,12 @@ private class EditState(n: Note?, initial: Kind?) {
             }
         }
         if (n == null && initial != null && initial in EXTRA_KINDS) extras.add(Extra(initial, newBlock(initial, fresh())))
+        if (n == null && initial != null && initial in RECORD_KINDS) recs.add(Rec(initial, newBlock(initial, fresh())))
     }
 
     fun filled(e: Extra) = e.title.isNotBlank() || e.body.isNotBlank()
-    fun sig() = listOf(title, body, list, tags, smart, photos.map { it.id }, extras.map { it.title + "|" + it.body }).toString()
-    val empty get() = body.isBlank() && list.isBlank() && photos.isEmpty() && extras.none { filled(it) } && kept.isEmpty()
+    fun sig() = listOf(title, body, list, tags, smart, photos.map { it.id }, extras.map { it.title + "|" + it.body }, recs.map { listOf(it.title, it.body, it.path, it.rating, it.f.toSortedMap().toString()) }).toString()
+    val empty get() = body.isBlank() && list.isBlank() && photos.isEmpty() && extras.none { filled(it) } && recs.none { it.filled } && kept.isEmpty()
 
     fun build(old: Note?): Note {
         val t = title.trim(); val tx = body.trim(); val li = list.trim()
@@ -143,6 +150,7 @@ private class EditState(n: Note?, initial: Kind?) {
                 add(base.copy(k = Kind.Checklist.ordinal, title = base.title.ifEmpty { "List" }, body = li, items = li.lines().filter { it.isNotBlank() }))
             }
             for (e in extras) if (filled(e)) add(e.src.copy(k = e.kind.ordinal, title = e.title.trim(), body = e.body.trim()))
+            for (r in recs) if (r.filled) add(r.block())
             addAll(kept)
             addAll(photos)
         }
@@ -152,9 +160,9 @@ private class EditState(n: Note?, initial: Kind?) {
 }
 
 @Composable
-fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolean) -> Unit) {
+fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, onDone: (deleted: Boolean) -> Unit) {
     val old = remember { noteId?.let { repo.note(it) } }
-    val st = remember { EditState(old, initial) }
+    val st = remember { EditState(old, initial, tag) }
     val startSig = remember { st.sig() }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
@@ -162,6 +170,8 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolea
     var askDiscard by remember { mutableStateOf(false) }
     var askDelete by remember { mutableStateOf(false) }
     val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
+    var sheet by remember { mutableStateOf<Pair<Rec, List<Cand>>?>(null) }
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(20)) { uris ->
         scope.launch {
@@ -178,8 +188,20 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolea
 
     fun save() {
         if (st.empty) { scope.launch { snack.showSnackbar("Add some text or media. A title on its own is not enough.") }; return }
-        repo.upsert(st.build(old))
-        onDone(false)
+        scope.launch {
+            // links typed into the text become link cards with a preview
+            busy = true
+            for (m in Regex("https?://[^\\s]+").findAll(st.body).take(2)) {
+                val u = m.value
+                if (st.recs.any { it.kind == Kind.Link && it.body == u }) continue
+                val r = Rec(Kind.Link, newBlock(Kind.Link, st.fresh(), body = u))
+                r.fetchLink(ctx)
+                st.recs.add(r)
+            }
+            busy = false
+            repo.upsert(st.build(old))
+            onDone(false)
+        }
     }
 
     val field = TextFieldDefaults.colors(
@@ -241,6 +263,21 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolea
                 }
             }
             cap("More")
+            for (r in st.recs) {
+                RecordForm(
+                    r,
+                    onSearch = {
+                        scope.launch {
+                            val res = r.search()
+                            if (res.isEmpty()) snack.showSnackbar(if (r.title.isBlank()) "Type a title first." else "Nothing found. Check the title and your connection.")
+                            else sheet = r to res
+                        }
+                    },
+                    onImport = { scope.launch { if (!r.importFromUrl(ctx)) snack.showSnackbar("Couldn't find a recipe on that page. You can fill it in by hand.") } },
+                    onFetch = { scope.launch { if (!r.fetchLink(ctx)) snack.showSnackbar("Couldn't read a preview. The link will still be saved.") } },
+                    onRemove = { st.recs.remove(r) },
+                )
+            }
             for (e in st.extras) {
                 val (th, bh) = hints(e.kind)
                 Card(Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh)) {
@@ -256,7 +293,10 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolea
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (k in listOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Link)) {
+                for (k in listOf(Kind.Film, Kind.Track, Kind.Book, Kind.Recipe, Kind.Link)) {
+                    AssistChip(onClick = { st.recs.add(Rec(k, newBlock(k, st.fresh()))) }, label = { Text(recLabel(k)) })
+                }
+                for (k in listOf(Kind.Quote, Kind.Stat, Kind.Info)) {
                     AssistChip(onClick = { st.extras.add(Extra(k, newBlock(k, st.fresh()))) }, label = { Text(label(k)) })
                 }
             }
@@ -265,6 +305,19 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, onDone: (deleted: Boolea
         }
     }
 
+    sheet?.let { (rec, list) ->
+        ModalBottomSheet(onDismissRequest = { sheet = null }) {
+            LazyColumn(Modifier.padding(bottom = 24.dp)) {
+                items(list) { c ->
+                    ListItem(
+                        headlineContent = { Text(c.title) },
+                        supportingContent = { Text(c.sub) },
+                        modifier = Modifier.clickable { sheet = null; scope.launch { rec.applyCand(c, ctx) } },
+                    )
+                }
+            }
+        }
+    }
     if (askDiscard) AlertDialog(
         onDismissRequest = { askDiscard = false },
         title = { Text("Discard changes?") },

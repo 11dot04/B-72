@@ -39,24 +39,32 @@ fun App() {
     LaunchedEffect(Unit) { repo.init() }
     val loaded = repo.loaded
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    // the tag whose canvas is showing; a note opened from it returns here
+    var board by rememberSaveable { mutableStateOf<String?>(null) }
+    var editTag by remember { mutableStateOf<String?>(null) }
     // null = no editor; (null, kind) = a new note; (id, null) = editing that note
     var editing by remember { mutableStateOf<Pair<String?, Kind?>?>(null) }
     val grid = rememberLazyStaggeredGridState()
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    BackHandler(open != null && editing == null) { open = null }
+    BackHandler((open != null || board != null) && editing == null) { if (open != null) open = null else board = null }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
       Box(Modifier.fillMaxSize()) {
         SharedTransitionLayout {
             AnimatedContent(
-                targetState = open,
+                targetState = open to board,
                 transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
                 label = "screen",
-            ) { id ->
+            ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
-                if (note == null) HomeScreen(loaded, grid, shared, onOpen = { open = it }, onAdd = { editing = null to it })
-                else NotePage(note, shared, onBack = { open = null }, onEdit = { editing = note.id to null })
+                if (note != null) NotePage(note, shared, onBack = { open = null }, onEdit = { editing = note.id to null }, onTag = { open = null; board = it })
+                else if (tag != null) BoardScreen(
+                    repo, loaded, tag,
+                    onBack = { board = null }, onOpen = { open = it },
+                    onAdd = { editTag = tag; editing = null to null },
+                )
+                else HomeScreen(loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it })
             }
         }
         AnimatedVisibility(
@@ -70,7 +78,7 @@ fun App() {
             val target = hold.v
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                 target?.let { (id, kind) ->
-                    Editor(repo, id, kind) { deleted ->
+                    Editor(repo, id, kind, tag = editTag) { deleted ->
                         if (deleted) open = null
                         editing = null
                     }

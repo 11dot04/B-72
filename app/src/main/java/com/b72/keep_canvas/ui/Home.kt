@@ -80,7 +80,7 @@ private fun tileRatio(n: Note): Double {
 }
 
 @Composable
-fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit) {
+fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}) {
   var menu by remember { mutableStateOf(false) }
   BackHandler(menu) { menu = false }
   Box(Modifier.fillMaxSize()) {
@@ -107,6 +107,15 @@ fun HomeScreen(loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx,
                         else -> "${loaded.library.notes.size} notes"
                     }
                     Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    // every tag is the door to its canvas
+                    val tags = remember(loaded?.library) {
+                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedBy { it.key.lowercase() }
+                    }
+                    if (tags.isNotEmpty()) androidx.compose.foundation.lazy.LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (e in tags) item(key = e.key) {
+                            androidx.compose.material3.AssistChip(onClick = { onTag(e.key) }, label = { Text("${e.key} · ${e.value}") })
+                        }
+                    }
                 }
             }
             if (loaded != null) {
@@ -180,6 +189,17 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
                 FitTitle(t, if (onPhoto) Color.White else fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
             }
+        }
+        if (img == null) {
+            val sum = remember(n) {
+                n.blocks.firstOrNull { it.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Link) }
+                    ?.let { com.b72.keep_canvas.data.tplSummary(it.kind, it.title, it.body) }.orEmpty()
+            }
+            if (sum.isNotEmpty()) Text(
+                sum, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall, color = fg.copy(alpha = .8f),
+                modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
+            )
         }
     }
 }

@@ -84,7 +84,7 @@ private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "ratin
  * you scroll; one photo with one clear subject sits in a Material shape and the subject breaks out at the top.
  */
 @Composable
-fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit) {
+fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit, onTag: (String) -> Unit = {}) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
     var tint by remember { mutableStateOf(true) }
@@ -192,7 +192,9 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
                 }
             }
             for (b in note.blocks) {
-                if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
+                if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w) }
+                else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
+                else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
             for (t in texts) item { Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp)) }
             for (s in list) item {
@@ -234,7 +236,7 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
             note.tags.firstOrNull()?.let { t ->
                 Text(
                     t, style = MaterialTheme.typography.labelLarge, color = pal.fg,
-                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
                 )
             }
             IconButton(onClick = onEdit, colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(containerColor = pal.fg, contentColor = pal.bg)) {
@@ -245,7 +247,7 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
 }
 
 @Composable
-private fun PhotoImage(path: String, width: Int, tint: Boolean, tintColor: Color, modifier: Modifier) {
+fun PhotoImage(path: String, width: Int, tint: Boolean, tintColor: Color, modifier: Modifier) {
     val img by produceState<ImageBitmap?>(null, path) { value = Images.load(path, width) }
     img?.let {
         Image(
@@ -264,7 +266,7 @@ private fun Info(k: String, v: String, fg: Color, modifier: Modifier) {
     }
 }
 
-private val CARD_KINDS = setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Link, Kind.Poster, Kind.Film, Kind.Track, Kind.Recipe, Kind.Book, Kind.Bare)
+private val CARD_KINDS = setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Bare)
 
 /** Plain cards for the template and record blocks. Phase 3 replaces these with the full zine layouts. */
 @Composable
