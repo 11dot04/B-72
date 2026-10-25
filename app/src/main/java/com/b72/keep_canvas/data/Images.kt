@@ -13,12 +13,20 @@ import java.io.File
 
 /** Small decoded-bitmap cache. Photos are rotated by their EXIF flag, as Flutter's Image.file did. */
 object Images {
-    private val cache = object : LruCache<String, ImageBitmap>(64 * 1024 * 1024) {
+    private fun lru(bytes: Int) = object : LruCache<String, ImageBitmap>(bytes) {
         override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
     }
+    // grid thumbnails live in their own cache so big note-page photos can never evict them
+    private val thumbs = lru(24 * 1024 * 1024)
+    private val big = lru((Runtime.getRuntime().maxMemory() / 6).toInt().coerceAtLeast(48 * 1024 * 1024))
+    private fun cacheFor(w: Int) = if (w <= 700) thumbs else big
+
+    /** Already-decoded bitmap, or null. Lets a composable start with the picture instead of a blank frame. */
+    fun peek(path: String, targetWidth: Int): ImageBitmap? = cacheFor(targetWidth).get("$path@$targetWidth")
 
     suspend fun load(path: String, targetWidth: Int): ImageBitmap? {
         val key = "$path@$targetWidth"
+        val cache = cacheFor(targetWidth)
         cache.get(key)?.let { return it }
         val bmp = withContext(Dispatchers.IO) { decode(path, targetWidth) } ?: return null
         cache.put(key, bmp)

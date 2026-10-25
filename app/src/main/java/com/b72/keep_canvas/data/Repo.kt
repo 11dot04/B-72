@@ -42,12 +42,14 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             val path = b.path ?: continue
             var d = b.data
             if (b.kind == Kind.Photo && "ocr" !in d) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) }
-            if (b.kind in CUT_KINDS && "cutV" !in d) {
+            if (b.kind in CUT_KINDS && cutStale(b)) {
                 makeCut(path, imageDir(ctx)).onSuccess { c ->
-                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutV" to JsonPrimitive(2))
+                    b.cutPath()?.let { old -> runCatching { File(old).delete() } }
+                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutOk" to JsonPrimitive(0), "cutV" to JsonPrimitive(CUT_VERSION))
                     else d + mapOf(
                         "cut" to JsonPrimitive(c.path), "cutBox" to JsonArray(c.box.map { JsonPrimitive(it) }),
-                        "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac), "cutV" to JsonPrimitive(2),
+                        "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac),
+                        "cutOk" to JsonPrimitive(if (c.ok) 1 else 0), "cutV" to JsonPrimitive(CUT_VERSION),
                     )
                 }
             }
@@ -131,4 +133,7 @@ fun imageDir(ctx: Context) = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
 private val CUT_KINDS = setOf(Kind.Photo, Kind.Recipe)
 
 /** True when a picture still has its text read or its subject cut. */
-fun needsWork(b: Block) = b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && "cutV" !in b.data))
+fun needsWork(b: Block) = b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && cutStale(b)))
+
+/** True until the photo has been cut with the current recipe. */
+fun cutStale(b: Block) = (b.dbl("cutV") ?: 0.0) < CUT_VERSION

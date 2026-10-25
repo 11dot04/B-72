@@ -81,7 +81,7 @@ val RECORD_KINDS = setOf(Kind.Film, Kind.Track, Kind.Recipe, Kind.Link, Kind.Boo
 fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1.0; Kind.Recipe -> 1.15; else -> .85 }
 
 /** Data keys that belong to the image, not to the record's text fields. */
-val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac")
+val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk")
 
 fun Block.field(key: String): String = when (val v = data[key]) {
     is kotlinx.serialization.json.JsonPrimitive -> v.content.trim()
