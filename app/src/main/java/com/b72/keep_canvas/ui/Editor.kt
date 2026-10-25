@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
@@ -228,7 +229,7 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, sha
         containerColor = cs.surface,
         snackbarHost = { SnackbarHost(snack) },
         topBar = {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = ::close) { Icon(Icons.Rounded.Close, "Close") }
                 Text(if (old == null) "New note" else "Edit note", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 if (old != null) IconButton(onClick = { askDelete = true }) { Icon(Icons.Rounded.Delete, "Delete") }
@@ -269,7 +270,7 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, sha
                 items(st.photos, key = { it.id }) { p -> Thumb(p) { st.photos.remove(p) } }
                 item {
                     Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(cs.primaryContainer).clickable(enabled = !busy) { addPhotos() }, contentAlignment = Alignment.Center) {
-                        if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.AddPhotoAlternate, "Add photos", tint = cs.onPrimaryContainer)
+                        if (busy) androidx.compose.material3.LoadingIndicator(Modifier.size(40.dp)) else Icon(Icons.Rounded.AddPhotoAlternate, "Add photos", tint = cs.onPrimaryContainer)
                     }
                 }
             }
@@ -350,9 +351,11 @@ private fun Thumb(p: Block, onRemove: () -> Unit) {
     val img by produceState<ImageBitmap?>(null, p.path) { value = p.path?.let { Images.load(it, 300) } }
     Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
         img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp).clip(CircleShape).background(Color.Black.copy(alpha = .55f)).clickable(onClick = onRemove),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.Close, "Remove photo", Modifier.size(14.dp), tint = Color.White) }
+        // a 48dp touch target around the small round button
+        Box(Modifier.align(Alignment.TopEnd).size(48.dp).clickable(onClickLabel = "Remove photo", onClick = onRemove), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(24.dp).clip(CircleShape).background(Color.Black.copy(alpha = .55f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Close, "Remove photo", Modifier.size(14.dp), tint = Color.White)
+            }
+        }
     }
 }

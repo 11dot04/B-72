@@ -148,7 +148,7 @@ fun RecordForm(rec: Rec, onSearch: () -> Unit, onImport: () -> Unit, onFetch: ()
     )
     val k = rec.kind
     @Composable fun action(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, f: () -> Unit) {
-        if (rec.busy) CircularProgressIndicator(Modifier.padding(12.dp).size(18.dp), strokeWidth = 2.dp)
+        if (rec.busy) androidx.compose.material3.LoadingIndicator(Modifier.padding(8.dp).size(32.dp))
         else IconButton(onClick = f) { Icon(icon, desc) }
     }
     @Composable fun field(key: String, label: String, lines: Int = 1, trailing: (@Composable () -> Unit)? = null, modifier: Modifier = Modifier.fillMaxWidth()) {
@@ -187,10 +187,10 @@ fun RecordForm(rec: Rec, onSearch: () -> Unit, onImport: () -> Unit, onFetch: ()
             if (k == Kind.Film || k == Kind.Book) {
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Your rating  ", style = MaterialTheme.typography.bodyMedium)
-                    for (i in 1..5) Icon(
-                        if (i <= rec.rating) Icons.Rounded.Star else Icons.Rounded.StarOutline, "$i stars",
-                        Modifier.size(30.dp).clickable { rec.rating = if (rec.rating == i) 0 else i },
-                    )
+                    for (i in 1..5) androidx.compose.foundation.layout.Box(
+                        Modifier.size(44.dp).clickable(onClickLabel = "Rate $i of 5") { rec.rating = if (rec.rating == i) 0 else i },
+                        contentAlignment = androidx.compose.ui.Alignment.Center,
+                    ) { Icon(if (i <= rec.rating) Icons.Rounded.Star else Icons.Rounded.StarOutline, "$i stars", Modifier.size(30.dp)) }
                 }
             }
             if (k == Kind.Recipe) {

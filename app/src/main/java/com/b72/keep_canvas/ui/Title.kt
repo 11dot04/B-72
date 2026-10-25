@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.seedOf
 import kotlin.math.abs
 import kotlin.math.max
@@ -81,7 +82,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val base = TextStyle(
         fontFamily = flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
-        lineHeight = sz * 0.98f,
+        lineHeight = sz * 0.98f - 1.sp,
         letterSpacing = with(d) { (-sPx * .01f).toSp() },
         color = color,
     )

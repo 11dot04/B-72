@@ -116,21 +116,20 @@ fun PopOut(block: Block, fill: Color, tint: Color?, shapeSeed: Int, modifier: Mo
         val w = size.width
         val h = size.height
         val s = subjectIn(block, w, h) ?: Rect(w * .2f, h * .1f, w * .8f, h * .8f)
-        val top = shapeTop(s).coerceIn(h * .08f, h * .6f)
+        // The frame starts about two fifths down the subject, so the top of it rises out of the shape's middle on its own
+        // outline. No strip is cut for it: the whole cut-out is drawn over the frame and simply overflows it.
+        val top = (s.top + s.height * .4f).coerceIn(h * .12f, h * .62f)
         val region = shape.poly.pathIn(Rect(0f, top, w, h), shape.stretch)
-        val open = Path.combine(PathOperation.Union, region, Path().apply { addRect(Rect(0f, 0f, w, top)) })
         drawPath(region, fill)
         photo?.let { clipPath(region) { drawCover(it, filter) } }
         // A Color-blend tint also paints transparent pixels, which showed up as a grey slab above the shape.
         // So the tinted subject is drawn in its own layer and then cut back to the subject's own alpha.
         cut?.let { c ->
-            clipPath(open) {
-                drawIntoCanvas { cv ->
-                    cv.saveLayer(Rect(0f, 0f, w, h), Paint())
-                    drawCover(c, filter)
-                    if (filter != null) drawCover(c, null, BlendMode.DstIn)
-                    cv.restore()
-                }
+            drawIntoCanvas { cv ->
+                cv.saveLayer(Rect(0f, 0f, w, h), Paint())
+                drawCover(c, filter)
+                if (filter != null) drawCover(c, null, BlendMode.DstIn)
+                cv.restore()
             }
         }
     }

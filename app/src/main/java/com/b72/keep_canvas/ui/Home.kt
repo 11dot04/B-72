@@ -34,6 +34,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -89,7 +90,7 @@ private fun tileRatio(n: Note): Double {
 }
 
 @Composable
-fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}) {
+fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}) {
   var menu by remember { mutableStateOf(false) }
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
@@ -112,8 +113,9 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             item(span = StaggeredGridItemSpan.FullLine) {
                 Column(Modifier.padding(top = 24.dp, bottom = 16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (loaded == null) androidx.compose.material3.LoadingIndicator(Modifier.padding(end = 12.dp).size(40.dp))
                         Text("Collection", style = flexStyle(44.sp, wght = 700, wdth = 112f, rond = 40f), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                        BackupMenu(repo)
+                        BackupMenu(repo, onStickers)
                     }
                     val line = when {
                         loaded == null -> "Loading…"
@@ -202,7 +204,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             .aspectRatio((1 / ratio).toFloat())
             .clip(RoundedCornerShape(28.dp))
             .background(bg)
-            .clickable(interactionSource = src, indication = null, onClick = onClick),
+            .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
     ) {
         img?.let { Image(it, null, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
         val t = n.title
@@ -237,7 +239,7 @@ private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % 
 
 /** Export and restore the whole collection as one zip, through the system file picker. */
 @Composable
-private fun BackupMenu(repo: Repo) {
+private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
@@ -258,6 +260,7 @@ private fun BackupMenu(repo: Repo) {
     Box {
         androidx.compose.material3.IconButton({ open = true }) { Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
+            androidx.compose.material3.DropdownMenuItem({ Text("Stickers") }, { open = false; onStickers() })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
             androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
         }

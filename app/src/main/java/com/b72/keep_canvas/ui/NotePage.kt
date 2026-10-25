@@ -6,6 +6,24 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.content.Intent
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -84,7 +102,10 @@ private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "ratin
  * you scroll; one photo with one clear subject sits in a Material shape and the subject breaks out at the top.
  */
 @Composable
-fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit, onTag: (String) -> Unit = {}) {
+fun NotePage(
+    note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit, onTag: (String) -> Unit = {},
+    onDelete: () -> Unit = {}, onToggle: (blockId: String, index: Int) -> Unit = { _, _ -> },
+) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
     var tint by remember { mutableStateOf(true) }
@@ -116,7 +137,7 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
         LazyColumn(
             state = ls,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 64.dp, bottom = bottom + 40.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 64.dp, bottom = bottom + 112.dp),
         ) {
             if (lay != null) item {
                 FitTitle(
@@ -151,7 +172,7 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
                                 .requiredHeight(hDp)
                                 .align(Alignment.BottomCenter)
                                 .shared(shared, "img-${note.id}")
-                                .clickable { tint = !tint },
+                                .clickable(onClickLabel = "Switch the colour tint") { tint = !tint },
                         )
                     }
                 } else if (photos.size == 1) {
@@ -197,17 +218,20 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
             for (t in texts) item { Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp)) }
-            for (s in list) item {
-                val done = s.startsWith("x ")
-                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                    Icon(if (done) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked, null, tint = pal.fg, modifier = Modifier.padding(top = 2.dp))
-                    Spacer(Modifier.padding(start = 12.dp))
-                    Text(
-                        if (done) s.substring(2) else s,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp,
-                            textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null),
-                        color = pal.fg,
-                    )
+            for (b in note.blocks) if (b.kind == Kind.Checklist) b.checkItems.forEachIndexed { i, s ->
+                item(key = "${b.id}-$i") {
+                    val done = s.startsWith("x ")
+                    // the whole row is the target (48dp high) and reads as one checkbox to a screen reader
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .toggleable(value = done, role = Role.Checkbox, onValueChange = { onToggle(b.id, i) })
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(if (done) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked, null, tint = pal.fg)
+                        Spacer(Modifier.width(12.dp))
+                        ScribbleText(if (done) s.substring(2) else s, done, pal.fg, MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp), Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -236,13 +260,49 @@ fun NotePage(note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Un
             note.tags.firstOrNull()?.let { t ->
                 Text(
                     t, style = MaterialTheme.typography.labelLarge, color = pal.fg,
-                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(end = 8.dp).minimumInteractiveComponentSize().clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
                 )
             }
-            IconButton(onClick = onEdit, colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(containerColor = pal.fg, contentColor = pal.bg)) {
-                Icon(Icons.Rounded.Edit, "Edit")
-            }
         }
+
+        // M3 Expressive floating toolbar: the main action is wide and labelled, the rest are icons
+        val ctx = LocalContext.current
+        var askDelete by remember { mutableStateOf(false) }
+        val barOpen by remember { derivedStateOf { ls.firstVisibleItemIndex == 0 || !ls.lastScrolledForward } }
+        HorizontalFloatingToolbar(
+            expanded = barOpen,
+            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            leadingContent = {
+                IconButton(onClick = {
+                    val text = buildString {
+                        append(title)
+                        texts.forEach { append("\n\n").append(it) }
+                        list.forEach { append("\n• ").append(it.removePrefix("x ")) }
+                    }.trim()
+                    val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); putExtra(Intent.EXTRA_SUBJECT, title) }
+                    ctx.startActivity(Intent.createChooser(send, null))
+                }) { Icon(Icons.Rounded.Share, "Share note") }
+            },
+            trailingContent = {
+                note.tags.firstOrNull()?.let { t -> IconButton(onClick = { onTag(t) }) { Icon(Icons.Rounded.Dashboard, "Open the $t canvas") } }
+                IconButton(onClick = { askDelete = true }) { Icon(Icons.Rounded.Delete, "Delete note", tint = MaterialTheme.colorScheme.error) }
+            },
+            content = {
+                Button(onClick = onEdit) {
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Edit")
+                }
+            },
+        )
+        if (askDelete) AlertDialog(
+            onDismissRequest = { askDelete = false },
+            title = { Text("Delete this note?") },
+            text = { Text("It disappears from your collection and from every canvas. You can undo right after.") },
+            confirmButton = { TextButton(onClick = { askDelete = false; onDelete() }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancel") } },
+        )
     }
 }
 
