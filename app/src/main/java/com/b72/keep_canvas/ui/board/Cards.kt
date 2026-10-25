@@ -227,7 +227,7 @@ private fun NoteFace(b: Block, l: Lay, s: Scale, t: Tones) {
                         Row(Modifier.fillMaxWidth().height(s.dp(u * .052f)), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (done) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked, null, Modifier.size(s.dp(u * .04f)), tint = fg)
                             Spacer(Modifier.width(s.dp(u * .015f)))
-                            Text(if (done) it.substring(2) else it, maxLines = 1, overflow = TextOverflow.Ellipsis, style = s.body(fg).copy(textDecoration = if (done) TextDecoration.LineThrough else null))
+                            com.b72.keep_canvas.ui.ScribbleText(if (done) it.substring(2) else it, done, fg, s.body(fg), maxLines = 1)
                         }
                     }
                     if (l.hidden > 0) Text("+${l.hidden} more", style = s.body(fg))

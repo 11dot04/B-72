@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import com.b72.keep_canvas.data.Block
 import com.b72.keep_canvas.data.Kind
+import com.b72.keep_canvas.data.RECORD_KINDS
 import com.b72.keep_canvas.data.Note
 import com.b72.keep_canvas.data.seedOf
 import com.b72.keep_canvas.ui.subjectIn
@@ -21,7 +22,7 @@ private const val BAND_L = .083f
 private const val BAND_R = .917f
 
 /** One block of one note, placed on a tag's canvas. */
-class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean) {
+class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "") {
     val id: String get() = b.id
     // plain fields: the packer reads and writes these millions of times; the UI watches [rev] instead
     var x: Float = x0
@@ -33,26 +34,40 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     fun moved() { rev++ }
     val kind: Kind get() = b.kind
     val isPhoto get() = kind == Kind.Photo
+    private val isPictureCard get() = kind in RECORD_KINDS && b.path != null
+    /** Photos and picture cards sit beneath the text cards. */
+    val low get() = isPhoto || isPictureCard
     val bare get() = kind == Kind.Bare
     val rect: Rect get() = Rect(x, y, x + w, y + h)
     /** Tilt in radians, stable per card. */
     val angle: Float get() = if (isPhoto) (((seedOf(id) % 9) - 4) * .01f) else 0f
 
-    /** The part of a photo that must stay visible, in the card's own coordinates. Text cards are visible as a whole (null). */
-    val subject: Rect? by lazy {
-        if (!isPhoto) null
-        else subjectIn(b, w, h) ?: b.focal.takeIf { it.size >= 4 }?.let { Rect((it[0] * w).toFloat(), (it[1] * h).toFloat(), (it[2] * w).toFloat(), (it[3] * h).toFloat()) } ?: Rect(w * .3f, h * .3f, w * .7f, h * .7f)
+    /** The part of a card that must stay visible, in its own coordinates: a photo's subject (an oval), a picture card's title area,
+     *  the inside of a text card. Everything else is free for other cards to ride over. */
+    val prot: Rect by lazy {
+        when {
+            isPhoto -> {
+                val r = subjectIn(b, w, h) ?: b.focal.takeIf { it.size >= 4 }?.let { Rect((it[0] * w).toFloat(), (it[1] * h).toFloat(), (it[2] * w).toFloat(), (it[3] * h).toFloat()) } ?: Rect(w * .3f, h * .3f, w * .7f, h * .7f)
+                // a little tighter than the box: the corners of a subject's bounding box are empty
+                Rect(r.center.x - r.width * .43f, r.center.y - r.height * .43f, r.center.x + r.width * .43f, r.center.y + r.height * .43f)
+            }
+            isPictureCard -> Rect(w * .06f, h * .52f, w * .94f, h * .98f)
+            bare -> Rect(0f, 0f, w, h)
+            else -> Rect(w * .09f, h * .09f, w * .91f, h * .91f)
+        }
     }
+    val protIsOval: Boolean get() = isPhoto
     val hasCut: Boolean get() = subjectIn(b, w, h) != null
 }
 
-private fun zKey(c: Card) = (if (c.isPhoto) 0 else 1_000_000) + c.lift * 1000 + c.order
+private fun zKey(c: Card) = (if (c.low) 0 else 1_000_000) + c.lift * 1000 + c.order
 private fun Rect.area() = max(0f, width) * max(0f, height)
 
 /** Does the upper card's rectangle touch what the lower card needs to keep visible? Photos only protect their subject (an ellipse). */
 private fun hitsProtected(up: Rect, low: Card): Boolean {
     val r = Rect(up.left - GAP, up.top - GAP, up.right + GAP, up.bottom + GAP)
-    val s = low.subject ?: return r.overlaps(low.rect)
+    val s = low.prot
+    if (!low.protIsOval) return r.overlaps(Rect(low.x + s.left, low.y + s.top, low.x + s.right, low.y + s.bottom))
     val cx = low.x + s.center.x
     val cy = low.y + s.center.y
     val a = max(.001f, s.width / 2 + GAP)
@@ -80,9 +95,9 @@ fun valid(m: Card, others: List<Card>): Boolean {
         }
         val oUp = zKey(o) > mz
         if (hitsProtected(if (oUp) orect else r, if (oUp) m else o)) return false
-        if (m.isPhoto && o.isPhoto) {
+        if (m.low && o.low) {
             val ov = Rect(max(r.left, orect.left), max(r.top, orect.top), min(r.right, orect.right), min(r.bottom, orect.bottom))
-            if (ov.area() > .4f * min(r.area(), orect.area())) return false
+            if (ov.area() > .5f * min(r.area(), orect.area())) return false
         }
     }
     return true
@@ -126,8 +141,8 @@ fun place(m: Card, placed: List<Card>, anchor: Card?) {
     var y = 0f
     val yMax = bottom + .2f
     while (y <= yMax) {
-        // no later row can beat the best spot found so far (the tuck reward is at most .06)
-        if (bc < Float.MAX_VALUE && wy * y - .07f > bc) break
+        // no later row can beat the best spot found so far (the overlap reward is at most .3)
+        if (bc < Float.MAX_VALUE && wy * y - .31f > bc) break
         var x = xMin
         while (x <= xMax + 1e-4f) {
             m.x = x
@@ -144,7 +159,8 @@ fun place(m: Card, placed: List<Card>, anchor: Card?) {
                     val ov = Rect(max(r.left, orect.left), max(r.top, orect.top), min(r.right, orect.right), min(r.bottom, orect.bottom)).area()
                     if (ov > 0f) tuck += ov / r.area()
                 }
-                c -= .12f * min(tuck, .5f)
+                // a card that overlaps its neighbours by about a sixth of itself reads as layered; none reads as gridded
+                c -= .3f * (1f - min(abs(tuck - .16f), .16f) / .16f)
                 if (c < bc) { bc = c; bx = x; by = y }
             }
             x += .02f
@@ -199,7 +215,9 @@ fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Floa
             val big = b.kind == Kind.Photo && cover
             if (b.kind == Kind.Photo) cover = false
             val (w, h) = size(b, big)
-            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null))
+            val what = when (b.kind) { Kind.Photo -> "Photo"; Kind.Checklist -> "Checklist"; Kind.Quote -> "Quote"; Kind.Film -> "Film"; Kind.Track -> "Track"; Kind.Book -> "Book"; Kind.Recipe -> "Recipe"; Kind.Link -> "Link"; else -> "Note" }
+            val label = "$what: ${b.title.ifBlank { b.body.take(50) }.ifBlank { n.title }}. Opens the note."
+            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null, label))
         }
     }
     return out
