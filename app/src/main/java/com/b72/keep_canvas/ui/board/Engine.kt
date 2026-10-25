@@ -3,6 +3,7 @@ package com.b72.keep_canvas.ui.board
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.b72.keep_canvas.data.Block
 import com.b72.keep_canvas.data.Kind
@@ -40,7 +41,7 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     val bare get() = kind == Kind.Bare
     val rect: Rect get() = Rect(x, y, x + w, y + h)
     /** Tilt in radians, stable per card. */
-    val angle: Float get() = if (isPhoto) (((seedOf(id) % 9) - 4) * .01f) else 0f
+    val angle: Float get() = if (isPhoto) (((seedOf(id) % 9) - 4) * .01f) else if (isPictureCard) (((seedOf(id) % 7) - 3) * .008f) else 0f
 
     /** The part of a card that must stay visible, in its own coordinates: a photo's subject (an oval), a picture card's title area,
      *  the inside of a text card. Everything else is free for other cards to ride over. */
@@ -84,6 +85,12 @@ fun valid(m: Card, others: List<Card>): Boolean {
     val r = m.rect
     if (r.left < 0f || r.top < 0f || r.right > 1f) return false
     if (!m.isPhoto && (r.left < BAND_L || r.right > BAND_R)) return false
+    return rules(m, others)
+}
+
+/** The overlap rules alone, without the canvas edges. */
+private fun rules(m: Card, others: List<Card>): Boolean {
+    val r = m.rect
     val mz = zKey(m)
     for (o in others) {
         if (o === m) continue
@@ -171,9 +178,108 @@ fun place(m: Card, placed: List<Card>, anchor: Card?) {
     m.y = by
 }
 
+private fun tuckOf(m: Card, placed: List<Card>): Float {
+    val r = m.rect
+    var t = 0f
+    for (o in placed) {
+        val q = o.rect
+        if (r.overlaps(q)) t += Rect(max(r.left, q.left), max(r.top, q.top), min(r.right, q.right), min(r.bottom, q.bottom)).area() / r.area()
+    }
+    return t
+}
+
+/** One note's cards arranged among themselves; positions are stored on the cards relative to the cluster's top-left corner. */
+private class Cluster(val cards: List<Card>, val w: Float, val h: Float)
+
+private val OVERLAPS = floatArrayOf(0f, .12f, .24f)
+
 /**
- * Lays the cards out. Cards that already have a stored place keep it (moved to the nearest valid spot if it no longer fits);
- * the others are placed note by note, each note's photo first so its text can gather around it.
+ * A note's cards as a small collage: the photo (or the biggest card) is the anchor, and every other card is tried against
+ * the sides of the cards already there, overlapping their free space by a little. The tightest, most column-shaped result wins.
+ */
+private fun buildCluster(cs: List<Card>): Cluster {
+    val anchor = cs.firstOrNull { it.isPhoto } ?: cs.maxByOrNull { it.w * it.h }!!
+    val rest = cs.filter { it !== anchor }.sortedWith(compareBy({ if (it.low) 0 else 1 }, { -(it.w * it.h) }))
+    anchor.x = 0f; anchor.y = 0f
+    val placed = mutableListOf(anchor)
+    fun bounds(extra: Card): Rect {
+        var l = extra.x; var t = extra.y; var r = extra.x + extra.w; var b = extra.y + extra.h
+        for (c in placed) { l = min(l, c.x); t = min(t, c.y); r = max(r, c.x + c.w); b = max(b, c.y + c.h) }
+        return Rect(l, t, r, b)
+    }
+    for (m in rest) {
+        var bx = Float.NaN
+        var by = 0f
+        var bc = Float.MAX_VALUE
+        for (o in placed) {
+            val ro = o.rect
+            for (ov in OVERLAPS) for (al in 0..2) for (st in 0..1) {
+                val a = al / 2f
+                val sh = if (st == 0) 0f else if (al == 0) .07f else if (al == 2) -.07f else 0f
+                val yy = ro.top + (o.h - m.h) * a + sh
+                val xx = ro.left + (o.w - m.w) * a + sh
+                for (k in 0 until 4) {
+                    m.x = when (k) { 0 -> ro.right - ov * m.w; 1 -> ro.left - m.w + ov * m.w; else -> xx }
+                    m.y = when (k) { 2 -> ro.bottom - ov * m.h; 3 -> ro.top - m.h + ov * m.h; else -> yy }
+                    if (!rules(m, placed)) continue
+                    val bb = bounds(m)
+                    var c = bb.width * bb.height + 9f * max(0f, bb.width - .5f) + .25f * max(0f, bb.height - 1.1f)
+                    c -= .05f * tuckOf(m, placed)
+                    if (!m.isPhoto && anchor.isPhoto) c += .3f * hypot(m.rect.center.x - anchor.rect.center.x, m.rect.center.y - anchor.rect.center.y)
+                    if (c < bc) { bc = c; bx = m.x; by = m.y }
+                }
+            }
+        }
+        if (bx.isNaN()) { val bb = bounds(m); bx = bb.left; by = bb.bottom }
+        m.x = bx; m.y = by
+        placed.add(m)
+    }
+    var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+    for (c in placed) { l = min(l, c.x); t = min(t, c.y); r = max(r, c.x + c.w); b = max(b, c.y + c.h) }
+    for (c in placed) { c.x -= l; c.y -= t }
+    return Cluster(placed, r - l, b - t)
+}
+
+/** Slides a whole cluster down the board to the lowest spot that fits, filling the gap beside earlier ones (columns form on their own). */
+private fun placeCluster(cl: Cluster, placed: List<Card>) {
+    val bottom = placed.maxOfOrNull { it.rect.bottom } ?: 0f
+    val hasPhoto = cl.cards.any { it.isPhoto }
+    val xMin = if (hasPhoto) 0f else BAND_L
+    val xMax = (if (hasPhoto) 1f else BAND_R) - cl.w
+    val bx0 = cl.cards.map { it.x }
+    val by0 = cl.cards.map { it.y }
+    val area = cl.cards.sumOf { (it.w * it.h).toDouble() }.toFloat()
+    var bestX = xMin
+    var bestY = bottom + .03f
+    var bc = Float.MAX_VALUE
+    var y = 0f
+    while (y <= bottom + .1f) {
+        if (bc < Float.MAX_VALUE && (y + cl.h) - .3f > bc) break
+        var x = xMin
+        while (x <= xMax + 1e-4f) {
+            cl.cards.forEachIndexed { i, c -> c.x = bx0[i] + x; c.y = by0[i] + y }
+            if (cl.cards.all { valid(it, placed) }) {
+                var t = 0f
+                for (c in cl.cards) for (o in placed) {
+                    val r = c.rect; val q = o.rect
+                    if (r.overlaps(q)) t += Rect(max(r.left, q.left), max(r.top, q.top), min(r.right, q.right), min(r.bottom, q.bottom)).area()
+                }
+                t /= area
+                var cost = (y + cl.h) + .12f * x + (((seedOf(cl.cards[0].id) + (x * 997).toInt() + (y * 463).toInt()) % 100) / 100f) * .02f
+                cost -= .25f * (1f - min(abs(t - .07f), .07f) / .07f)
+                if (cost < bc) { bc = cost; bestX = x; bestY = y }
+            }
+            x += .02f
+        }
+        y += .02f
+    }
+    cl.cards.forEachIndexed { i, c -> c.x = bx0[i] + bestX; c.y = by0[i] + bestY }
+}
+
+/**
+ * Lays the cards out. Cards that already have a stored place keep it (moved to the nearest valid spot if it no longer fits).
+ * New cards are laid out note by note: each note becomes a small collage that is then packed into the board like a tile.
+ * A card added to a note that is already on the board is tucked in beside it instead.
  * Returns the cards whose position changed or is new, so the caller can store them.
  */
 fun arrange(cards: List<Card>, retidy: Boolean): List<Card> {
@@ -188,15 +294,96 @@ fun arrange(cards: List<Card>, retidy: Boolean): List<Card> {
         done.add(c)
     }
     val rest = cards.filter { !it.placed || retidy }
-        .sortedWith(compareBy<Card>({ cards.indexOfFirst { o -> o.noteId == it.noteId } }, { if (it.isPhoto) 0 else 1 }, { it.order }))
-    for (c in rest) {
-        val anchor = if (c.isPhoto && done.none { it.noteId == c.noteId && it.isPhoto }) null
-        else done.firstOrNull { it.noteId == c.noteId && it.isPhoto }
-        place(c, done, anchor)
-        done.add(c)
-        changed.add(c)
+    val noteOrder = cards.map { it.noteId }.distinct()
+    for (nid in noteOrder) {
+        val mine = rest.filter { it.noteId == nid }
+        if (mine.isEmpty()) continue
+        val placedMates = done.filter { it.noteId == nid }
+        if (placedMates.isNotEmpty()) {
+            for (c in mine.sortedBy { it.order }) {
+                place(c, done, placedMates.firstOrNull { it.isPhoto } ?: placedMates.first())
+                done.add(c)
+            }
+        } else {
+            val cl = buildCluster(mine)
+            placeCluster(cl, done)
+            done.addAll(cl.cards)
+        }
+        changed.addAll(mine)
     }
     return changed
+}
+
+/** An arrow pointing at something: a cubic curve, in canvas widths. */
+class Arrow(val p0: Offset, val c1: Offset, val c2: Offset, val p3: Offset)
+
+private fun bez(a: Arrow, t: Float): Offset {
+    val u = 1f - t
+    return a.p0 * (u * u * u) + a.c1 * (3 * u * u * t) + a.c2 * (3 * u * t * t) + a.p3 * (t * t * t)
+}
+
+/**
+ * Arrows are annotations, not wiring: a note gets at most one, from its caption (the nearest text card) to the photo's subject,
+ * only when there is a real gap to cross and the swoop does not run over another card. Few per canvas, spread apart.
+ */
+fun arrowsFor(cards: List<Card>): List<Arrow> {
+    val notes = cards.map { it.noteId }.distinct()
+    val cap = ((notes.size + 2) / 3).coerceAtLeast(1)
+    val out = ArrayList<Arrow>()
+    val mids = ArrayList<Offset>()
+    for (nid in notes) {
+        if (out.size >= cap) break
+        val mine = cards.filter { it.noteId == nid }
+        val photo = mine.firstOrNull { it.isPhoto } ?: continue
+        val pr = photo.rect
+        val sub = photo.prot
+        val sc = Offset(photo.x + sub.center.x, photo.y + sub.center.y)
+        val texts = mine.filter { !it.low && !it.bare }
+        var chosen: Arrow? = null
+        for (t in texts.sortedBy { hypot(it.rect.center.x - sc.x, it.rect.center.y - sc.y) }) {
+            val tr = t.rect
+            val gx = max(0f, max(tr.left - pr.right, pr.left - tr.right))
+            val gy = max(0f, max(tr.top - pr.bottom, pr.top - tr.bottom))
+            val gap = hypot(gx, gy)
+            if (gap < .05f || gap > .32f || tr.overlaps(pr)) continue
+            // leave the caption from the edge that faces the subject, arrive just outside the subject's outline
+            val from = Offset(sc.x.coerceIn(tr.left, tr.right), sc.y.coerceIn(tr.top, tr.bottom))
+            val start = Offset((tr.center.x * .5f + from.x * .5f).coerceIn(tr.left, tr.right), (tr.center.y * .5f + from.y * .5f).coerceIn(tr.top, tr.bottom))
+            val d = sc - start
+            val len = d.getDistance()
+            if (len < .08f) continue
+            val dir = d / len
+            val rx = sub.width / 2f + .018f
+            val ry = sub.height / 2f + .018f
+            // distance from the subject's centre to its outline along -dir
+            val k = 1f / kotlin.math.sqrt((dir.x / rx) * (dir.x / rx) + (dir.y / ry) * (dir.y / ry))
+            val end = sc - dir * k
+            val span = (end - start).getDistance()
+            if (span < .06f) continue
+            val nrm = Offset(-dir.y, dir.x)
+            for (sign in floatArrayOf(1f, -1f)) {
+                val bulge = nrm * (sign * span * .32f)
+                val a = Arrow(start, start + (end - start) * .3f + bulge, start + (end - start) * .72f + bulge * .9f, end)
+                var clear = true
+                for (i in 3..21) {
+                    val q = bez(a, i / 24f)
+                    for (o in cards) {
+                        if (o === t || o === photo) continue
+                        val r = o.rect
+                        if (q.x > r.left - .01f && q.x < r.right + .01f && q.y > r.top - .01f && q.y < r.bottom + .01f) { clear = false; break }
+                    }
+                    if (!clear) break
+                }
+                if (clear) { chosen = a; break }
+            }
+            if (chosen != null) break
+        }
+        val a = chosen ?: continue
+        val mid = bez(a, .5f)
+        if (mids.any { (it - mid).getDistance() < .3f }) continue
+        out.add(a); mids.add(mid)
+    }
+    return out
 }
 
 /** Bottom edge of everything, in canvas widths. */
