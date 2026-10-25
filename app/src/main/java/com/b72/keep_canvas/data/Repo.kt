@@ -1,5 +1,8 @@
 package com.b72.keep_canvas.data
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+
 import android.content.Context
 import android.net.Uri
 import android.graphics.BitmapFactory
@@ -28,15 +31,56 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         commit(l.copy(notes = notes))
     }
 
-    /** Reads the text out of every photo that has not been read yet and stores it with the photo, one note write each. */
-    suspend fun indexPhotos() {
-        val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { it.kind == Kind.Photo && it.path != null && "ocr" !in it.data }.map { n.id to it.id } }
+    /**
+     * Background work on pictures, once each: the words in a photo (for search) and the subject's cut-out (for the pop-out
+     * and for canvases that overlap cards). Each result is stored with its block, one note write per picture.
+     */
+    suspend fun prepare() {
+        val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) }.map { n.id to it.id } }
         for ((nid, bid) in todo) {
             val b = note(nid)?.blocks?.firstOrNull { it.id == bid } ?: continue
-            val text = Ocr.read(ctx, b.path!!) ?: continue
+            val path = b.path ?: continue
+            var d = b.data
+            if (b.kind == Kind.Photo && "ocr" !in d) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) }
+            if (b.kind in CUT_KINDS && "cutV" !in d) {
+                makeCut(path, imageDir(ctx)).onSuccess { c ->
+                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutV" to JsonPrimitive(2))
+                    else d + mapOf(
+                        "cut" to JsonPrimitive(c.path), "cutBox" to JsonArray(c.box.map { JsonPrimitive(it) }),
+                        "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac), "cutV" to JsonPrimitive(2),
+                    )
+                }
+            }
+            if (d == b.data) continue
             val n = note(nid) ?: continue
-            upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = it.data + ("ocr" to kotlinx.serialization.json.JsonPrimitive(text))) else it }))
+            upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = d) else it }))
         }
+    }
+
+    /** Stickers are kept in the library as {i, p} objects, newest first, exactly as the old app wrote them. */
+    fun addStickers(paths: List<String>) {
+        val l = loaded?.library ?: return
+        val made = paths.map { kotlinx.serialization.json.buildJsonObject { put("i", JsonPrimitive(it.substringAfterLast('/'))); put("p", JsonPrimitive(it)) } }
+        commit(l.copy(stickers = made + l.stickers))
+    }
+
+    fun removeSticker(path: String) {
+        val l = loaded?.library ?: return
+        commit(l.copy(stickers = l.stickers.filter { (it as? kotlinx.serialization.json.JsonObject)?.get("p")?.let { p -> (p as? JsonPrimitive)?.content } != path }))
+        runCatching { File(path).delete() }
+    }
+
+    /** Crosses an item of a note's checklist off, or back on. Items are marked "x " as in the old app. */
+    fun toggleItem(noteId: String, blockId: String, index: Int) {
+        val n = note(noteId) ?: return
+        fun flip(s: String) = if (s.startsWith("x ")) s.substring(2) else "x $s"
+        upsert(n.copy(blocks = n.blocks.map { b ->
+            when {
+                b.id != blockId -> b
+                b.items.isNotEmpty() -> b.copy(items = b.items.mapIndexed { i, s -> if (i == index) flip(s) else s })
+                else -> b.copy(body = b.body.lines().filter { it.isNotBlank() }.mapIndexed { i, s -> if (i == index) flip(s) else s }.joinToString("\n"))
+            }
+        }))
     }
 
     /** Adds the notes of a restored backup that are not here yet; existing notes are never overwritten. Returns how many were added. */
@@ -83,3 +127,8 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
 /** Where downloaded posters, covers and link images are kept. */
 fun imageDir(ctx: Context) = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
+
+private val CUT_KINDS = setOf(Kind.Photo, Kind.Recipe)
+
+/** True when a picture still has its text read or its subject cut. */
+fun needsWork(b: Block) = b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && "cutV" !in b.data))

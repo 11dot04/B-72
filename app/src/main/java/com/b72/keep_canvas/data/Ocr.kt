@@ -11,7 +11,7 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { c ->
+internal suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { c ->
     addOnSuccessListener { c.resume(it) }
     addOnFailureListener { c.resumeWithException(it) }
 }
