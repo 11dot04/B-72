@@ -82,7 +82,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val base = TextStyle(
         fontFamily = flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
-        lineHeight = sz * 0.98f - 1.sp,
+        lineHeight = (sz.value * 0.98f - 1f).sp,
         letterSpacing = with(d) { (-sPx * 0.01f).toSp() },
         color = color,
     )
