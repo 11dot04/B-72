@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Star
@@ -93,7 +94,9 @@ import com.b72.keep_canvas.data.str
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.max
 import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.offset
 
 private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "rating", "desc")
 
@@ -116,9 +119,19 @@ fun NotePage(
     LaunchedEffect(note.id) { flex.animateTo(1f, slow) }
 
     val ls = rememberLazyListState()
-    val shrinkPx = with(density) { 110.dp.toPx() }
-    val p by remember { derivedStateOf { if (ls.firstVisibleItemIndex > 0) 1f else (ls.firstVisibleItemScrollOffset / shrinkPx).coerceIn(0f, 1f) } }
-    val barP by remember { derivedStateOf { if (ls.firstVisibleItemIndex > 0) 1f else ((ls.firstVisibleItemScrollOffset - with(density) { 40.dp.toPx() }) / with(density) { 70.dp.toPx() }).coerceIn(0f, 1f) } }
+    // The big title scrolls away like any other content. The bar's own title takes over only once the big one's last line
+    // has slid under the bar, so the two are never on screen together.
+    val barBottomPx = with(density) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp).toPx() }
+    val fadePx = with(density) { 28.dp.toPx() }
+    val barP by remember {
+        derivedStateOf {
+            if (ls.firstVisibleItemIndex > 0) 1f
+            else {
+                val info = ls.layoutInfo.visibleItemsInfo.firstOrNull()
+                if (info == null) 0f else ((barBottomPx + fadePx - (info.offset + info.size)) / fadePx).coerceIn(0f, 1f)
+            }
+        }
+    }
 
     val title = note.title
     val photos = note.photos
@@ -142,35 +155,30 @@ fun NotePage(
             if (lay != null) item {
                 FitTitle(
                     title, pal.fg, note.id,
-                    modifier = Modifier
-                        .shared(shared, "title-${note.id}", text = true)
-                        .graphicsLayer {
-                            transformOrigin = TransformOrigin(0f, 0f)
-                            scaleX = 1f - .6f * p
-                            scaleY = 1f - .6f * p
-                            alpha = 1f - p
-                        },
+                    modifier = Modifier.shared(shared, "title-${note.id}", text = true),
                     flex = { flex.value },
                 )
             }
             if (photos.isNotEmpty()) item {
                 if (hero != null) {
-                    // the subject's top edge rides over the bottom of the title's last line, only slightly
+                    // The shape's frame is sized from the subject; the area is trimmed to the frame and the subject's head
+                    // rides up over the title's last line.
                     val hPx = wPx * 1.2f
+                    val frame = com.b72.keep_canvas.ui.popFrame(hero, wPx, hPx)
                     val s = com.b72.keep_canvas.ui.subjectIn(hero, wPx, hPx)
                     val last = lay?.heights?.lastOrNull() ?: 0f
-                    val lift = if (lay == null) (s?.top ?: 0f) * .6f else ((s?.top ?: 0f) + last * .12f).coerceIn(0f, hPx * .5f)
-                    val hDp = with(density) { hPx.toDp() }
-                    val liftDp = with(density) { lift.toDp() }
-                    Box(Modifier.fillMaxWidth().height(hDp - liftDp)) {
+                    val lift = if (lay == null) (s?.top ?: frame.top) * .6f else ((s?.top ?: frame.top) + last * .12f).coerceIn(0f, hPx * .5f)
+                    val bottomPx = max(frame.bottom, s?.bottom ?: 0f) + with(density) { 12.dp.toPx() }
+                    Box(Modifier.fillMaxWidth().height(with(density) { (bottomPx - lift).toDp() })) {
                         PopOut(
                             block = hero, fill = pal.primary,
                             tint = if (tint) pal.primary.copy(alpha = .59f) else null,
                             shapeSeed = seedOf(hero.id),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .requiredHeight(hDp)
-                                .align(Alignment.BottomCenter)
+                                .requiredHeight(with(density) { hPx.toDp() })
+                                .align(Alignment.TopCenter)
+                                .offset { androidx.compose.ui.unit.IntOffset(0, -lift.roundToInt()) }
                                 .shared(shared, "img-${note.id}")
                                 .clickable(onClickLabel = "Switch the colour tint") { tint = !tint },
                         )
@@ -200,20 +208,17 @@ fun NotePage(
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
-            item {
-                Column {
-                    Row(Modifier.fillMaxWidth()) {
-                        Info("Tags", if (note.tags.isEmpty()) "None" else note.tags.joinToString(", "), pal.fg, Modifier.weight(1f))
-                        Info("Created", created, pal.fg, Modifier.weight(1f))
-                    }
-                    Row(Modifier.fillMaxWidth()) {
-                        Info("Photos", "${photos.size}", pal.fg, Modifier.weight(1f))
-                        Info("Checklist", if (list.isEmpty()) "-" else "${list.count { it.startsWith("x ") }} of ${list.size} done", pal.fg, Modifier.weight(1f))
-                    }
-                }
+            if (created != "-") item {
+                Text(
+                    "Created $created",
+                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                    color = pal.fg.copy(alpha = .6f),
+                    modifier = Modifier.padding(bottom = 18.dp),
+                )
             }
             for (b in note.blocks) {
                 if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w) }
+                else if (!hasContent(b, title)) Unit
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
@@ -228,9 +233,9 @@ fun NotePage(
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(if (done) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked, null, tint = pal.fg)
+                        Icon(if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, tint = if (done) pal.primary else pal.fg)
                         Spacer(Modifier.width(12.dp))
-                        ScribbleText(if (done) s.substring(2) else s, done, pal.fg, MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp), Modifier.weight(1f))
+                        ScribbleText(if (done) s.substring(2) else s, done, pal.fg, pal.primary, MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp), Modifier.weight(1f))
                     }
                 }
             }
@@ -240,7 +245,10 @@ fun NotePage(
         Row(
             Modifier
                 .fillMaxWidth()
-                .drawBehind { drawRect(pal.bg.copy(alpha = barP)) }
+                .drawBehind {
+                    drawRect(pal.bg.copy(alpha = barP))
+                    drawRect(pal.fg.copy(alpha = .12f * barP), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+                }
                 .padding(top = top)
                 .height(56.dp)
                 .padding(horizontal = 4.dp),
@@ -255,7 +263,7 @@ fun NotePage(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .graphicsLayer { alpha = barP; translationY = (1f - barP) * 16.dp.toPx() },
+                    .graphicsLayer { alpha = barP; translationY = (1f - barP) * 12.dp.toPx() },
             )
             note.tags.firstOrNull()?.let { t ->
                 Text(
@@ -271,7 +279,10 @@ fun NotePage(
         val barOpen by remember { derivedStateOf { ls.firstVisibleItemIndex == 0 || !ls.lastScrolledForward } }
         HorizontalFloatingToolbar(
             expanded = barOpen,
-            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(
+                toolbarContainerColor = MaterialTheme.colorScheme.tertiary,
+                toolbarContentColor = MaterialTheme.colorScheme.onTertiary,
+            ),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
             leadingContent = {
                 IconButton(onClick = {
@@ -286,10 +297,20 @@ fun NotePage(
             },
             trailingContent = {
                 note.tags.firstOrNull()?.let { t -> IconButton(onClick = { onTag(t) }) { Icon(Icons.Rounded.Dashboard, "Open the $t canvas") } }
-                IconButton(onClick = { askDelete = true }) { Icon(Icons.Rounded.Delete, "Delete note", tint = MaterialTheme.colorScheme.error) }
+                IconButton(
+                    onClick = { askDelete = true },
+                    colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) { Icon(Icons.Rounded.Delete, "Delete note") }
             },
             content = {
-                Button(onClick = onEdit) {
+                Button(
+                    onClick = onEdit,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onTertiary, contentColor = MaterialTheme.colorScheme.tertiary,
+                    ),
+                ) {
                     Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Edit")
@@ -318,12 +339,12 @@ fun PhotoImage(path: String, width: Int, tint: Boolean, tintColor: Color, modifi
     } ?: Box(modifier.background(tintColor.copy(alpha = .15f)))
 }
 
-@Composable
-private fun Info(k: String, v: String, fg: Color, modifier: Modifier) {
-    Column(modifier.padding(bottom = 16.dp)) {
-        Text(k, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 15.sp), color = fg.copy(alpha = .7f))
-        Text(v, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = fg)
-    }
+/** A card with nothing to show (no picture, no words other than the note's own title) is not drawn at all. */
+private fun hasContent(b: Block, noteTitle: String): Boolean {
+    if (b.path != null) return true
+    if (b.body.isNotBlank()) return true
+    if (b.title.isNotBlank() && b.title != noteTitle) return true
+    return b.data.any { (k, v) -> k !in TECH && (v as? kotlinx.serialization.json.JsonPrimitive)?.content?.isNotBlank() == true }
 }
 
 private val CARD_KINDS = setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Bare)

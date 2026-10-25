@@ -196,7 +196,8 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     // spatial spring: the tile changes size, so it may overshoot a little
     val press by animateFloatAsState(if (pressed) .96f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "press")
     val ratio = tileRatio(n)
-    val img by produceState<ImageBitmap?>(null, n.id) { value = n.cover?.path?.let { Images.load(it, 600) } }
+    val coverPath = n.cover?.path
+    val img by produceState<ImageBitmap?>(coverPath?.let { Images.peek(it, 600) }, n.id) { value = coverPath?.let { Images.load(it, 600) } }
     Box(
         Modifier
             .fillMaxWidth()
@@ -209,7 +210,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
         img?.let { Image(it, null, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
         val t = n.title
         if (t.isNotEmpty()) {
-            val onPhoto = img != null
+            val onPhoto = coverPath != null
             Box(
                 Modifier
                     .align(if (onPhoto) Alignment.BottomStart else Alignment.TopStart)

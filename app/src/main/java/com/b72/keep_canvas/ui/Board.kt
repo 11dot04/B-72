@@ -188,11 +188,6 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         val contentH = max(shPx, (bottom + .35f) * cw + topInset)
         Box(Modifier.fillMaxSize().verticalScroll(vs).horizontalScroll(hs)) {
             Box(Modifier.size(with(density) { cw.toDp() }, with(density) { contentH.toDp() })) {
-                // hand-drawn arrows between the cards of one note, under everything else
-                Canvas(Modifier.matchParentSize()) {
-                    cards.forEach { it.rev }
-                    doodles(cards, s.cw, topInset, t.primary.copy(alpha = .7f))
-                }
                 for (c in ordered) key(c.id) {
                     BoardCard(
                         c, s, t, topInset,
@@ -216,6 +211,11 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                             settle(c, cards); c.moved(); persist(repo, tag, listOf(c))
                         },
                     )
+                }
+                // arrows are annotations above the cards; they sit out while a card is being dragged
+                Canvas(Modifier.matchParentSize()) {
+                    cards.forEach { it.rev }
+                    if (dragId == null) arrows(com.b72.keep_canvas.ui.board.arrowsFor(cards), s.cw, topInset, t.primary)
                 }
             }
         }
@@ -313,37 +313,39 @@ private fun BoardCard(
     ) { CardFace(c.b, l, s, t) }
 }
 
-/** Hand-drawn connectors, as in the old app: a wavy line with an arrowhead from each card of a note to the next one. */
-private fun DrawScope.doodles(cards: List<Card>, cw: Float, topInset: Float, color: androidx.compose.ui.graphics.Color) {
+/**
+ * A bold, hand-drawn arrow: one fat marker pass that swells in the middle and thins at both ends, then a two-stroke head
+ * that follows the curve's own direction. Drawn above the cards, so it only exists where it is clear of them.
+ */
+private fun DrawScope.arrows(list: List<com.b72.keep_canvas.ui.board.Arrow>, cw: Float, topInset: Float, color: androidx.compose.ui.graphics.Color) {
     val u = cw / WIDE
-    val stroke = Stroke(width = u * .007f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    fun px(c: Card) = Rect(c.x * cw, c.y * cw + topInset, (c.x + c.w) * cw, (c.y + c.h) * cw + topInset)
-    fun edge(r: Rect, t: Offset): Offset {
-        val d = t - r.center
-        val k = min(r.width / 2 / (abs(d.x) + 1e-6f), r.height / 2 / (abs(d.y) + 1e-6f))
-        return r.center + d * k
-    }
-    for ((_, list) in cards.groupBy { it.noteId }) {
-        if (list.size < 2) continue
-        val s = list.sortedBy { it.order }
-        for (i in 0 until s.size - 1) {
-            val a = px(s[i])
-            val b = px(s[i + 1])
-            if (a.overlaps(b)) continue
-            val p0 = edge(a, b.center)
-            val p1 = edge(b, a.center)
-            val v = p1 - p0
-            val len = v.getDistance()
-            if (len < u * .06f) continue
-            val dir = v / len
-            val nrm = Offset(-dir.y, dir.x)
-            val waves = kotlin.math.max(2, (len / (u * .14f)).toInt())
-            fun at(t: Float): Offset = p0 + v * t + nrm * (sin(PI.toFloat() * t) * len * .1f + sin(t * 2f * PI.toFloat() * waves) * u * .012f * sin(PI.toFloat() * t))
-            val path = Path().apply { moveTo(p0.x, p0.y); for (k in 1..48) at(k / 48f).let { lineTo(it.x, it.y) } }
-            drawPath(path, color, style = stroke)
-            val from = at(.95f)
-            val h = atan2(p1.y - from.y, p1.x - from.x)
-            for (da in listOf(2.6f, -2.6f)) drawLine(color, p1, p1 + Offset(cos(h + da), sin(h + da)) * (u * .03f), stroke.width, StrokeCap.Round)
+    fun px(o: Offset) = Offset(o.x * cw, o.y * cw + topInset)
+    for (a in list) {
+        val p0 = px(a.p0); val c1 = px(a.c1); val c2 = px(a.c2); val p3 = px(a.p3)
+        fun at(t: Float): Offset {
+            val v = 1f - t
+            return p0 * (v * v * v) + c1 * (3 * v * v * t) + c2 * (3 * v * t * t) + p3 * (t * t * t)
+        }
+        val base = u * .014f
+        val n = 36
+        // the shaft stops a little short of the tip so the head's strokes carry the point
+        var prev = at(0f)
+        for (i in 1..n) {
+            val t = i / n.toFloat() * .96f
+            val cur = at(t)
+            val w = base * (.45f + .55f * sin(PI.toFloat() * (t / .96f).coerceIn(0f, 1f).let { it * .9f + .05f }))
+            drawLine(color, prev, cur, w, StrokeCap.Round)
+            prev = cur
+        }
+        val tip = p3
+        val back = at(.9f)
+        val h = atan2(tip.y - back.y, tip.x - back.x)
+        val hl = u * .05f
+        for (da in listOf(.5f, -.5f)) {
+            val e = tip - Offset(cos(h + da), sin(h + da)) * hl
+            val mid = (tip + e) / 2f + Offset(-sin(h + da), cos(h + da)) * (hl * .08f * if (da > 0) 1f else -1f)
+            val path = Path().apply { moveTo(tip.x, tip.y); quadraticTo(mid.x, mid.y, e.x, e.y) }
+            drawPath(path, color, style = Stroke(width = base * .9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }

@@ -32,11 +32,8 @@ import com.b72.keep_canvas.data.dbl
 import kotlin.math.max
 import kotlin.math.min
 
-/** One photo with one clear subject: it sits in a Material shape and the subject breaks out only at the top. */
-fun canPopOut(b: Block, photos: Int = 1) = photos == 1 && b.cutPath() != null && b.cutFrac() in .1..0.65
-
-/** Roughly the top fifth of the subject (a head, the foam of a latte) stays above the shape. */
-fun shapeTop(s: Rect): Float = s.top + s.height * (if (s.height / max(1f, s.width) > 1.7f) .14f else .22f)
+/** Only photos whose cut-out passed the quality gate (one whole, crisp, well-framed subject) break out of a shape. */
+fun canPopOut(b: Block, photos: Int = 1) = photos == 1 && b.cutPath() != null && (b.dbl("cutOk") ?: 0.0) >= 1.0 && b.cutFrac() in .07..0.5
 
 /** Where the subject lands in an area drawn with "cover" fit, centred. */
 fun subjectIn(b: Block, w: Float, h: Float): Rect? {
@@ -57,7 +54,6 @@ private val PopShapes by lazy {
     listOf(
         PopShape(MaterialShapes.Arch, true),
         PopShape(MaterialShapes.Cookie9Sided, false),
-        PopShape(MaterialShapes.Pill, true),
         PopShape(MaterialShapes.Clover4Leaf, false),
         PopShape(MaterialShapes.Cookie6Sided, false),
         PopShape(MaterialShapes.Oval, true),
@@ -104,22 +100,34 @@ private fun DrawScope.drawCover(img: ImageBitmap, filter: ColorFilter?, blend: B
     )
 }
 
-/** Photo in a shape, with the cut-out of its subject drawn on top, clipped to "shape plus the open strip above it". */
+/**
+ * The frame the shape is drawn in, for a hero area [w] x [h]. It is sized from the subject, not from the page: about a fifth of
+ * the subject stays above it and the frame is wider and deeper than the subject, so the subject sits inside a big shape
+ * and only its head breaks out. Always a square, clamped to the area.
+ */
+fun popFrame(b: Block, w: Float, h: Float): Rect {
+    val s = subjectIn(b, w, h) ?: Rect(w * .2f, h * .1f, w * .8f, h * .8f)
+    val poke = s.height * (if (s.height / max(1f, s.width) > 1.5f) .16f else .22f)
+    val top0 = s.top + poke
+    val deep = s.bottom + s.height * .06f - top0
+    val d = min(w, max(max(s.width * 1.3f, w * .84f), deep * 1.04f))
+    val left = (s.center.x - d / 2).coerceIn(0f, w - d)
+    val top = min(top0, h - d).coerceAtLeast(0f)
+    return Rect(left, top, left + d, top + d)
+}
+
+/** Photo in a shape, with the cut-out of its subject drawn on top so the subject breaks out of the shape's upper edge. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PopOut(block: Block, fill: Color, tint: Color?, shapeSeed: Int, modifier: Modifier = Modifier) {
-    val photo by produceState<ImageBitmap?>(null, block.path) { value = block.path?.let { Images.load(it, 1100) } }
-    val cut by produceState<ImageBitmap?>(null, block.id) { value = block.cutPath()?.let { Images.load(it, 1100) } }
+    val photo by produceState<ImageBitmap?>(block.path?.let { Images.peek(it, 1100) }, block.path) { value = block.path?.let { Images.load(it, 1100) } }
+    val cut by produceState<ImageBitmap?>(block.cutPath()?.let { Images.peek(it, 1100) }, block.id) { value = block.cutPath()?.let { Images.load(it, 1100) } }
     val shape = PopShapes[shapeSeed % PopShapes.size]
     val filter = tint?.let { ColorFilter.tint(it, BlendMode.Color) }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
-        val s = subjectIn(block, w, h) ?: Rect(w * .2f, h * .1f, w * .8f, h * .8f)
-        // The frame starts about two fifths down the subject, so the top of it rises out of the shape's middle on its own
-        // outline. No strip is cut for it: the whole cut-out is drawn over the frame and simply overflows it.
-        val top = (s.top + s.height * .4f).coerceIn(h * .12f, h * .62f)
-        val region = shape.poly.pathIn(Rect(0f, top, w, h), shape.stretch)
+        val region = shape.poly.pathIn(popFrame(block, w, h), true)
         drawPath(region, fill)
         photo?.let { clipPath(region) { drawCover(it, filter) } }
         // A Color-blend tint also paints transparent pixels, which showed up as a grey slab above the shape.
