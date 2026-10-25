@@ -60,5 +60,6 @@ dependencies {
     implementation("androidx.graphics:graphics-shapes:1.1.0")
     implementation("androidx.palette:palette:1.0.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 }
