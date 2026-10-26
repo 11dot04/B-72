@@ -38,6 +38,14 @@ jobs:
           curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
           ls -l $d
 
+      # Optional: a small sentence-embedding model (about 6 MB) that makes "Related" understand meaning, not just words.
+      # If the download fails the app still works on word overlap alone.
+      - name: Fetch language model
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL "https://storage.googleapis.com/mediapipe-models/text_embedder/universal_sentence_encoder/float32/latest/universal_sentence_encoder.tflite" -o app/src/main/assets/sentence_encoder.tflite || echo "model not fetched; continuing without it"
+          ls -l app/src/main/assets || true
+
       - name: Build
         env:
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
