@@ -86,15 +86,17 @@ class Scale(val cw: Float, val d: Density, val tm: TextMeasurer) {
 class Lay(val h: Float, val lines: Int = 0, val rows: Int = 0, val hidden: Int = 0, val fs: Float = 0f)
 
 fun cardWidth(b: Block, big: Boolean): Float = when (b.kind) {
-    Kind.Photo -> if (big) .30f + (seedOf(b.id) % 5) * .04f else .26f + (seedOf(b.id) % 3) * .04f
-    Kind.Bare, Kind.Quote -> .5f
-    Kind.Stat -> .34f
-    Kind.Info -> .46f
-    Kind.Link, Kind.Recipe -> .5f
-    Kind.Film, Kind.Book -> .4f
-    Kind.Track -> .44f
-    Kind.Poster -> .62f
-    else -> .4f
+    // hero photos are big, supporting pieces small: scale contrast is what makes a collage read as composed
+    Kind.Photo -> if (big) .44f + (seedOf(b.id) % 5) * .035f else .26f + (seedOf(b.id) % 3) * .04f
+    Kind.Bare -> .5f
+    Kind.Quote -> .46f
+    Kind.Stat -> .30f
+    Kind.Info -> .38f
+    Kind.Link, Kind.Recipe -> .42f
+    Kind.Film, Kind.Book -> .34f
+    Kind.Track -> .38f
+    Kind.Poster -> .56f
+    else -> .36f
 }
 
 fun checkItemsOf(b: Block) = b.checkItems

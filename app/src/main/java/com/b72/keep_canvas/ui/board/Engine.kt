@@ -41,7 +41,12 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     val bare get() = kind == Kind.Bare
     val rect: Rect get() = Rect(x, y, x + w, y + h)
     /** Tilt in radians, stable per card. */
-    val angle: Float get() = if (isPhoto) (((seedOf(id) % 9) - 4) * .01f) else if (isPictureCard) (((seedOf(id) % 7) - 3) * .008f) else 0f
+    val angle: Float get() = when {
+        bare -> 0f
+        isPhoto -> (((seedOf(id) % 11) - 5) * .01f)
+        isPictureCard -> (((seedOf(id) % 9) - 4) * .008f)
+        else -> (((seedOf(id) % 7) - 3) * .0065f)
+    }
 
     /** The part of a card that must stay visible, in its own coordinates: a photo's subject (an oval), a picture card's title area,
      *  the inside of a text card. Everything else is free for other cards to ride over. */
@@ -191,17 +196,21 @@ private fun tuckOf(m: Card, placed: List<Card>): Float {
 /** One note's cards arranged among themselves; positions are stored on the cards relative to the cluster's top-left corner. */
 private class Cluster(val cards: List<Card>, val w: Float, val h: Float)
 
-private val OVERLAPS = floatArrayOf(0f, .12f, .24f)
+private val STAGGER = floatArrayOf(-.3f, -.15f, 0f, .15f, .3f, .5f)
+private val EDGE_OVERLAPS = floatArrayOf(0f, .1f, .2f)
+private val CORNER = floatArrayOf(.12f, .22f)
 
 /**
- * A note's cards as a small collage: the photo (or the biggest card) is the anchor, and every other card is tried against
- * the sides of the cards already there, overlapping their free space by a little. The tightest, most column-shaped result wins.
+ * A note's cards as a small collage: the photo (or the biggest card) is the anchor, and every other card is tried against the
+ * sides and the corners of the cards already there, staggered and overlapping their free space by a little. A wide, compact,
+ * un-gridded result wins: a multi-card note aims for about .7 canvas widths across, and edges that line up exactly cost a little.
  */
 private fun buildCluster(cs: List<Card>): Cluster {
     val anchor = cs.firstOrNull { it.isPhoto } ?: cs.maxByOrNull { it.w * it.h }!!
     val rest = cs.filter { it !== anchor }.sortedWith(compareBy({ if (it.low) 0 else 1 }, { -(it.w * it.h) }))
     anchor.x = 0f; anchor.y = 0f
     val placed = mutableListOf(anchor)
+    val multi = cs.size > 1
     fun bounds(extra: Card): Rect {
         var l = extra.x; var t = extra.y; var r = extra.x + extra.w; var b = extra.y + extra.h
         for (c in placed) { l = min(l, c.x); t = min(t, c.y); r = max(r, c.x + c.w); b = max(b, c.y + c.h) }
@@ -211,23 +220,33 @@ private fun buildCluster(cs: List<Card>): Cluster {
         var bx = Float.NaN
         var by = 0f
         var bc = Float.MAX_VALUE
+        fun tryAt(x: Float, y: Float) {
+            m.x = x; m.y = y
+            if (!rules(m, placed)) return
+            val bb = bounds(m)
+            var c = bb.width * bb.height + (if (multi) 5f * abs(bb.width - .7f) else 0f) + .25f * max(0f, bb.height - 1.1f)
+            c -= .08f * tuckOf(m, placed)
+            val mr = m.rect
+            for (q in placed) if (abs(q.x - mr.left) < .006f || abs(q.x + q.w - mr.right) < .006f) c += .012f
+            c += ((seedOf(m.id) + (x * 997).toInt() + (y * 463).toInt()).mod(100)) / 100f * .004f
+            if (!m.isPhoto && anchor.isPhoto) c += .25f * hypot(mr.center.x - anchor.rect.center.x, mr.center.y - anchor.rect.center.y)
+            if (c < bc) { bc = c; bx = x; by = y }
+        }
         for (o in placed) {
             val ro = o.rect
-            for (ov in OVERLAPS) for (al in 0..2) for (st in 0..1) {
-                val a = al / 2f
-                val sh = if (st == 0) 0f else if (al == 0) .07f else if (al == 2) -.07f else 0f
-                val yy = ro.top + (o.h - m.h) * a + sh
-                val xx = ro.left + (o.w - m.w) * a + sh
-                for (k in 0 until 4) {
-                    m.x = when (k) { 0 -> ro.right - ov * m.w; 1 -> ro.left - m.w + ov * m.w; else -> xx }
-                    m.y = when (k) { 2 -> ro.bottom - ov * m.h; 3 -> ro.top - m.h + ov * m.h; else -> yy }
-                    if (!rules(m, placed)) continue
-                    val bb = bounds(m)
-                    var c = bb.width * bb.height + 9f * max(0f, bb.width - .5f) + .25f * max(0f, bb.height - 1.1f)
-                    c -= .05f * tuckOf(m, placed)
-                    if (!m.isPhoto && anchor.isPhoto) c += .3f * hypot(m.rect.center.x - anchor.rect.center.x, m.rect.center.y - anchor.rect.center.y)
-                    if (c < bc) { bc = c; bx = m.x; by = m.y }
-                }
+            for (ov in EDGE_OVERLAPS) for (st in STAGGER) {
+                val yy = ro.top + o.h * (.5f + st * .9f) - m.h / 2
+                val xx = ro.left + o.w * (.5f + st * .9f) - m.w / 2
+                tryAt(ro.right - ov * m.w, yy)
+                tryAt(ro.left - m.w + ov * m.w, yy)
+                tryAt(xx, ro.bottom - ov * m.h)
+                tryAt(xx, ro.top - m.h + ov * m.h)
+            }
+            for (ox in CORNER) for (oy in CORNER) {
+                tryAt(ro.right - ox * m.w, ro.bottom - oy * m.h)
+                tryAt(ro.left - m.w + ox * m.w, ro.bottom - oy * m.h)
+                tryAt(ro.right - ox * m.w, ro.top - m.h + oy * m.h)
+                tryAt(ro.left - m.w + ox * m.w, ro.top - m.h + oy * m.h)
             }
         }
         if (bx.isNaN()) { val bb = bounds(m); bx = bb.left; by = bb.bottom }
@@ -241,7 +260,7 @@ private fun buildCluster(cs: List<Card>): Cluster {
 }
 
 /** Slides a whole cluster down the board to the lowest spot that fits, filling the gap beside earlier ones (columns form on their own). */
-private fun placeCluster(cl: Cluster, placed: List<Card>) {
+private fun placeCluster(cl: Cluster, placed: List<Card>, index: Int) {
     val bottom = placed.maxOfOrNull { it.rect.bottom } ?: 0f
     val hasPhoto = cl.cards.any { it.isPhoto }
     val xMin = if (hasPhoto) 0f else BAND_L
@@ -265,7 +284,8 @@ private fun placeCluster(cl: Cluster, placed: List<Card>) {
                     if (r.overlaps(q)) t += Rect(max(r.left, q.left), max(r.top, q.top), min(r.right, q.right), min(r.bottom, q.bottom)).area()
                 }
                 t /= area
-                var cost = (y + cl.h) + .12f * x + (((seedOf(cl.cards[0].id) + (x * 997).toInt() + (y * 463).toInt()) % 100) / 100f) * .02f
+                val pref = if (index % 2 == 0) xMin else xMax
+                var cost = (y + cl.h) + .35f * abs(x - pref) + ((seedOf(cl.cards[0].id) + (x * 997).toInt() + (y * 463).toInt()).mod(100) / 100f) * .02f
                 cost -= .25f * (1f - min(abs(t - .07f), .07f) / .07f)
                 if (cost < bc) { bc = cost; bestX = x; bestY = y }
             }
@@ -295,6 +315,7 @@ fun arrange(cards: List<Card>, retidy: Boolean): List<Card> {
     }
     val rest = cards.filter { !it.placed || retidy }
     val noteOrder = cards.map { it.noteId }.distinct()
+    var rows = done.map { it.noteId }.distinct().size
     for (nid in noteOrder) {
         val mine = rest.filter { it.noteId == nid }
         if (mine.isEmpty()) continue
@@ -306,7 +327,7 @@ fun arrange(cards: List<Card>, retidy: Boolean): List<Card> {
             }
         } else {
             val cl = buildCluster(mine)
-            placeCluster(cl, done)
+            placeCluster(cl, done, rows++)
             done.addAll(cl.cards)
         }
         changed.addAll(mine)
@@ -391,6 +412,10 @@ fun bottomOf(cards: List<Card>) = cards.maxOfOrNull { it.rect.bottom } ?: 0f
 
 fun placeKey(tag: String, b: Block) = "$tag|${b.id}"
 
+/** Bumped whenever the layout rules change: positions stored by an older version are laid out again once. */
+const val LAYOUT_VERSION = 3.0
+fun versionKey(tag: String) = "$tag|#v"
+
 /** One card per block of every note with this tag. [size] returns (w, h) in canvas widths for a block. */
 fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Float, Float>): List<Card> {
     val out = mutableListOf<Card>()
@@ -404,7 +429,8 @@ fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Floa
             val (w, h) = size(b, big)
             val what = when (b.kind) { Kind.Photo -> "Photo"; Kind.Checklist -> "Checklist"; Kind.Quote -> "Quote"; Kind.Film -> "Film"; Kind.Track -> "Track"; Kind.Book -> "Book"; Kind.Recipe -> "Recipe"; Kind.Link -> "Link"; else -> "Note" }
             val label = "$what: ${b.title.ifBlank { b.body.take(50) }.ifBlank { n.title }}. Opens the note."
-            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null, label))
+            val current = n.places[versionKey(tag)]?.getOrNull(0) == LAYOUT_VERSION
+            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label))
         }
     }
     return out
