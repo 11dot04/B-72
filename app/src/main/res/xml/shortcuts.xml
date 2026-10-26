@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_note"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/sc_note_short"
+        android:shortcutLongLabel="@string/sc_note_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.b72.keep_canvas"
+            android:targetClass="com.b72.keep_canvas.MainActivity">
+            <extra android:name="b72.new" android:value="Text" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_list"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/sc_list_short"
+        android:shortcutLongLabel="@string/sc_list_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.b72.keep_canvas"
+            android:targetClass="com.b72.keep_canvas.MainActivity">
+            <extra android:name="b72.new" android:value="Checklist" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_photo"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/sc_photo_short"
+        android:shortcutLongLabel="@string/sc_photo_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.b72.keep_canvas"
+            android:targetClass="com.b72.keep_canvas.MainActivity">
+            <extra android:name="b72.new" android:value="Photo" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_link"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/sc_link_short"
+        android:shortcutLongLabel="@string/sc_link_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.b72.keep_canvas"
+            android:targetClass="com.b72.keep_canvas.MainActivity">
+            <extra android:name="b72.new" android:value="Link" />
+        </intent>
+    </shortcut>
+</shortcuts>
