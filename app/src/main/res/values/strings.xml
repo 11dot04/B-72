@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sc_note_short">New note</string>
+    <string name="sc_note_long">Write a new note</string>
+    <string name="sc_list_short">Checklist</string>
+    <string name="sc_list_long">Start a checklist</string>
+    <string name="sc_photo_short">Photos</string>
+    <string name="sc_photo_long">Add photos</string>
+    <string name="sc_link_short">Save a link</string>
+    <string name="sc_link_long">Save a link</string>
+</resources>
