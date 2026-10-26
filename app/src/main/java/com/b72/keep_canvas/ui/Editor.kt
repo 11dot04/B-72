@@ -1,8 +1,11 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 
 package com.b72.keep_canvas.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material3.LoadingIndicator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,10 +44,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -225,6 +226,17 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, sha
     )
     val round = RoundedCornerShape(20.dp)
 
+    // dictation through the system speech recogniser: the words are added to the end of the note
+    val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!said.isNullOrBlank()) st.body = (st.body.trimEnd() + " " + said).trim()
+    }
+    fun startDictation() {
+        val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        runCatching { dictate.launch(i) }
+    }
+
     @Composable fun cap(t: String) = Text(t.uppercase(), style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
 
     Scaffold(
@@ -257,7 +269,10 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, sha
                 ),
             )
             cap("Text")
-            TextField(st.body, { st.body = it }, Modifier.fillMaxWidth(), minLines = 3, maxLines = 10, shape = round, colors = field, placeholder = { Text("Write something") })
+            TextField(
+                st.body, { st.body = it }, Modifier.fillMaxWidth(), minLines = 3, maxLines = 10, shape = round, colors = field, placeholder = { Text("Write something. Link a note with [[Its title]]") },
+                trailingIcon = { IconButton(onClick = ::startDictation) { Icon(Icons.Rounded.Mic, "Dictate") } },
+            )
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Smart layout", style = MaterialTheme.typography.titleSmall)
@@ -272,7 +287,7 @@ fun Editor(repo: Repo, noteId: String?, initial: Kind?, tag: String? = null, sha
                 items(st.photos, key = { it.id }) { p -> Thumb(p) { st.photos.remove(p) } }
                 item {
                     Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(cs.primaryContainer).clickable(enabled = !busy) { addPhotos() }, contentAlignment = Alignment.Center) {
-                        if (busy) androidx.compose.material3.LoadingIndicator(Modifier.size(40.dp)) else Icon(Icons.Rounded.AddPhotoAlternate, "Add photos", tint = cs.onPrimaryContainer)
+                        if (busy) LoadingIndicator(Modifier.size(40.dp)) else Icon(Icons.Rounded.AddPhotoAlternate, "Add photos", tint = cs.onPrimaryContainer)
                     }
                 }
             }

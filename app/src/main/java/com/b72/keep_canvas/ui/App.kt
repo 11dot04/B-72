@@ -37,7 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
-fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Unit = {}) {
+fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Unit = {}, start: com.b72.keep_canvas.data.Launch? = null, onLaunchHandled: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { Repo(ctx.applicationContext, scope) }
@@ -58,7 +58,14 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     LaunchedEffect(share) {
         if (share != null) { shareIn = share; editTag = null; editing = null to null; onShareHandled() }
     }
-    // null = no editor; (null, kind) = a new note; (id, null) = editing that note
+    // a launcher shortcut starts a new note of one kind; a reminder notification opens its note
+    LaunchedEffect(start) {
+        if (start != null) {
+            start.openId?.let { open = it; board = null }
+            start.newKind?.let { editTag = null; editing = null to it }
+            onLaunchHandled()
+        }
+    }
     val grid = rememberLazyStaggeredGridState()
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -75,6 +82,9 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
             ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
+                val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
+                    value = note?.let { repo.related(it.id) }.orEmpty()
+                }
                 if (note != null) NotePage(note, shared, onBack = { open = null }, onEdit = { editing = note.id to null }, onTag = { open = null; board = it },
                     onDelete = {
                         repo.delete(note.id)
@@ -85,6 +95,15 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                         }
                     },
                     onToggle = { b, i -> repo.toggleItem(note.id, b, i) },
+                    onSetData = { b, k, v -> repo.setData(note.id, b, k, kotlinx.serialization.json.JsonPrimitive(v)) },
+                    related = relatedOf,
+                    allNotes = loaded?.library?.notes.orEmpty(),
+                    onOpenNote = { open = it },
+                    onRemind = { at ->
+                        repo.upsert(note.copy(remind = at))
+                        if (at > 0) com.b72.keep_canvas.data.Reminders.schedule(ctx.applicationContext, note.id, note.title, at)
+                        else com.b72.keep_canvas.data.Reminders.cancel(ctx.applicationContext, note.id)
+                    },
                 )
                 else if (tag != null) BoardScreen(
                     repo, loaded, tag,

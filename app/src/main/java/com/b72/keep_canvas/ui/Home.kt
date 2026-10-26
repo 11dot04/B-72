@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -58,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,6 +127,17 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                         else -> "${loaded.library.notes.size} notes"
                     }
                     Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    if (repo.prepTotal > 0) Column(Modifier.padding(top = 12.dp)) {
+                        androidx.compose.material3.LinearWavyProgressIndicator(
+                            progress = { (repo.prepDone.toFloat() / repo.prepTotal).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "Reading your photos ${repo.prepDone} of ${repo.prepTotal}",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                     androidx.compose.material3.TextField(
                         q, { q = it }, Modifier.fillMaxWidth().padding(top = 16.dp), singleLine = true,
                         placeholder = { Text("Search notes, tags and text in photos") },
@@ -146,6 +160,9 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                     }
                 }
             }
+            // one older note, different each day: a second mind brings things back
+            val revisit = if (q.isBlank()) remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) } else null
+            if (revisit != null) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
                 items(shown, key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
@@ -183,6 +200,39 @@ private val ADD_ITEMS = listOf(
     Triple(Kind.Quote, "Quote", Icons.Rounded.FormatQuote),
     Triple(Kind.Link, "Link", Icons.Rounded.Link),
 )
+
+/** A note that is at least a week old, picked by the day so it changes daily; returns it with its age in days. */
+private fun pickRevisit(notes: List<Note>): Pair<Note, Int>? {
+    val now = System.currentTimeMillis()
+    val old = notes.mapNotNull { n ->
+        val born = n.id.toLongOrNull()?.div(1000) ?: return@mapNotNull null
+        val days = ((now - born) / 86_400_000L).toInt()
+        if (days >= 7 && n.title.isNotBlank()) n to days else null
+    }
+    if (old.isEmpty()) return null
+    val day = now / 86_400_000L
+    return old[((day * 31 + old.size) % old.size).toInt()]
+}
+
+@Composable
+private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val path = n.cover?.path
+    val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 600) }, n.id) { value = path?.let { Images.load(it, 600) } }
+    val ago = when { days >= 365 -> "${days / 365} year${if (days >= 730) "s" else ""} ago"; days >= 60 -> "${days / 30} months ago"; else -> "$days days ago" }
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiaryContainer)
+            .clickable(onClickLabel = "Open this older note", onClick = onClick).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        img?.let { Image(it, null, Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)), contentScale = ContentScale.Crop); Spacer(Modifier.width(14.dp)) }
+        Column(Modifier.weight(1f)) {
+            Text("FROM $ago".uppercase(), style = MaterialTheme.typography.labelSmall, color = cs.onTertiaryContainer.copy(alpha = .7f))
+            Text(n.title, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = flexStyle(22.sp, wght = 680, rond = 40f), color = cs.onTertiaryContainer)
+        }
+        Icon(Icons.Rounded.History, null, tint = cs.onTertiaryContainer)
+    }
+}
 
 @Composable
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {

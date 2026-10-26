@@ -29,11 +29,25 @@ import com.b72.keep_canvas.data.cutFrac
 import com.b72.keep_canvas.data.cutPath
 import com.b72.keep_canvas.data.nums
 import com.b72.keep_canvas.data.dbl
+import com.b72.keep_canvas.data.str
 import kotlin.math.max
 import kotlin.math.min
 
-/** Only photos whose cut-out passed the quality gate (one whole, crisp, well-framed subject) break out of a shape. */
-fun canPopOut(b: Block, photos: Int = 1) = photos == 1 && b.cutPath() != null && (b.dbl("cutOk") ?: 0.0) >= 1.0 && b.cutFrac() in .07..0.5
+/**
+ * A photo breaks out of a shape when its cut-out passed the quality gate (one whole, crisp, well-framed subject), unless the
+ * person has overridden it: `pop` = 1 forces it on, 0 forces it off.
+ */
+fun canPopOut(b: Block, photos: Int = 1): Boolean {
+    if (photos != 1 || b.cutPath() == null) return false
+    return when (b.dbl("pop")?.toInt()) {
+        1 -> true
+        0 -> false
+        else -> (b.dbl("cutOk") ?: 0.0) >= 1.0 && b.cutFrac() in .05..0.6
+    }
+}
+
+/** Why the gate said no, in words; empty when it passed or there is no cut-out. */
+fun popWhy(b: Block): String = if (b.cutPath() == null) "" else b.str("cutWhy").orEmpty()
 
 /** Where the subject lands in an area drawn with "cover" fit, centred. */
 fun subjectIn(b: Block, w: Float, h: Float): Rect? {

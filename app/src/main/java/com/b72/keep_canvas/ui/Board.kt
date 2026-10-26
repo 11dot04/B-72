@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -98,6 +99,8 @@ import com.b72.keep_canvas.ui.board.lay
 import com.b72.keep_canvas.ui.board.placeKey
 import com.b72.keep_canvas.ui.board.settle
 import com.b72.keep_canvas.ui.board.valid
+import com.b72.keep_canvas.ui.board.LAYOUT_VERSION
+import com.b72.keep_canvas.ui.board.versionKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -254,7 +257,7 @@ private fun persist(repo: Repo, tag: String, changed: List<Card>) {
     val out = mutableListOf<Note>()
     for ((id, cs) in changed.groupBy { it.noteId }) {
         val n = latest.firstOrNull { it.id == id } ?: continue
-        out.add(n.copy(places = n.places + cs.associate { placeKey(tag, it.b) to listOf(it.x.toDouble(), it.y.toDouble()) }))
+        out.add(n.copy(places = n.places + (versionKey(tag) to listOf(LAYOUT_VERSION, 0.0)) + cs.associate { placeKey(tag, it.b) to listOf(it.x.toDouble(), it.y.toDouble()) }))
     }
     if (out.isNotEmpty()) repo.upsertAll(out)
 }
@@ -288,6 +291,7 @@ private fun BoardCard(
             .size(s.dp(c.w * s.cw), s.dp(c.h * s.cw))
             .scale(lift)
             .rotate(Math.toDegrees(c.angle.toDouble()).toFloat())
+            .then(if (bare) Modifier else Modifier.shadow(s.dp(u * (if (dragging) .03f else .012f)), RoundedCornerShape(s.dp(radius + ring)), clip = false))
             .background(ringColor, RoundedCornerShape(s.dp(radius + ring)))
             .padding(s.dp(ring))
             .clip(RoundedCornerShape(s.dp(radius)))

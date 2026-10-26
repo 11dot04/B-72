@@ -85,6 +85,8 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
         lineHeight = (sz.value * 0.98f - 1f).sp,
         letterSpacing = with(d) { (-sPx * .01f).toSp() },
         color = color,
+        // the width axis animates, so glyphs are drawn as paths instead of snapped to hinted pixels
+        textMotion = androidx.compose.ui.text.style.TextMotion.Animated,
     )
     val i = t.lastIndexOf(' ')
     if (!accent || i < 0 || k.accent == Accent.None) return Piece(AnnotatedString(t), base)

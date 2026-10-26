@@ -3,6 +3,8 @@
 package com.b72.keep_canvas.ui
 
 import android.content.Context
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,10 +27,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -150,7 +150,7 @@ fun RecordForm(rec: Rec, onSearch: () -> Unit, onImport: () -> Unit, onFetch: ()
     )
     val k = rec.kind
     @Composable fun action(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, f: () -> Unit) {
-        if (rec.busy) androidx.compose.material3.LoadingIndicator(Modifier.padding(8.dp).size(32.dp))
+        if (rec.busy) LoadingIndicator(Modifier.padding(8.dp).size(32.dp))
         else IconButton(onClick = f) { Icon(icon, desc) }
     }
     @Composable fun field(key: String, label: String, lines: Int = 1, trailing: (@Composable () -> Unit)? = null, modifier: Modifier = Modifier.fillMaxWidth()) {

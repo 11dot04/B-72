@@ -47,6 +47,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.NotificationAdd
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.rounded.AutoAwesome
+import com.b72.keep_canvas.data.cutPath
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
@@ -65,6 +70,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.input.nestedScroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,7 +109,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
 
-private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "rating", "desc")
+private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop", "rating", "desc")
 
 /**
  * The reading view. The title flexes out to full width when the page opens and shrinks into the top bar as
@@ -108,6 +119,9 @@ private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "ratin
 fun NotePage(
     note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit, onTag: (String) -> Unit = {},
     onDelete: () -> Unit = {}, onToggle: (blockId: String, index: Int) -> Unit = { _, _ -> },
+    onSetData: (blockId: String, key: String, value: Int) -> Unit = { _, _, _ -> },
+    onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
+    onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(),
 ) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
@@ -119,17 +133,16 @@ fun NotePage(
     LaunchedEffect(note.id) { flex.animateTo(1f, slow) }
 
     val ls = rememberLazyListState()
-    // The big title scrolls away like any other content. The bar's own title takes over only once the big one's last line
-    // has slid under the bar, so the two are never on screen together.
-    val barBottomPx = with(density) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp).toPx() }
-    val fadePx = with(density) { 28.dp.toPx() }
+    // The big title scrolls away like any other content. The bar's own title takes over once the big one has slid under the
+    // bar; where the big title really is gets measured, so the two are never on screen together.
+    val barBottomPx = with(density) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp).toPx() }
+    val fadePx = with(density) { 24.dp.toPx() }
+    var titleBottom by remember { mutableFloatStateOf(Float.MAX_VALUE) }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val barP by remember {
         derivedStateOf {
             if (ls.firstVisibleItemIndex > 0) 1f
-            else {
-                val info = ls.layoutInfo.visibleItemsInfo.firstOrNull()
-                if (info == null) 0f else ((barBottomPx + fadePx - (info.offset + info.size)) / fadePx).coerceIn(0f, 1f)
-            }
+            else ((barBottomPx + fadePx - titleBottom) / fadePx).coerceIn(0f, 1f)
         }
     }
 
@@ -142,7 +155,7 @@ fun NotePage(
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(pal.bg)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id) else null
@@ -150,12 +163,12 @@ fun NotePage(
         LazyColumn(
             state = ls,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 64.dp, bottom = bottom + 112.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 72.dp, bottom = bottom + 112.dp),
         ) {
             if (lay != null) item {
                 FitTitle(
                     title, pal.fg, note.id,
-                    modifier = Modifier.shared(shared, "title-${note.id}", text = true),
+                    modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom },
                     flex = { flex.value },
                 )
             }
@@ -216,13 +229,43 @@ fun NotePage(
                     modifier = Modifier.padding(bottom = 18.dp),
                 )
             }
+            if (note.remind > System.currentTimeMillis()) item {
+                val whenText = Instant.ofEpochMilli(note.remind).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
+                androidx.compose.material3.AssistChip(
+                    onClick = { onRemind(0) },
+                    label = { Text("Reminder · $whenText · tap to clear") },
+                    leadingIcon = { Icon(Icons.Rounded.Notifications, null, Modifier.size(18.dp)) },
+                    modifier = Modifier.padding(bottom = 18.dp),
+                )
+            }
+            if (photos.size == 1 && photos[0].cutPath() != null) item {
+                val pb = photos[0]
+                val on = canPopOut(pb)
+                Column(Modifier.padding(bottom = 18.dp)) {
+                    androidx.compose.material3.ToggleButton(checked = on, onCheckedChange = { onSetData(pb.id, "pop", if (it) 1 else 0) }) {
+                        Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pop out")
+                    }
+                    val why = popWhy(pb)
+                    if (!on && why.isNotEmpty() && pb.dbl("pop") == null) Text(
+                        "Left flat automatically: $why",
+                        style = MaterialTheme.typography.labelSmall, color = pal.fg.copy(alpha = .6f), modifier = Modifier.padding(top = 6.dp, start = 4.dp),
+                    )
+                }
+            }
             for (b in note.blocks) {
                 if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w) }
                 else if (!hasContent(b, title)) Unit
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
-            for (t in texts) item { Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp)) }
+            for (t in texts) item {
+                val linked = rememberLinked(t, allNotes, pal.primary, onOpenNote)
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(linked, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp))
+                }
+            }
             for (b in note.blocks) if (b.kind == Kind.Checklist) b.checkItems.forEachIndexed { i, s ->
                 item(key = "${b.id}-$i") {
                     val done = s.startsWith("x ")
@@ -239,43 +282,63 @@ fun NotePage(
                     }
                 }
             }
-        }
-
-        // top bar: the small title fades in as the big one shrinks away
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    drawRect(pal.bg.copy(alpha = barP))
-                    drawRect(pal.fg.copy(alpha = .12f * barP), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+            if (related.isNotEmpty()) item {
+                Column(Modifier.padding(top = 28.dp)) {
+                    Text("Related", style = flexStyle(26.sp, wght = 700, rond = 40f), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp))
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(related, key = { it.id }) { r ->
+                            Box(
+                                Modifier.width(150.dp).height(180.dp).clip(RoundedCornerShape(24.dp)).background(pal.primary.copy(alpha = .16f))
+                                    .clickable(onClickLabel = "Open ${r.title}") { onOpenNote(r.id) },
+                            ) {
+                                r.cover?.path?.let { PhotoImage(it, 500, false, pal.primary, Modifier.fillMaxSize()) }
+                                val onPic = r.cover?.path != null
+                                if (onPic) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(.4f to Color.Transparent, 1f to Color.Black.copy(alpha = .7f))))
+                                Text(
+                                    r.title.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                    style = flexStyle(18.sp, wght = 700, rond = 40f, lh = 1.05f), color = if (onPic) Color.White else pal.fg,
+                                    modifier = Modifier.align(if (onPic) Alignment.BottomStart else Alignment.TopStart).padding(12.dp),
+                                )
+                            }
+                        }
+                    }
                 }
-                .padding(top = top)
-                .height(56.dp)
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = pal.fg) }
-            Text(
-                title,
-                style = flexStyle(22.sp, wght = 700, rond = 40f),
-                color = pal.fg,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .graphicsLayer { alpha = barP; translationY = (1f - barP) * 12.dp.toPx() },
-            )
-            note.tags.firstOrNull()?.let { t ->
-                Text(
-                    t, style = MaterialTheme.typography.labelLarge, color = pal.fg,
-                    modifier = Modifier.padding(end = 8.dp).minimumInteractiveComponentSize().clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
-                )
             }
         }
+
+        // Material's own top app bar: transparent over the big title, the page colour once content scrolls under it
+        TopAppBar(
+            title = {
+                Text(
+                    title,
+                    style = flexStyle(22.sp, wght = 700, rond = 40f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.graphicsLayer { alpha = barP; translationY = (1f - barP) * 10.dp.toPx() },
+                )
+            },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+            actions = {
+                note.tags.firstOrNull()?.let { t ->
+                    Text(
+                        t, style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(end = 8.dp).minimumInteractiveComponentSize().clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent, scrolledContainerColor = pal.bg,
+                navigationIconContentColor = pal.fg, titleContentColor = pal.fg, actionIconContentColor = pal.fg,
+            ),
+            scrollBehavior = scrollBehavior,
+        )
 
         // M3 Expressive floating toolbar: the main action is wide and labelled, the rest are icons
         val ctx = LocalContext.current
         var askDelete by remember { mutableStateOf(false) }
+        var pickDate by remember { mutableStateOf(false) }
+        var pickTime by remember { mutableStateOf<java.time.LocalDate?>(null) }
+        val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
         val barOpen by remember { derivedStateOf { ls.firstVisibleItemIndex == 0 || !ls.lastScrolledForward } }
         HorizontalFloatingToolbar(
             expanded = barOpen,
@@ -296,6 +359,7 @@ fun NotePage(
                 }) { Icon(Icons.Rounded.Share, "Share note") }
             },
             trailingContent = {
+                IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
                 note.tags.firstOrNull()?.let { t -> IconButton(onClick = { onTag(t) }) { Icon(Icons.Rounded.Dashboard, "Open the $t canvas") } }
                 IconButton(
                     onClick = { askDelete = true },
@@ -317,6 +381,36 @@ fun NotePage(
                 }
             },
         )
+        if (pickDate) {
+            val dp = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)
+            androidx.compose.material3.DatePickerDialog(
+                onDismissRequest = { pickDate = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        dp.selectedDateMillis?.let { pickTime = Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
+                        pickDate = false
+                    }) { Text("Next") }
+                },
+                dismissButton = { TextButton(onClick = { pickDate = false }) { Text("Cancel") } },
+            ) { androidx.compose.material3.DatePicker(dp) }
+        }
+        pickTime?.let { day ->
+            val tp = androidx.compose.material3.rememberTimePickerState(initialHour = 9, initialMinute = 0, is24Hour = android.text.format.DateFormat.is24HourFormat(ctx))
+            AlertDialog(
+                onDismissRequest = { pickTime = null },
+                title = { Text("Remind me at") },
+                text = { androidx.compose.material3.TimePicker(tp) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val at = day.atTime(tp.hour, tp.minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        if (android.os.Build.VERSION.SDK_INT >= 33) notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        onRemind(at)
+                        pickTime = null
+                    }) { Text("Set reminder") }
+                },
+                dismissButton = { TextButton(onClick = { pickTime = null }) { Text("Cancel") } },
+            )
+        }
         if (askDelete) AlertDialog(
             onDismissRequest = { askDelete = false },
             title = { Text("Delete this note?") },
