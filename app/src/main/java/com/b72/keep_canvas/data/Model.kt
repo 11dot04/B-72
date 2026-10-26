@@ -36,6 +36,8 @@ data class Note(
     val blocks: List<Block> = emptyList(),
     val tags: List<String> = emptyList(),
     val places: Map<String, List<Double>> = emptyMap(),
+    /** When to be reminded about this note (epoch millis); 0 = no reminder. */
+    @SerialName("r") val remind: Long = 0,
 ) {
     /** First block that has a title, else the first line of a text block. */
     val title: String
@@ -81,7 +83,7 @@ val RECORD_KINDS = setOf(Kind.Film, Kind.Track, Kind.Recipe, Kind.Link, Kind.Boo
 fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1.0; Kind.Recipe -> 1.15; else -> .85 }
 
 /** Data keys that belong to the image, not to the record's text fields. */
-val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk")
+val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop")
 
 fun Block.field(key: String): String = when (val v = data[key]) {
     is kotlinx.serialization.json.JsonPrimitive -> v.content.trim()

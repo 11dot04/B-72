@@ -21,6 +21,21 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     var loaded by mutableStateOf<Loaded?>(null)
         private set
 
+    /** Progress of the background picture work (words read, subjects cut): how many are done of how many were found. */
+    var prepDone by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var prepTotal by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    private val brain by lazy { Brain(ctx) }
+
+    /** The notes most related to one note; meaning-aware when the packaged language model is there. */
+    suspend fun related(id: String, k: Int = 6): List<Note> = withContext(Dispatchers.Default) {
+        val all = loaded?.library?.notes ?: return@withContext emptyList()
+        val me = all.firstOrNull { it.id == id } ?: return@withContext emptyList()
+        Related.rank(all, me, k) { brain.vector(it) }
+    }
+
     suspend fun init() { loaded = Store.load(ctx) }
 
     fun note(id: String): Note? = loaded?.library?.notes?.firstOrNull { it.id == id }
@@ -37,7 +52,10 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
      */
     suspend fun prepare() {
         val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) }.map { n.id to it.id } }
+        prepTotal = todo.size
+        prepDone = 0
         for ((nid, bid) in todo) {
+            prepDone++
             val b = note(nid)?.blocks?.firstOrNull { it.id == bid } ?: continue
             val path = b.path ?: continue
             var d = b.data
@@ -45,11 +63,11 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             if (b.kind in CUT_KINDS && cutStale(b)) {
                 makeCut(path, imageDir(ctx)).onSuccess { c ->
                     b.cutPath()?.let { old -> runCatching { File(old).delete() } }
-                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutOk" to JsonPrimitive(0), "cutV" to JsonPrimitive(CUT_VERSION))
+                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutOk" to JsonPrimitive(0), "cutWhy" to JsonPrimitive("no clear subject"), "cutV" to JsonPrimitive(CUT_VERSION))
                     else d + mapOf(
                         "cut" to JsonPrimitive(c.path), "cutBox" to JsonArray(c.box.map { JsonPrimitive(it) }),
                         "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac),
-                        "cutOk" to JsonPrimitive(if (c.ok) 1 else 0), "cutV" to JsonPrimitive(CUT_VERSION),
+                        "cutOk" to JsonPrimitive(if (c.ok) 1 else 0), "cutWhy" to JsonPrimitive(c.why), "cutV" to JsonPrimitive(CUT_VERSION),
                     )
                 }
             }
@@ -57,6 +75,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             val n = note(nid) ?: continue
             upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = d) else it }))
         }
+        prepTotal = 0
     }
 
     /** Stickers are kept in the library as {i, p} objects, newest first, exactly as the old app wrote them. */
@@ -70,6 +89,12 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         val l = loaded?.library ?: return
         commit(l.copy(stickers = l.stickers.filter { (it as? kotlinx.serialization.json.JsonObject)?.get("p")?.let { p -> (p as? JsonPrimitive)?.content } != path }))
         runCatching { File(path).delete() }
+    }
+
+    /** Sets one loose value on one block (for example the pop-out override). */
+    fun setData(noteId: String, blockId: String, key: String, value: kotlinx.serialization.json.JsonElement) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(data = it.data + (key to value)) else it }))
     }
 
     /** Crosses an item of a note's checklist off, or back on. Items are marked "x " as in the old app. */

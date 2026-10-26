@@ -21,16 +21,18 @@ class Upright(val bmp: Bitmap, val pix: IntArray, val subjects: List<Subj>) {
 }
 
 /** The result of cutting a subject out of a photo; the same keys the old app stored with the block. */
-class Cut(val path: String, val box: List<Double>, val aspect: Double, val frac: Double, val ok: Boolean)
+class Cut(val path: String, val box: List<Double>, val aspect: Double, val frac: Double, val ok: Boolean, val why: String)
 
 /** Version of the cut-out recipe. Bumping it makes every photo be cut again (with the pop-out quality gate). */
-const val CUT_VERSION = 3
+const val CUT_VERSION = 4
 
 /**
  * Is this cut-out good enough to break out of a shape? One whole subject, crisp edges, clear of the frame and neither tiny
  * nor huge. Anything else (a pool table that is the whole picture, a dessert in pieces, a blurry mask) stays a plain photo.
  */
-private class Quality(val ok: Boolean, val main: IntArray?, val l: Int, val t: Int, val r: Int, val b: Int, val area: Int)
+private class Quality(val why: String, val main: IntArray?, val l: Int, val t: Int, val r: Int, val b: Int, val area: Int) {
+    val ok get() = why.isEmpty()
+}
 
 private fun judge(a: FloatArray, w: Int, h: Int): Quality {
     val lab = IntArray(w * h)
@@ -59,7 +61,7 @@ private fun judge(a: FloatArray, w: Int, h: Int): Quality {
     val tiny = (w * h * .004).toInt()
     var best = 0
     for (i in 1 until areas.size) if (areas[i] > areas[best]) best = i
-    if (best == 0) return Quality(false, null, 0, 0, 0, 0, 0)
+    if (best == 0) return Quality("no subject found", null, 0, 0, 0, 0, 0)
     val total = areas.drop(1).filter { it >= tiny }.sum().coerceAtLeast(1)
     val second = areas.drop(1).filterIndexed { i, _ -> i + 1 != best }.maxOrNull() ?: 0
     val bb = bbox[best]
@@ -75,10 +77,17 @@ private fun judge(a: FloatArray, w: Int, h: Int): Quality {
     conf /= area
     val solid = area.toFloat() / ((bb[2] - bb[0] + 1).toFloat() * (bb[3] - bb[1] + 1))
     val frac = area.toFloat() / (w * h)
-    val ok = area >= total * .88f && second < area * .2f &&
-        bw <= .8f && bh <= .88f && frac in .07f..0.5f && solid >= .33f &&
-        touches <= 1 && !(touchL && touchR) && !touchT && conf >= .9
-    return Quality(ok, lab.also { for (i in it.indices) it[i] = if (it[i] == best) 1 else 0 }, bb[0], bb[1], bb[2], bb[3], area)
+    val why = when {
+        area < total * .8f || second >= area * .35f -> "more than one subject"
+        frac < .05f -> "subject is too small"
+        bw > .88f || bh > .93f || frac > .6f -> "subject fills the photo"
+        touchL && touchR -> "subject spans the whole width"
+        touches > 2 -> "subject runs off the edges"
+        solid < .22f -> "subject is thin or scattered"
+        conf < .85 -> "edges are uncertain"
+        else -> ""
+    }
+    return Quality(why, lab.also { for (i in it.indices) it[i] = if (it[i] == best) 1 else 0 }, bb[0], bb[1], bb[2], bb[3], area)
 }
 
 object Seg {
@@ -169,7 +178,7 @@ suspend fun makeCut(src: String, dir: File): Result<Cut?> = withContext(Dispatch
     }
     val f = File(dir, "cut_${System.nanoTime()}.png")
     save(px, w, h, f)
-    Result.success(Cut(f.absolutePath, listOf(l.toDouble() / w, t.toDouble() / h, (r + 1).toDouble() / w, (bt + 1).toDouble() / h), w.toDouble() / h, frac, q.ok))
+    Result.success(Cut(f.absolutePath, listOf(l.toDouble() / w, t.toDouble() / h, (r + 1).toDouble() / w, (bt + 1).toDouble() / h), w.toDouble() / h, frac, q.ok, q.why))
 }
 
 /** Approximate distance from every pixel to the nearest foreground pixel (two-pass chamfer). */
