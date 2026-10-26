@@ -98,6 +98,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   val shown = remember(loaded?.library, q) { loaded?.library?.notes.orEmpty().asReversed().filter { q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q) } }
+  val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
   BackHandler(menu) { menu = false }
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
@@ -161,8 +162,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 }
             }
             // one older note, different each day: a second mind brings things back
-            val revisit = if (q.isBlank()) remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) } else null
-            if (revisit != null) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
+            if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
                 items(shown, key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {

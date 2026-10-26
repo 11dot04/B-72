@@ -1,6 +1,8 @@
 package com.b72.keep_canvas.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -21,7 +23,7 @@ private val LINKS = Regex("""\[\[([^\]]{1,80})\]\]|https?://[^\s]+""")
  */
 @Composable
 fun rememberLinked(text: String, notes: List<Note>, accent: Color, onOpen: (String) -> Unit): AnnotatedString {
-    val open by androidx.compose.runtime.rememberUpdatedState(onOpen)
+    val open by rememberUpdatedState(onOpen)
     return remember(text, notes, accent) {
         buildAnnotatedString {
             var last = 0
