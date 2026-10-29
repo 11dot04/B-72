@@ -280,7 +280,6 @@ fun NotePage(
                 }
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
-            }
         }
 
         // Material's own top app bar: transparent over the big title, the page colour once content scrolls under it
