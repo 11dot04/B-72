@@ -121,7 +121,7 @@ object Assistant {
     /** One loaded model, used for a batch of notes and then closed (it holds a lot of memory). */
     class Session internal constructor(private val engine: Engine) : AutoCloseable {
         fun ask(prompt: String): String? = try {
-            engine.createConversation().use { it.sendMessage(prompt).text.orEmpty() }
+            engine.createConversation().use { it.sendMessage(prompt).toString() }
         } catch (e: Throwable) { null }
 
         override fun close() { runCatching { engine.close() } }
