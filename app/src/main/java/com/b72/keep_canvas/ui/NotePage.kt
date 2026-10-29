@@ -6,6 +6,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.MoreVert
+import com.b72.keep_canvas.data.trip
 import android.content.Intent
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -109,7 +111,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
 
-private val TECH = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop", "rating", "desc")
+private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
 
 /**
  * The reading view. The title flexes out to full width when the page opens and shrinks into the top bar as
@@ -121,7 +123,7 @@ fun NotePage(
     onDelete: () -> Unit = {}, onToggle: (blockId: String, index: Int) -> Unit = { _, _ -> },
     onSetData: (blockId: String, key: String, value: Int) -> Unit = { _, _, _ -> },
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
-    onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(),
+    onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {},
 ) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
@@ -151,7 +153,6 @@ fun NotePage(
     val hero = if (photos.size == 1 && canPopOut(photos[0])) photos[0] else null
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
     val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
-    val created = note.id.toLongOrNull()?.let { Instant.ofEpochMilli(it / 1000).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM yyyy")) } ?: "-"
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -221,14 +222,10 @@ fun NotePage(
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
-            if (created != "-") item {
-                Text(
-                    "Created $created",
-                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
-                    color = pal.fg.copy(alpha = .6f),
-                    modifier = Modifier.padding(bottom = 18.dp),
-                )
+            for (b in note.blocks) b.trip()?.let { tr ->
+                item(key = "trip-${b.id}") { TripCard(tr, pal.fg, pal.bg, pal.primary, Modifier.padding(bottom = 18.dp)) }
             }
+            item(key = "ai") { AiStrip(note, pal.fg, pal.primary, onAddTag, Modifier.padding(bottom = 18.dp)) }
             if (note.remind > System.currentTimeMillis()) item {
                 val whenText = Instant.ofEpochMilli(note.remind).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
                 androidx.compose.material3.AssistChip(
@@ -282,27 +279,7 @@ fun NotePage(
                     }
                 }
             }
-            if (related.isNotEmpty()) item {
-                Column(Modifier.padding(top = 28.dp)) {
-                    Text("Related", style = flexStyle(26.sp, wght = 700, rond = 40f), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp))
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(related, key = { it.id }) { r ->
-                            Box(
-                                Modifier.width(150.dp).height(180.dp).clip(RoundedCornerShape(24.dp)).background(pal.primary.copy(alpha = .16f))
-                                    .clickable(onClickLabel = "Open ${r.title}") { onOpenNote(r.id) },
-                            ) {
-                                r.cover?.path?.let { PhotoImage(it, 500, false, pal.primary, Modifier.fillMaxSize()) }
-                                val onPic = r.cover?.path != null
-                                if (onPic) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(.4f to Color.Transparent, 1f to Color.Black.copy(alpha = .7f))))
-                                Text(
-                                    r.title.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                                    style = flexStyle(18.sp, wght = 700, rond = 40f, lh = 1.05f), color = if (onPic) Color.White else pal.fg,
-                                    modifier = Modifier.align(if (onPic) Alignment.BottomStart else Alignment.TopStart).padding(12.dp),
-                                )
-                            }
-                        }
-                    }
-                }
+            if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
             }
         }
 
@@ -340,6 +317,17 @@ fun NotePage(
         var pickTime by remember { mutableStateOf<java.time.LocalDate?>(null) }
         val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
         val barOpen by remember { derivedStateOf { ls.firstVisibleItemIndex == 0 || !ls.lastScrolledForward } }
+        val share = {
+            val text = buildString {
+                append(title)
+                texts.forEach { append("\n\n").append(it) }
+                list.forEach { append("\n• ").append(it.removePrefix("x ")) }
+            }.trim()
+            val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); putExtra(Intent.EXTRA_SUBJECT, title) }
+            ctx.startActivity(Intent.createChooser(send, null))
+        }
+        var details by remember { mutableStateOf(false) }
+        // reminder and details on the sides, the primary action in the middle as a split button
         HorizontalFloatingToolbar(
             expanded = barOpen,
             colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(
@@ -348,37 +336,19 @@ fun NotePage(
             ),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
             leadingContent = {
-                IconButton(onClick = {
-                    val text = buildString {
-                        append(title)
-                        texts.forEach { append("\n\n").append(it) }
-                        list.forEach { append("\n• ").append(it.removePrefix("x ")) }
-                    }.trim()
-                    val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); putExtra(Intent.EXTRA_SUBJECT, title) }
-                    ctx.startActivity(Intent.createChooser(send, null))
-                }) { Icon(Icons.Rounded.Share, "Share note") }
+                IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
             },
             trailingContent = {
-                IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
-                note.tags.firstOrNull()?.let { t -> IconButton(onClick = { onTag(t) }) { Icon(Icons.Rounded.Dashboard, "Open the $t canvas") } }
-                IconButton(
-                    onClick = { askDelete = true },
-                    colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) { Icon(Icons.Rounded.Delete, "Delete note") }
+                Box {
+                    IconButton(onClick = { details = true }) { Icon(Icons.Rounded.MoreVert, "Details and more") }
+                    DetailsMenu(note, details, { details = false }, { askDelete = true })
+                }
             },
             content = {
-                Button(
-                    onClick = onEdit,
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.onTertiary, contentColor = MaterialTheme.colorScheme.tertiary,
-                    ),
-                ) {
-                    Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Edit")
-                }
+                EditSplit(
+                    container = MaterialTheme.colorScheme.onTertiary, content = MaterialTheme.colorScheme.tertiary,
+                    tags = note.tags, onEdit = onEdit, onTag = onTag, onShare = share,
+                )
             },
         )
         if (pickDate) {

@@ -99,6 +99,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   val shown = remember(loaded?.library, q) { loaded?.library?.notes.orEmpty().asReversed().filter { q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q) } }
   val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
+  val trip = remember(loaded?.library) { com.b72.keep_canvas.data.Trips.next(loaded?.library?.notes.orEmpty()) }
   BackHandler(menu) { menu = false }
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
@@ -160,6 +161,11 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                         }
                     }
                 }
+            }
+            // the next journey, with the right status page for how close it is
+            if (trip != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) {
+                val cs = MaterialTheme.colorScheme
+                TripCard(trip.second, cs.tertiaryContainer, cs.onTertiaryContainer, cs.tertiary, Modifier.padding(bottom = 4.dp)) { onOpen(trip.first.id) }
             }
             // one older note, different each day: a second mind brings things back
             if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
@@ -294,6 +300,8 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
+    var assistant by remember { mutableStateOf(false) }
+    if (assistant) AssistantDialog { assistant = false }
     fun say(t: String) = android.widget.Toast.makeText(ctx, t, android.widget.Toast.LENGTH_LONG).show()
     val save = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         val lib = repo.loaded?.library
@@ -312,6 +320,7 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
         androidx.compose.material3.IconButton({ open = true }) { Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
             androidx.compose.material3.DropdownMenuItem({ Text("Stickers") }, { open = false; onStickers() })
+            androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
             androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
         }

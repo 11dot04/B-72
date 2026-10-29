@@ -41,7 +41,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { Repo(ctx.applicationContext, scope) }
-    LaunchedEffect(Unit) { repo.init() }
+    LaunchedEffect(Unit) { com.b72.keep_canvas.data.Assistant.refresh(ctx.applicationContext); repo.init() }
     val loaded = repo.loaded
     // photos that have not been read yet are read once, in the background, so search can find their text
     val unread = loaded?.library?.notes?.sumOf { n -> n.blocks.count { com.b72.keep_canvas.data.needsWork(it) } } ?: 0
@@ -98,6 +98,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     onSetData = { b, k, v -> repo.setData(note.id, b, k, kotlinx.serialization.json.JsonPrimitive(v)) },
                     related = relatedOf,
                     allNotes = loaded?.library?.notes.orEmpty(),
+                    onAddTag = { t -> repo.upsert(note.copy(tags = (note.tags + t).distinct())) },
                     onOpenNote = { open = it },
                     onRemind = { at ->
                         repo.upsert(note.copy(remind = at))
@@ -109,6 +110,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     repo, loaded, tag,
                     onBack = { board = null }, onOpen = { open = it },
                     onAdd = { editTag = tag; editing = null to null },
+                    onStickers = { stickers = true },
                 )
                 else HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it }, onStickers = { stickers = true })
             }

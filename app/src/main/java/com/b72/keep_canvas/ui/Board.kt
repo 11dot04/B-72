@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +46,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
@@ -150,7 +153,7 @@ private fun rememberTones(paths: List<String>): Tones {
 
 /** A tag's canvas: every block of every note with the tag, laid out like a collage. Long-press a card to move it. */
 @Composable
-fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, onOpen: (String) -> Unit, onAdd: () -> Unit) {
+fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, onOpen: (String) -> Unit, onAdd: () -> Unit, onStickers: () -> Unit = {}) {
     val notes = loaded?.library?.notes.orEmpty()
     val photos = remember(notes, tag) {
         notes.filter { tag in it.tags }.flatMap { n -> n.blocks.mapNotNull { b -> b.path?.takeIf { b.kind == Kind.Photo || b.kind in com.b72.keep_canvas.data.RECORD_KINDS } } }.take(4)
@@ -235,20 +238,27 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
         }
-        // the same floating toolbar as the note page: one wide action, one icon
-        androidx.compose.material3.HorizontalFloatingToolbar(
-            expanded = true,
-            colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
-            leadingContent = { IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") } },
-            content = {
-                androidx.compose.material3.Button(onClick = onAdd) {
-                    Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
-                    androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp))
-                    Text("New note")
-                }
-            },
-        )
+        // tools in a floating pill, and the one thing you do most (a new note) as its own larger button beside it
+        Row(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.HorizontalFloatingToolbar(
+                expanded = true,
+                colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+                content = {
+                    IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Stickers") }
+                    IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") }
+                },
+            )
+            FloatingActionButton(
+                onClick = onAdd,
+                modifier = Modifier.size(80.dp),
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) { Icon(Icons.Rounded.Edit, "New note", Modifier.size(30.dp)) }
+        }
     }
 }
 
