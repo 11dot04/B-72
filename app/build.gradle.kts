@@ -67,5 +67,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     // the optional on-device sentence encoder behind "Related" (the model file is added to assets by the build)
     implementation("com.google.mediapipe:tasks-text:latest.release")
+    // the optional on-device assistant (runs a downloaded .litertlm model; nothing is bundled)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 }
