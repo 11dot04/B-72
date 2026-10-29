@@ -1,6 +1,6 @@
 package com.b72.keep_canvas.data
 
-class Fact(val label: String, val value: String)
+class Fact(val label: String, val value: String, val star: Boolean = false)
 class Poster(val head: String, val big: Fact?, val facts: List<Fact>, val rest: String, val rows: List<Pair<String, String>>)
 
 private val IC = RegexOption.IGNORE_CASE
@@ -130,6 +130,23 @@ fun parsePoster(title: String, text: String): Poster {
     val order = listOf("Where", "When", "Link", "Email", "Phone")
     facts.sortBy { order.indexOf(it.label).let { i -> if (i < 0) 99 else i } }
     return Poster(head, big, facts.take(6), lines.joinToString("\n"), rows.take(8))
+}
+
+/**
+ * The poster for a block: the plain readers' result, upgraded with what the assistant found (any labels at all,
+ * not only the ones the readers know). The fact it marked as the point of the note becomes the big figure.
+ */
+fun posterFor(title: String, b: Block): Poster {
+    val p = parsePoster(title, b.body)
+    val ai = b.aiFacts().map { Fact(it.label, it.value, it.star) }
+    if (ai.isEmpty()) return p
+    val starred = ai.firstOrNull { it.star }
+    val others = ai.filter { it !== starred }
+    val big = starred ?: p.big
+    val old = p.facts + listOfNotNull(p.big.takeIf { starred != null })
+    val extra = old.filter { f -> ai.none { it.label.equals(f.label, true) || it.value.equals(f.value, true) } }
+    val rest = p.rest.lines().filter { line -> ai.none { line.contains(it.value) } }.joinToString("\n")
+    return Poster(p.head, big, (others + extra).take(8), rest, p.rows)
 }
 
 fun pairs(body: String): List<Pair<String, String>> = body.lines().filter { it.isNotBlank() }.map {

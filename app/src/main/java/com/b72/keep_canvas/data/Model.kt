@@ -38,6 +38,8 @@ data class Note(
     val places: Map<String, List<Double>> = emptyMap(),
     /** When to be reminded about this note (epoch millis); 0 = no reminder. */
     @SerialName("r") val remind: Long = 0,
+    /** When the words, photos or tags were last changed by the person (epoch millis); 0 = never since it was made. */
+    @SerialName("m") val edited: Long = 0,
 ) {
     /** First block that has a title, else the first line of a text block. */
     val title: String
@@ -83,7 +85,14 @@ val RECORD_KINDS = setOf(Kind.Film, Kind.Track, Kind.Recipe, Kind.Link, Kind.Boo
 fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1.0; Kind.Recipe -> 1.15; else -> .85 }
 
 /** Data keys that belong to the image, not to the record's text fields. */
-val CUT_KEYS = setOf("cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop")
+val CUT_KEYS = setOf(
+    "cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop",
+    // what the readers and the assistant worked out; never shown as a field
+    "trip", "tripH", "aiH", "aiSum", "aiTags", "aiFacts",
+)
+
+/** What counts as a change by the person: not canvas positions, reminders, or the background readers' results. */
+fun Note.contentSig(): List<Any?> = blocks.map { listOf(it.k, it.title, it.body, it.path, it.items) } + listOf(tags)
 
 fun Block.field(key: String): String = when (val v = data[key]) {
     is kotlinx.serialization.json.JsonPrimitive -> v.content.trim()

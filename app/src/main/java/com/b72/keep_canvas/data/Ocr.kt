@@ -25,4 +25,8 @@ object Ocr {
         if (!File(path).exists()) return null
         return runCatching { recognizer.process(InputImage.fromFilePath(ctx, Uri.fromFile(File(path)))).await().text.trim() }.getOrNull()
     }
+
+    /** The same for a picture already in memory (a rendered PDF page). */
+    suspend fun readBitmap(bmp: android.graphics.Bitmap): String? =
+        runCatching { recognizer.process(InputImage.fromBitmap(bmp, 0)).await().text.trim() }.getOrNull()
 }

@@ -40,9 +40,11 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     fun note(id: String): Note? = loaded?.library?.notes?.firstOrNull { it.id == id }
 
-    fun upsert(n: Note) {
+    fun upsert(n0: Note) {
         val l = loaded?.library ?: return
-        val notes = if (l.notes.any { it.id == n.id }) l.notes.map { if (it.id == n.id) n else it } else l.notes + n
+        val old = l.notes.firstOrNull { it.id == n0.id }
+        val n = if (old != null && old.contentSig() != n0.contentSig()) n0.copy(edited = System.currentTimeMillis()) else n0
+        val notes = if (old != null) l.notes.map { if (it.id == n.id) n else it } else l.notes + n
         commit(l.copy(notes = notes))
     }
 
@@ -54,27 +56,54 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) }.map { n.id to it.id } }
         prepTotal = todo.size
         prepDone = 0
+        var session: Assistant.Session? = null
+        var tried = false
         for ((nid, bid) in todo) {
             prepDone++
             val b = note(nid)?.blocks?.firstOrNull { it.id == bid } ?: continue
-            val path = b.path ?: continue
+            val path = b.path
             var d = b.data
-            if (b.kind == Kind.Photo && "ocr" !in d) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) }
-            if (b.kind in CUT_KINDS && cutStale(b)) {
-                makeCut(path, imageDir(ctx)).onSuccess { c ->
-                    b.cutPath()?.let { old -> runCatching { File(old).delete() } }
-                    d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutOk" to JsonPrimitive(0), "cutWhy" to JsonPrimitive("no clear subject"), "cutV" to JsonPrimitive(CUT_VERSION))
-                    else d + mapOf(
-                        "cut" to JsonPrimitive(c.path), "cutBox" to JsonArray(c.box.map { JsonPrimitive(it) }),
-                        "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac),
-                        "cutOk" to JsonPrimitive(if (c.ok) 1 else 0), "cutWhy" to JsonPrimitive(c.why), "cutV" to JsonPrimitive(CUT_VERSION),
-                    )
+            if (path != null) {
+                if (b.kind == Kind.Photo && "ocr" !in d) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) }
+                if (b.kind in CUT_KINDS && cutStale(b)) {
+                    makeCut(path, imageDir(ctx)).onSuccess { c ->
+                        b.cutPath()?.let { old -> runCatching { File(old).delete() } }
+                        d = if (c == null) d + mapOf("cut" to JsonPrimitive(""), "cutOk" to JsonPrimitive(0), "cutWhy" to JsonPrimitive("no clear subject"), "cutV" to JsonPrimitive(CUT_VERSION))
+                        else d + mapOf(
+                            "cut" to JsonPrimitive(c.path), "cutBox" to JsonArray(c.box.map { JsonPrimitive(it) }),
+                            "cutAspect" to JsonPrimitive(c.aspect), "cutFrac" to JsonPrimitive(c.frac),
+                            "cutOk" to JsonPrimitive(if (c.ok) 1 else 0), "cutWhy" to JsonPrimitive(c.why), "cutV" to JsonPrimitive(CUT_VERSION),
+                        )
+                    }
                 }
+            }
+            // the assistant (if installed) reads the text: summary, tags, facts, and a ticket the plain readers missed
+            var cur = b.copy(data = d)
+            var ai: Analysis? = null
+            if (aiStale(cur)) {
+                if (!tried) { tried = true; session = withContext(Dispatchers.Default) { Assistant.open(ctx) } }
+                session?.let { s ->
+                    val text = cur.tripText()
+                    ai = withContext(Dispatchers.Default) { Assistant.analyse(s, text) }
+                }
+                ai?.let { d = d + it.toData(cur); cur = cur.copy(data = d) }
+            }
+            var trip: Trip? = cur.trip()
+            var tripChanged = false
+            if (tripStale(cur) || ai != null) {
+                trip = Trips.parse(cur.tripText())?.fill(ai?.trip) ?: ai?.trip
+                d = if (trip != null) d + ("trip" to AppJson.encodeToJsonElement(Trip.serializer(), trip)) else d - "trip"
+                d = d + ("tripH" to JsonPrimitive(tripHash(cur)))
+                tripChanged = true
             }
             if (d == b.data) continue
             val n = note(nid) ?: continue
             upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = d) else it }))
+            if (tripChanged) {
+                if (trip != null) TripAlerts.schedule(ctx, n.id, n.title, trip) else TripAlerts.cancel(ctx, n.id)
+            }
         }
+        withContext(Dispatchers.Default) { session?.close() }
         prepTotal = 0
     }
 
@@ -128,6 +157,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     fun delete(id: String) {
         val l = loaded?.library ?: return
+        TripAlerts.cancel(ctx, id)
         commit(l.copy(notes = l.notes.filter { it.id != id }))
     }
 
@@ -137,7 +167,42 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     }
 
     /** Copies a picked photo into our own folder and measures it (height / width, clamped like the old cards). */
-    suspend fun importPhoto(uri: Uri, id: String): Block? = withContext(Dispatchers.IO) {
+    suspend fun importPhoto(uri: Uri, id: String): Block? {
+        if (ctx.contentResolver.getType(uri) == "application/pdf") return importPdf(uri, id)
+        return importImage(uri, id)
+    }
+
+    /** A shared PDF (a ticket, a bill): its first page becomes the picture and the words of up to four pages are read for search. */
+    private suspend fun importPdf(uri: Uri, id: String): Block? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tmp = File(ctx.cacheDir, "in_${System.nanoTime()}.pdf")
+            ctx.contentResolver.openInputStream(uri)!!.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+            val text = StringBuilder()
+            var block: Block? = null
+            android.os.ParcelFileDescriptor.open(tmp, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                android.graphics.pdf.PdfRenderer(fd).use { r ->
+                    for (i in 0 until minOf(r.pageCount, 4)) r.openPage(i).use { pg ->
+                        val w = 1600
+                        val h = (pg.height * w.toDouble() / pg.width).toInt().coerceAtLeast(1)
+                        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                        bmp.eraseColor(android.graphics.Color.WHITE)
+                        pg.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        Ocr.readBitmap(bmp)?.takeIf { it.isNotBlank() }?.let { text.append(it).append('\n') }
+                        if (i == 0) {
+                            val f = File(imageDir(ctx), "${System.currentTimeMillis()}_${id.takeLast(4)}.jpg")
+                            f.outputStream().use { o -> bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, o) }
+                            block = newBlock(Kind.Photo, id, path = f.path, aspect = (h.toDouble() / w).coerceIn(.6, 1.4))
+                        }
+                        bmp.recycle()
+                    }
+                }
+            }
+            tmp.delete()
+            block?.copy(data = mapOf("ocr" to JsonPrimitive(text.toString().trim())))
+        }.getOrNull()
+    }
+
+    private suspend fun importImage(uri: Uri, id: String): Block? = withContext(Dispatchers.IO) {
         runCatching {
             val dir = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
             val f = File(dir, "${System.currentTimeMillis()}_${id.takeLast(4)}.jpg")
@@ -158,7 +223,7 @@ fun imageDir(ctx: Context) = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
 private val CUT_KINDS = setOf(Kind.Photo, Kind.Recipe)
 
 /** True when a picture still has its text read or its subject cut. */
-fun needsWork(b: Block) = b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && cutStale(b)))
+fun needsWork(b: Block) = (b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && cutStale(b)))) || tripStale(b) || aiStale(b)
 
 /** True until the photo has been cut with the current recipe. */
 fun cutStale(b: Block) = (b.dbl("cutV") ?: 0.0) < CUT_VERSION
