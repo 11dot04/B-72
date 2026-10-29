@@ -140,6 +140,65 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "ai${System.nanoTime()}", body = text.trim())))
     }
 
+    // ---- inline editing: the note page edits in place, so each field saves on its own
+
+    /** A new note with one empty block of [kind] (text or checklist), ready to type into. Returns its id. */
+    fun newDraft(kind: Kind, tag: String? = null): String {
+        val id = (System.currentTimeMillis() * 1000).toString()
+        val b = if (kind == Kind.Checklist) newBlock(Kind.Checklist, "in_$id", title = "List", items = listOf(""))
+        else newBlock(Kind.Text, "in_$id")
+        upsert(Note(id = id, blocks = listOf(b), tags = listOfNotNull(tag)))
+        return id
+    }
+
+    /** Throws away a note that was started and left blank. */
+    fun discardIfEmpty(id: String) {
+        val n = note(id) ?: return
+        val blank = n.blocks.all { b ->
+            when (b.kind) {
+                Kind.Text, Kind.Bare -> b.body.isBlank() && b.title.isBlank()
+                Kind.Checklist -> b.checkItems.all { it.isBlank() }
+                else -> false
+            }
+        }
+        if (blank) delete(id)
+    }
+
+    /** Sets the note's own title, kept in a title-only block (older notes kept it on their text block). */
+    fun setTitle(noteId: String, title: String) {
+        val n = note(noteId) ?: return
+        val t = title.trim()
+        val has = n.blocks.indexOfFirst { it.kind != Kind.Checklist && it.title.isNotBlank() }
+        val blocks = when {
+            has >= 0 -> n.blocks.mapIndexed { i, b -> if (i == has) b.copy(title = t) else b }
+                .filterNot { it.kind == Kind.Bare && it.title.isBlank() }
+            t.isNotEmpty() -> listOf(newBlock(Kind.Bare, "t${System.nanoTime()}", title = t)) + n.blocks
+            else -> n.blocks
+        }
+        upsert(n.copy(blocks = blocks))
+    }
+
+    /** Sets the words of a text block; a block that does not exist yet (id [blockId]) is created at the end of the words. */
+    fun setBody(noteId: String, blockId: String, text: String) {
+        val n = note(noteId) ?: return
+        val blocks = if (n.blocks.any { it.id == blockId }) n.blocks.map { if (it.id == blockId) it.copy(body = text, data = it.data - "aiH") else it }
+        else if (text.isBlank()) n.blocks
+        else n.blocks + newBlock(Kind.Text, blockId, body = text)
+        upsert(n.copy(blocks = blocks))
+    }
+
+    /** Sets the rows of a checklist; blank rows are left out. */
+    fun setItems(noteId: String, blockId: String, items: List<String>) {
+        val n = note(noteId) ?: return
+        val keep = items.filter { it.isNotBlank() }
+        upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(items = keep, body = keep.joinToString("\n")) else it }))
+    }
+
+    fun toggleStar(noteId: String) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(starred = !n.starred))
+    }
+
     /** Crosses an item of a note's checklist off, or back on. Items are marked "x " as in the old app. */
     fun toggleItem(noteId: String, blockId: String, index: Int) {
         val n = note(noteId) ?: return

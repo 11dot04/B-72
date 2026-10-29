@@ -40,13 +40,28 @@ data class Note(
     @SerialName("r") val remind: Long = 0,
     /** When the words, photos or tags were last changed by the person (epoch millis); 0 = never since it was made. */
     @SerialName("m") val edited: Long = 0,
+    /** Starred notes can be pinned to the home screen widget and filtered to. */
+    @SerialName("st") val starred: Boolean = false,
 ) {
-    /** First block that has a title, else the first line of a text block. */
+    /**
+     * The title the person gave the note; failing that, the one the assistant suggested (when it is installed).
+     * Nothing is ever promoted out of the body: a note with no title simply has none.
+     */
     val title: String
         get() = blocks.firstOrNull { it.kind != Kind.Checklist && it.title.isNotBlank() }?.title
-            ?: blocks.firstOrNull { it.kind == Kind.Poster }?.let { tplHead(Kind.Poster, it.title, it.body) }?.takeIf { it.isNotBlank() }
-            ?: blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body?.lineSequence()?.first()?.take(80)
+            ?: blocks.firstNotNullOfOrNull { b -> b.str("aiTitle")?.takeIf { it.isNotBlank() } }
             ?: ""
+
+    /** A line of the note's own words, for places that need something to show when there is no title. */
+    fun snippet(max: Int = 70): String {
+        val t = blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body
+            ?: blocks.firstOrNull { it.kind == Kind.Poster && it.body.isNotBlank() }?.body
+            ?: blocks.firstOrNull { it.kind == Kind.Quote && it.body.isNotBlank() }?.body
+            ?: blocks.firstOrNull { it.kind == Kind.Checklist }?.checkItems?.take(3)?.joinToString(", ") { it.removePrefix("x ") }
+            ?: ""
+        val line = t.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return if (line.length > max) line.take(max).trimEnd() + "…" else line
+    }
 
     val photos: List<Block> get() = blocks.filter { it.kind == Kind.Photo && it.path != null }
 
@@ -88,7 +103,7 @@ fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1
 val CUT_KEYS = setOf(
     "cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop",
     // what the readers and the assistant worked out; never shown as a field
-    "trip", "tripH", "aiH", "aiSum", "aiTags", "aiFacts",
+    "trip", "tripH", "aiH", "aiSum", "aiTags", "aiFacts", "aiTitle",
 )
 
 /** What counts as a change by the person: not canvas positions, reminders, or the background readers' results. */

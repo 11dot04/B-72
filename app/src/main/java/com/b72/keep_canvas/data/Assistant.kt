@@ -31,7 +31,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 /** What the language model made of one block of text. */
-class Analysis(val summary: String, val tags: List<String>, val facts: List<AiFact>, val trip: Trip?)
+class Analysis(val summary: String, val tags: List<String>, val facts: List<AiFact>, val trip: Trip?, val title: String = "")
 class AiFact(val label: String, val value: String, val star: Boolean)
 
 /**
@@ -138,6 +138,7 @@ object Assistant {
 
     private const val PROMPT = """You read one personal note and reply with ONLY a JSON object, nothing else.
 Keys:
+"title": a title of 2 to 6 words for the note, or "" when it is too short to need one
 "summary": one plain sentence of at most 25 words, or "" when the note is shorter than 60 words
 "tags": up to 4 short lowercase topic words
 "facts": up to 6 objects {"l": label, "v": value, "s": true or false}. Labels are one or two words (Amount, Deadline, Seat, Dose, Score, Address...). Copy values exactly as written in the note. Set "s" to true for the single most important value, and for no other fact.
@@ -157,7 +158,7 @@ Note:
             else AiFact(l.replaceFirstChar { it.uppercase() }, v, (fo["s"] as? JsonPrimitive)?.booleanOrNull == true)
         }.let { fs -> var seen = false; fs.map { if (it.star && !seen) { seen = true; it } else AiFact(it.label, it.value, false) } }
         val tags = (o["tags"] as? JsonArray).orEmpty().map { s(it).lowercase().trim('#', ' ') }.filter { it.length in 2..24 }.distinct().take(4)
-        return Analysis(s(o["summary"]), tags, facts, (o["trip"] as? JsonObject)?.let { tripOf(it) })
+        return Analysis(s(o["summary"]), tags, facts, (o["trip"] as? JsonObject)?.let { tripOf(it) }, s(o["title"]).trim('"', ' ', '.').take(60))
     }
 
     private fun tripOf(o: JsonObject): Trip? {
@@ -197,6 +198,7 @@ fun Block.aiTags(): List<String> = (data["aiTags"] as? JsonArray).orEmpty().mapN
 fun Analysis.toData(b: Block): Map<String, JsonElement> = buildMap {
     put("aiH", JsonPrimitive(tripHash(b)))
     put("aiSum", JsonPrimitive(summary))
+    put("aiTitle", JsonPrimitive(title))
     put("aiTags", JsonArray(tags.map { JsonPrimitive(it) }))
     put("aiFacts", JsonArray(facts.map { f -> buildJsonObject { put("l", f.label); put("v", f.value); put("s", f.star) } }))
 }

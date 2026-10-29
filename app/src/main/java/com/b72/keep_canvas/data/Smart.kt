@@ -107,16 +107,6 @@ fun parsePoster(title: String, text: String): Poster {
 
     val lines = t.split('\n').map { it.replace(Regex("""\s+"""), " ").trim() }.filter { it.isNotEmpty() }.toMutableList()
     var head = title.trim()
-    if (head.isEmpty() && lines.isNotEmpty()) {
-        val first = lines[0]
-        val clause = Regex("""^(.{6,56}?)(?:[.!?:;—–]|,)(?:\s|$)""").find(first)
-        if (first.length <= 56) head = lines.removeAt(0)
-        else if (clause != null) {
-            head = clause.groupValues[1]
-            lines[0] = first.substring(clause.value.length).trim()
-            if (lines[0].isEmpty()) lines.removeAt(0)
-        }
-    }
     head = tidyHead(head)
 
     val place = findPlace(head + "\n" + lines.joinToString("\n"))
@@ -139,14 +129,14 @@ fun parsePoster(title: String, text: String): Poster {
 fun posterFor(title: String, b: Block): Poster {
     val p = parsePoster(title, b.body)
     val ai = b.aiFacts().map { Fact(it.label, it.value, it.star) }
-    if (ai.isEmpty()) return p
+    if (ai.isEmpty()) return if (p.head.isBlank()) Poster(b.str("aiTitle").orEmpty(), p.big, p.facts, p.rest, p.rows) else p
     val starred = ai.firstOrNull { it.star }
     val others = ai.filter { it !== starred }
     val big = starred ?: p.big
     val old = p.facts + listOfNotNull(p.big.takeIf { starred != null })
     val extra = old.filter { f -> ai.none { it.label.equals(f.label, true) || it.value.equals(f.value, true) } }
     val rest = p.rest.lines().filter { line -> ai.none { line.contains(it.value) } }.joinToString("\n")
-    return Poster(p.head, big, (others + extra).take(8), rest, p.rows)
+    return Poster(p.head.ifBlank { b.str("aiTitle").orEmpty() }, big, (others + extra).take(8), rest, p.rows)
 }
 
 fun pairs(body: String): List<Pair<String, String>> = body.lines().filter { it.isNotBlank() }.map {
