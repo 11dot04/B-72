@@ -124,6 +124,7 @@ fun NotePage(
     onSetData: (blockId: String, key: String, value: Int) -> Unit = { _, _, _ -> },
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
     onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {},
+    onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {},
 ) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
@@ -326,6 +327,9 @@ fun NotePage(
             ctx.startActivity(Intent.createChooser(send, null))
         }
         var details by remember { mutableStateOf(false) }
+        var brainstorm by remember { mutableStateOf(false) }
+        var setupAi by remember { mutableStateOf(false) }
+        val smartOn = note.blocks.any { it.kind == Kind.Poster }
         // reminder and details on the sides, the primary action in the middle as a split button
         HorizontalFloatingToolbar(
             expanded = barOpen,
@@ -340,16 +344,18 @@ fun NotePage(
             trailingContent = {
                 Box {
                     IconButton(onClick = { details = true }) { Icon(Icons.Rounded.MoreVert, "Details and more") }
-                    DetailsMenu(note, details, { details = false }, { askDelete = true })
+                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag)
                 }
             },
             content = {
                 EditSplit(
                     container = MaterialTheme.colorScheme.onTertiary, content = MaterialTheme.colorScheme.tertiary,
-                    tags = note.tags, onEdit = onEdit, onTag = onTag, onShare = share,
+                    smart = smartOn, onEdit = onEdit, onSmart = { onSmart(!smartOn) }, onBrainstorm = { brainstorm = true },
                 )
             },
         )
+        if (brainstorm) BrainstormSheet(note, { brainstorm = false }, onAppend, { setupAi = true })
+        if (setupAi) AssistantDialog { setupAi = false }
         if (pickDate) {
             val dp = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)
             androidx.compose.material3.DatePickerDialog(

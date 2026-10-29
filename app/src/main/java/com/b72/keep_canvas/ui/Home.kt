@@ -3,6 +3,24 @@
 package com.b72.keep_canvas.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Train
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextDecoration
+import com.b72.keep_canvas.data.trip
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
@@ -51,6 +69,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -82,9 +101,14 @@ import kotlin.math.abs
 private val Ratios = listOf(1.0, 1.25, 1.5)
 private fun snap(r: Double) = Ratios.minBy { abs(it - r) }
 
-/** Films and books are portrait posters, tracks are squares, everything else follows its photo. */
+/** Films and books are portrait posters, tracks are squares, photos follow their photo; lists and text grow with their content. */
 private fun tileRatio(n: Note): Double {
-    val c = n.cover ?: return 1.0
+    val c = n.cover
+    if (c == null) {
+        val list = n.blocks.filter { it.kind == Kind.Checklist }.sumOf { it.checkItems.size }
+        val words = n.blocks.filter { it.kind == Kind.Text }.sumOf { it.body.length }
+        return when { list > 3 || words > 160 -> 1.25; else -> 1.0 }
+    }
     return when (c.kind) {
         Kind.Film, Kind.Book -> 1.5
         Kind.Track -> 1.0
@@ -92,12 +116,26 @@ private fun tileRatio(n: Note): Double {
     }
 }
 
+/** The kinds of note the filter row can narrow to. */
+private class Filt(val name: String, val icon: ImageVector, val test: (Note) -> Boolean)
+
+private val FILTERS = listOf(
+    Filt("All", Icons.Rounded.Apps) { true },
+    Filt("Photos", Icons.Rounded.Image) { it.photos.isNotEmpty() },
+    Filt("Lists", Icons.Rounded.Checklist) { n -> n.blocks.any { it.kind == Kind.Checklist } },
+    Filt("Quotes", Icons.Rounded.FormatQuote) { n -> n.blocks.any { it.kind == Kind.Quote } },
+    Filt("Links", Icons.Rounded.Link) { n -> n.blocks.any { it.kind == Kind.Link } },
+    Filt("Trips", Icons.Rounded.Train) { n -> n.blocks.any { it.trip() != null } },
+)
+
 @Composable
 fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}) {
   var menu by remember { mutableStateOf(false) }
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
-  val shown = remember(loaded?.library, q) { loaded?.library?.notes.orEmpty().asReversed().filter { q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q) } }
+  var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
+  val test = FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true }
+  val shown = remember(loaded?.library, q, filter) { loaded?.library?.notes.orEmpty().asReversed().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) } }
   val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
   val trip = remember(loaded?.library) { com.b72.keep_canvas.data.Trips.next(loaded?.library?.notes.orEmpty()) }
   BackHandler(menu) { menu = false }
@@ -116,48 +154,67 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             verticalItemSpacing = 8.dp,
         ) {
             item(span = StaggeredGridItemSpan.FullLine) {
-                Column(Modifier.padding(top = 24.dp, bottom = 16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (loaded == null) androidx.compose.material3.LoadingIndicator(Modifier.padding(end = 12.dp).size(40.dp))
-                        Text("Collection", style = flexStyle(44.sp, wght = 700, wdth = 112f, rond = 40f), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                        BackupMenu(repo, onStickers)
+                val cs = MaterialTheme.colorScheme
+                Column(Modifier.padding(top = 16.dp, bottom = 12.dp)) {
+                    // a title with a big cookie behind it that carries the count
+                    Box(Modifier.fillMaxWidth()) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).offset(x = 22.dp, y = (-6).dp).size(132.dp).rotate(-10f)
+                                .clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(Modifier.rotate(10f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${loaded?.library?.notes?.size ?: 0}", style = flexStyle(40.sp, wght = 800, wdth = 110f, rond = 60f, lh = 1f), color = cs.onPrimaryContainer)
+                                Text("notes", style = MaterialTheme.typography.labelMedium, color = cs.onPrimaryContainer.copy(alpha = .75f))
+                            }
+                        }
+                        Box(Modifier.align(Alignment.TopEnd).offset(x = (-118).dp, y = 84.dp).size(34.dp).rotate(20f).clip(MaterialShapes.Clover4Leaf.toShape()).background(cs.tertiaryContainer))
+                        Column(Modifier.padding(top = 28.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (loaded == null) androidx.compose.material3.LoadingIndicator(Modifier.padding(end = 12.dp).size(40.dp))
+                                Text("Collection", style = flexStyle(46.sp, wght = 720, wdth = 108f, rond = 50f), color = cs.onSurface)
+                            }
+                            val line = when {
+                                loaded == null -> "Loading…"
+                                loaded.error != null -> loaded.error
+                                loaded.source == Source.ImportedFromFlutter -> "Brought over from the previous version"
+                                else -> "Everything you keep, in one place"
+                            }
+                            Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, end = 120.dp))
+                        }
+                        Box(Modifier.align(Alignment.TopEnd).padding(top = 0.dp)) { BackupMenu(repo, onStickers) }
                     }
-                    val line = when {
-                        loaded == null -> "Loading…"
-                        loaded.error != null -> loaded.error
-                        loaded.source == Source.ImportedFromFlutter -> "Brought over ${loaded.library.notes.size} notes from the previous version."
-                        else -> "${loaded.library.notes.size} notes"
-                    }
-                    Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                     if (repo.prepTotal > 0) Column(Modifier.padding(top = 12.dp)) {
                         androidx.compose.material3.LinearWavyProgressIndicator(
                             progress = { (repo.prepDone.toFloat() / repo.prepTotal).coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "Reading your photos ${repo.prepDone} of ${repo.prepTotal}",
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            "Reading your notes ${repo.prepDone} of ${repo.prepTotal}",
+                            style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
                     androidx.compose.material3.TextField(
-                        q, { q = it }, Modifier.fillMaxWidth().padding(top = 16.dp), singleLine = true,
+                        q, { q = it }, Modifier.fillMaxWidth().padding(top = 18.dp), singleLine = true,
                         placeholder = { Text("Search notes, tags and text in photos") },
                         leadingIcon = { Icon(Icons.Rounded.Search, null) },
                         trailingIcon = { if (q.isNotEmpty()) androidx.compose.material3.IconButton({ q = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
-                        shape = RoundedCornerShape(28.dp),
+                        shape = RoundedCornerShape(50),
                         colors = androidx.compose.material3.TextFieldDefaults.colors(
                             focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            focusedContainerColor = cs.surfaceContainerHigh, unfocusedContainerColor = cs.surfaceContainerHigh,
                         ),
                     )
-                    // every tag is the door to its canvas
-                    val tags = remember(loaded?.library) {
-                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedBy { it.key.lowercase() }
-                    }
-                    if (tags.isNotEmpty()) androidx.compose.foundation.lazy.LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (e in tags) item(key = e.key) {
-                            androidx.compose.material3.AssistChip(onClick = { onTag(e.key) }, label = { Text("${e.key} · ${e.value}") })
+                    // narrow by what a note contains
+                    val have = remember(loaded?.library) { FILTERS.filter { f -> f.name == "All" || loaded?.library?.notes.orEmpty().any(f.test) } }
+                    if (have.size > 1) LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (f in have) item(key = f.name) {
+                            FilterChip(
+                                selected = filter == f.name, onClick = { filter = f.name }, label = { Text(f.name) },
+                                leadingIcon = { Icon(f.icon, null, Modifier.size(18.dp)) },
+                                shape = RoundedCornerShape(50),
+                            )
                         }
                     }
                 }
@@ -240,6 +297,13 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
     }
 }
 
+private val TileShapes = listOf(
+    RoundedCornerShape(34.dp),
+    RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp, bottomEnd = 34.dp, bottomStart = 10.dp),
+    RoundedCornerShape(topStart = 10.dp, topEnd = 34.dp, bottomEnd = 34.dp, bottomStart = 34.dp),
+    RoundedCornerShape(topStart = 34.dp, topEnd = 10.dp, bottomEnd = 34.dp, bottomStart = 34.dp),
+)
+
 @Composable
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -254,42 +318,85 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val ratio = tileRatio(n)
     val coverPath = n.cover?.path
     val img by produceState<ImageBitmap?>(coverPath?.let { Images.peek(it, 600) }, n.id) { value = coverPath?.let { Images.load(it, 600) } }
+    val hasList = n.blocks.any { it.kind == Kind.Checklist }
+    val hasTrip = n.blocks.any { it.trip() != null }
     Box(
         Modifier
             .fillMaxWidth()
             .scale(press)
             .aspectRatio((1 / ratio).toFloat())
-            .clip(RoundedCornerShape(28.dp))
+            .clip(TileShapes[seedMod(n.id, TileShapes.size)])
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
     ) {
         img?.let { Image(it, null, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
         val t = n.title
-        if (t.isNotEmpty()) {
-            val onPhoto = coverPath != null
-            Box(
+        if (img != null) {
+            if (t.isNotEmpty()) Box(
                 Modifier
-                    .align(if (onPhoto) Alignment.BottomStart else Alignment.TopStart)
+                    .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .then(if (onPhoto) Modifier.background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))) else Modifier)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000))))
                     .padding(14.dp),
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
-                FitTitle(t, if (onPhoto) Color.White else fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
             }
-        }
-        if (img == null) {
-            val sum = remember(n) {
-                n.blocks.firstOrNull { it.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Link) }
-                    ?.let { com.b72.keep_canvas.data.tplSummary(it.kind, it.title, it.body) }.orEmpty()
+            if (hasList || hasTrip) Box(
+                Modifier.align(Alignment.TopEnd).padding(10.dp).size(32.dp).clip(MaterialShapes.Cookie6Sided.toShape()).background(cs.surface.copy(alpha = .88f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
+        } else {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                Spacer(Modifier.height(10.dp))
+                Preview(n, fg)
             }
-            if (sum.isNotEmpty()) Text(
-                sum, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall, color = fg.copy(alpha = .8f),
-                modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
-            )
         }
     }
+}
+
+/** What a note with no picture shows in its tile: the first items of its list with a progress bar, else a few lines of its words. */
+@Composable
+private fun Preview(n: Note, fg: Color) {
+    val list = n.blocks.firstOrNull { it.kind == Kind.Checklist }
+    if (list != null) {
+        val items = list.checkItems
+        val done = items.count { it.startsWith("x ") }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            for (it in items.take(4)) {
+                val d = it.startsWith("x ")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (d) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, Modifier.size(16.dp), tint = fg.copy(alpha = if (d) .9f else .6f))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (d) it.substring(2) else it, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall.copy(textDecoration = if (d) TextDecoration.LineThrough else null),
+                        color = fg.copy(alpha = if (d) .55f else .9f),
+                    )
+                }
+            }
+            if (items.size > 4) Text("+ ${items.size - 4} more", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = .65f))
+            if (items.isNotEmpty()) {
+                LinearProgressIndicator(
+                    progress = { done.toFloat() / items.size }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(5.dp).clip(CircleShape),
+                    color = fg, trackColor = fg.copy(alpha = .18f), gapSize = 0.dp, drawStopIndicator = {},
+                )
+                Text("$done of ${items.size} done", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = .7f))
+            }
+        }
+        return
+    }
+    val sum = remember(n) {
+        n.blocks.firstOrNull { it.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Link) }
+            ?.let { com.b72.keep_canvas.data.tplSummary(it.kind, it.title, it.body) }
+            ?: n.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body
+            ?: ""
+    }
+    if (sum.isNotEmpty()) Text(
+        sum, maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        style = TextStyle(fontFamily = Serif, fontSize = 15.sp, lineHeight = 20.sp, fontStyle = FontStyle.Italic), color = fg.copy(alpha = .85f),
+    )
 }
 
 private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % n
@@ -319,7 +426,6 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
     Box {
         androidx.compose.material3.IconButton({ open = true }) { Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
-            androidx.compose.material3.DropdownMenuItem({ Text("Stickers") }, { open = false; onStickers() })
             androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
             androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })

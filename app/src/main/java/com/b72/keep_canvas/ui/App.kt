@@ -32,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +52,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     // the tag whose canvas is showing; a note opened from it returns here
     var board by rememberSaveable { mutableStateOf<String?>(null) }
-    var stickers by rememberSaveable { mutableStateOf(false) }
+    // 0 notes, 1 canvas, 2 stickers: the three top-level places in the floating bar
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var editTag by remember { mutableStateOf<String?>(null) }
     var shareIn by remember { mutableStateOf<com.b72.keep_canvas.data.Share?>(null) }
     // something shared from another app opens a new note, ready to save
@@ -69,8 +71,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     val grid = rememberLazyStaggeredGridState()
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    BackHandler(stickers) { stickers = false }
-    BackHandler((open != null || board != null) && editing == null && !stickers) { if (open != null) open = null else board = null }
+    BackHandler(tab != 0 && open == null && board == null && editing == null) { tab = 0 }
+    BackHandler((open != null || board != null) && editing == null) { if (open != null) open = null else board = null }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
       Box(Modifier.fillMaxSize()) {
@@ -98,6 +100,11 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     onSetData = { b, k, v -> repo.setData(note.id, b, k, kotlinx.serialization.json.JsonPrimitive(v)) },
                     related = relatedOf,
                     allNotes = loaded?.library?.notes.orEmpty(),
+                    onSmart = { on ->
+                        repo.setSmart(note.id, on)
+                        if (on && !com.b72.keep_canvas.data.Assistant.installed) android.widget.Toast.makeText(ctx, "Smart layout is on. Install the assistant for deeper extraction.", android.widget.Toast.LENGTH_LONG).show()
+                    },
+                    onAppend = { repo.appendText(note.id, it) },
                     onAddTag = { t -> repo.upsert(note.copy(tags = (note.tags + t).distinct())) },
                     onOpenNote = { open = it },
                     onRemind = { at ->
@@ -110,9 +117,13 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     repo, loaded, tag,
                     onBack = { board = null }, onOpen = { open = it },
                     onAdd = { editTag = tag; editing = null to null },
-                    onStickers = { stickers = true },
+                    onStickers = { board = null; tab = 2 },
                 )
-                else HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it }, onStickers = { stickers = true })
+                else when (tab) {
+                    1 -> CanvasHub(loaded) { board = it }
+                    2 -> StickersScreen(repo, loaded) { tab = 0 }
+                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it })
+                }
             }
         }
         AnimatedVisibility(
@@ -134,13 +145,13 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 }
             }
         }
+        // the floating bar belongs to the three top-level places only
         AnimatedVisibility(
-            visible = stickers,
-            enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 4 } + fadeIn(fx),
-            exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 4 } + fadeOut(fx),
-        ) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { StickersScreen(repo, loaded) { stickers = false } }
-        }
+            visible = open == null && board == null && editing == null,
+            modifier = Modifier.align(Alignment.BottomStart),
+            enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeIn(fx),
+            exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeOut(fx),
+        ) { FloatingNav(tab, { tab = it }, Modifier.navigationBarsPadding().padding(16.dp)) }
         androidx.compose.material3.SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
       }
     }
