@@ -28,6 +28,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Spotify sign-in comes back here -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="b72" android:host="spotify" />
+            </intent-filter>
             <!-- Share to B-72: text and links, one picture, or several -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
@@ -61,6 +68,12 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/trip_widget_info" />
+        </receiver>
+        <receiver android:name=".widget.TripWidgetSmall" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/trip_widget_small_info" />
         </receiver>
         <receiver android:name=".data.BootReceiver" android:exported="true">
             <intent-filter>
