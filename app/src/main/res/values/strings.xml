@@ -8,4 +8,5 @@
     <string name="sc_photo_long">Add photos</string>
     <string name="sc_link_short">Save a link</string>
     <string name="sc_link_long">Save a link</string>
+    <string name="widget_trip_desc">Your next journey, and the right status page for how close it is</string>
 </resources>
