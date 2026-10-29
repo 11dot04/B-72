@@ -74,7 +74,13 @@ data class Library(
     val notes: List<Note> = emptyList(),
     /** Stickers are carried through untouched until the canvas is ported. */
     val stickers: List<JsonElement> = emptyList(),
+    /** Marks and stickers a person put on a canvas by hand, per tag. */
+    val placed: Map<String, List<Stuck>> = emptyMap(),
 )
+
+/** One hand-placed item on a canvas. [k] is "m:<Mark>" for a drawn mark or "s:<path>" for a sticker; x, y and w are fractions of the canvas width. */
+@Serializable
+data class Stuck(val id: String, val k: String, val x: Float, val y: Float, val w: Float, val r: Float = 0f, val c: Int = 0)
 
 // ---- helpers for the loose `data` map the Flutter app used (cut-outs, ratings, record fields) ----
 fun Block.str(key: String): String? = (data[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content

@@ -173,12 +173,13 @@ suspend fun linkPreview(url: String): Map<String, String> {
     val host = runCatching { URL(url).host.removePrefix("www.") }.getOrDefault("")
     val title = meta("og:title") ?: meta("twitter:title") ?: Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
     val img = meta("og:image") ?: meta("twitter:image")
-    return buildMap {
+    val base = buildMap {
         put("title", title?.let { clean(it) } ?: "")
         put("desc", meta("og:description") ?: meta("description") ?: "")
         put("site", meta("og:site_name") ?: host)
         if (img != null) runCatching { put("image", URL(URL(url), img).toString()) }
     }
+    return base + Sources.enrich(runCatching { URL(url).let { u -> u.toString() } }.getOrDefault(url), base)
 }
 
 /** Reads a recipe page's schema.org data (most recipe sites publish it). */

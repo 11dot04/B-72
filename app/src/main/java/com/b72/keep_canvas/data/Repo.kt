@@ -36,7 +36,27 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         Related.rank(all, me, k) { brain.vector(it) }
     }
 
-    suspend fun init() { loaded = Store.load(ctx) }
+    suspend fun init() { loaded = Store.load(ctx); autoClean() }
+
+    /** Deletes picture files that no note, cut-out, sticker or placed item refers to any more (and are over a day old, so a note being written is safe). Returns the bytes freed. */
+    suspend fun cleanOrphans(): Long = withContext(Dispatchers.IO) {
+        val lib = loaded?.library ?: return@withContext 0L
+        val text = AppJson.encodeToString(Library.serializer(), lib)
+        val cutoff = System.currentTimeMillis() - 24 * 3_600_000L
+        var freed = 0L
+        imageDir(ctx).listFiles()?.forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff && !text.contains(f.name)) { val n = f.length(); if (f.delete()) freed += n }
+        }
+        freed
+    }
+
+    /** Once a week, quietly. */
+    private suspend fun autoClean() {
+        val sp = ctx.getSharedPreferences("b72", Context.MODE_PRIVATE)
+        if (System.currentTimeMillis() - sp.getLong("cleaned", 0) < 7 * 86_400_000L) return
+        cleanOrphans()
+        sp.edit().putLong("cleaned", System.currentTimeMillis()).apply()
+    }
 
     fun note(id: String): Note? = loaded?.library?.notes?.firstOrNull { it.id == id }
 
@@ -116,7 +136,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     fun removeSticker(path: String) {
         val l = loaded?.library ?: return
-        commit(l.copy(stickers = l.stickers.filter { (it as? kotlinx.serialization.json.JsonObject)?.get("p")?.let { p -> (p as? JsonPrimitive)?.content } != path }))
+        commit(l.copy(placed = l.placed.mapValues { (_, v) -> v.filter { it.k != "s:$path" } }, stickers = l.stickers.filter { (it as? kotlinx.serialization.json.JsonObject)?.get("p")?.let { p -> (p as? JsonPrimitive)?.content } != path }))
         runCatching { File(path).delete() }
     }
 
@@ -138,6 +158,23 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     fun appendText(noteId: String, text: String) {
         val n = note(noteId) ?: return
         upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "ai${System.nanoTime()}", body = text.trim())))
+    }
+
+    fun setPlaced(tag: String, items: List<Stuck>) {
+        val l = loaded?.library ?: return
+        if (l.placed[tag].orEmpty() == items) return
+        commit(l.copy(placed = if (items.isEmpty()) l.placed - tag else l.placed + (tag to items)))
+    }
+
+    /** A track from a service (Spotify) becomes a note with a track card: cover, artist, album, year and a link back. */
+    suspend fun addTrack(c: Cand, tag: String? = null): String {
+        val id = (System.currentTimeMillis() * 1000).toString()
+        val path = saveImage(c.image, imageDir(ctx))
+        val data = c.data.filterValues { it.isNotEmpty() }.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) as kotlinx.serialization.json.JsonElement } +
+            ("src" to kotlinx.serialization.json.JsonPrimitive("Spotify"))
+        val b = newBlock(Kind.Track, "tr$id", title = c.title, path = path).copy(data = data)
+        upsert(Note(id = id, blocks = listOf(b), tags = listOfNotNull(tag)))
+        return id
     }
 
     // ---- inline editing: the note page edits in place, so each field saves on its own
