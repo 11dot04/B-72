@@ -170,6 +170,12 @@ Note:
         return Trip(mode, s("number").uppercase().replace(" ", ""), s("name"), s("pnr").uppercase(), s("from"), s("fromCode").uppercase(), s("to"), s("toCode").uppercase(), dep, arr)
     }
 
+    /** One free-form answer (the brainstorm): loads the model, asks, and lets go of it again. */
+    suspend fun generate(ctx: Context, prompt: String): String? = withContext(Dispatchers.Default) {
+        val s = open(ctx) ?: return@withContext null
+        try { s.ask(prompt)?.trim()?.takeIf { it.isNotEmpty() } } finally { s.close() }
+    }
+
     fun analyse(session: Session, text: String): Analysis? = session.ask(PROMPT + "\"\"\"\n" + text.take(3000) + "\n\"\"\"")?.let { parse(it) }
 }
 

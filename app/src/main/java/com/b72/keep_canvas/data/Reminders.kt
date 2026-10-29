@@ -70,7 +70,7 @@ const val NEW_KEY = "b72.new"
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        if (intent.hasExtra("url")) { TripAlerts.notify(ctx, intent); return }
+        if (intent.hasExtra("url")) { TripAlerts.notify(ctx, intent); com.b72.keep_canvas.widget.TripWidget.refresh(ctx); return }
         Reminders.notify(ctx, intent.getStringExtra("id").orEmpty(), intent.getStringExtra("title").orEmpty())
     }
 }

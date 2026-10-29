@@ -126,6 +126,20 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(data = it.data + (key to value)) else it }))
     }
 
+    /** Switches a note's text between plain and smart (poster) layout; the assistant re-reads it so the facts are fresh. */
+    fun setSmart(noteId: String, on: Boolean) {
+        val n = note(noteId) ?: return
+        val from = if (on) Kind.Text else Kind.Poster
+        val to = if (on) Kind.Poster else Kind.Text
+        upsert(n.copy(blocks = n.blocks.map { if (it.kind == from) it.copy(k = to.ordinal, data = it.data - "aiH") else it }))
+    }
+
+    /** Adds a block of plain text to the end of a note (what the brainstorm wrote). */
+    fun appendText(noteId: String, text: String) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "ai${System.nanoTime()}", body = text.trim())))
+    }
+
     /** Crosses an item of a note's checklist off, or back on. Items are marked "x " as in the old app. */
     fun toggleItem(noteId: String, blockId: String, index: Int) {
         val n = note(noteId) ?: return
@@ -163,7 +177,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     private fun commit(lib: Library) {
         loaded = Loaded(lib, Source.Own)
-        scope.launch { Store.save(ctx, lib) }
+        scope.launch { Store.save(ctx, lib); com.b72.keep_canvas.widget.TripWidget.refresh(ctx) }
     }
 
     /** Copies a picked photo into our own folder and measures it (height / width, clamped like the old cards). */
