@@ -249,7 +249,7 @@ private val WORDS: List<Pair<Pic, List<String>>> = listOf(
 
 /** The picture that fits a note best: by the words in its tags, title and text, else by what kind of note it is. */
 fun picFor(n: Note, seed: Int): Pic? {
-    val text = (n.tags + n.title + n.blocks.joinToString(" ") { it.title + " " + it.body + " " + it.checkItems.joinToString(" ") }).lowercase()
+    val text = (n.tags.joinToString(" ") + " " + n.title + " " + n.blocks.joinToString(" ") { it.title + " " + it.body + " " + it.checkItems.joinToString(" ") }).lowercase()
     val words = Regex("""[a-z]+""").findAll(text).map { it.value }.toList()
     var best: Pic? = null
     var bestScore = 0

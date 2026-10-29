@@ -65,9 +65,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.rounded.Star
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
@@ -396,7 +394,9 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
     var assistant by remember { mutableStateOf(false) }
+    var services by remember { mutableStateOf(false) }
     if (assistant) AssistantDialog { assistant = false }
+    if (services) ServicesSheet(repo) { services = false }
     fun say(t: String) = android.widget.Toast.makeText(ctx, t, android.widget.Toast.LENGTH_LONG).show()
     val save = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         val lib = repo.loaded?.library
@@ -415,6 +415,8 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
         androidx.compose.material3.IconButton({ open = true }) { Icon(Icons.Rounded.Menu, "Menu") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
             androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
+            androidx.compose.material3.DropdownMenuItem({ Text("Connected apps") }, { open = false; services = true })
+            androidx.compose.material3.DropdownMenuItem({ Text("Clear unused photos") }, { open = false; scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
             androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
         }
@@ -430,7 +432,7 @@ private fun KeepBar(
     val cs = MaterialTheme.colorScheme
     var sorting by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().androidx_statusBars().padding(horizontal = 12.dp, vertical = 8.dp)
+        modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
             .height(56.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainerHigh).padding(start = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -461,4 +463,3 @@ private fun KeepBar(
     }
 }
 
-private fun Modifier.androidx_statusBars(): Modifier = this.windowInsetsPadding(WindowInsets.statusBars)

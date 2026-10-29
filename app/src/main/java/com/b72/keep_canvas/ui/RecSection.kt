@@ -122,6 +122,12 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                     if (v("year").isNotEmpty()) InfoChip(Icons.Rounded.CalendarToday, v("year"), fg)
                     if (v("genre").isNotEmpty()) InfoChip(Icons.Rounded.GraphicEq, v("genre"), fg)
                 }
+                if (v("url").startsWith("http")) {
+                    val uri = LocalUriHandler.current
+                    FilledTonalButton(onClick = { runCatching { uri.openUri(v("url")) } }, modifier = Modifier.padding(top = 12.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("OPEN IN ${v("src").ifEmpty { "APP" }.uppercase()}")
+                    }
+                }
                 Notes("WHY YOU LOVE IT", b.body, fg)
             }
             Kind.Recipe -> {
@@ -157,7 +163,8 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                     Column(Modifier.padding(18.dp)) {
                         if (v("site").isNotEmpty()) Text(v("site").uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = .8.sp), color = fg.copy(alpha = .67f))
                         if (b.title.isNotEmpty()) Text(b.title, style = flexStyle(24.sp, wght = 720, rond = 30f, lh = 1.1f), color = fg, modifier = Modifier.padding(top = 6.dp))
-                        if (v("desc").isNotEmpty()) Text(v("desc"), maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .82f), modifier = Modifier.padding(top = 8.dp))
+                        if (v("stats").isNotEmpty()) StatGrid(v("stats"), v("src"), fg)
+                        if (v("desc").isNotEmpty() && v("stats").isEmpty()) Text(v("desc"), maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .82f), modifier = Modifier.padding(top = 8.dp))
                         Text(b.body, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace), color = fg.copy(alpha = .59f), modifier = Modifier.padding(top = 10.dp))
                         FilledTonalButton(onClick = { runCatching { uri.openUri(url) } }, modifier = Modifier.padding(top = 14.dp)) {
                             Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(18.dp))
@@ -167,6 +174,26 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                         if (v("note").isNotEmpty()) Text(v("note"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp), color = fg, modifier = Modifier.padding(top = 12.dp))
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The numbers of a shared activity or track as big figures, with a small felt-tip picture of the service's world in the corner. */
+@Composable
+private fun StatGrid(stats: String, src: String, fg: androidx.compose.ui.graphics.Color) {
+    val rows = stats.lines().mapNotNull { l -> l.split('|', limit = 2).takeIf { it.size == 2 && it[1].isNotBlank() }?.let { it[0] to it[1] } }
+    if (rows.isEmpty()) return
+    val pic = when (src) { "Spotify" -> Pic.Music; "Google Maps" -> Pic.Pin; "Goodreads" -> Pic.Book; "Letterboxd" -> Pic.Camera; "YouTube" -> Pic.Music; else -> Pic.Mountain }
+    Box(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val sz = size.height.coerceAtMost(size.width * .4f)
+            drawPic(pic, size.width - sz, size.height - sz, sz, fg.copy(alpha = .13f), src.hashCode())
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            for ((k, v) in rows) Column {
+                Text(v, style = flexStyle(if (v.length > 9) 22.sp else 30.sp, wght = 780, rond = 30f, lh = 1f), color = fg)
+                Text(k.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = .8.sp), color = fg.copy(alpha = .6f), modifier = Modifier.padding(top = 2.dp))
             }
         }
     }

@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
@@ -168,6 +169,9 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     val force = remember { booleanArrayOf(false) } // set by the re-tidy button, consumed by the next layout
     val vs = rememberScrollState()
     val hs = rememberScrollState()
+    val placed = remember(tag) { PlacedState(repo, tag) }
+    LaunchedEffect(loaded != null) { placed.seed() }
+    var tray by remember { mutableStateOf(false) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(t.bg)) {
         val swPx = with(density) { maxWidth.toPx() }
@@ -223,6 +227,8 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                     cards.forEach { it.rev }
                     if (dragId == null) arrows(com.b72.keep_canvas.ui.board.arrowsFor(cards), s.cw, topInset, t.primary)
                 }
+                // marks and stickers the person put here themselves, above everything
+                PlacedLayer(placed, s.cw, topInset, t.primary)
             }
         }
         if (cards.isEmpty() && loaded != null) Text(
@@ -238,6 +244,21 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
         }
+        PlacedBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
+        if (tray) PlacedTray(
+            stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
+            onMark = { m, c ->
+                tray = false
+                val w = .15f
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "m:${m.name}", centreX(hs.value, swPx, s.cw, w), centreY(vs.value, shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c))
+            },
+            onSticker = { p ->
+                tray = false
+                val w = .17f
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "s:$p", centreX(hs.value, swPx, s.cw, w), centreY(vs.value, shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f))
+            },
+            onClose = { tray = false },
+        )
         // tools in a floating pill, and the one thing you do most (a new note) as its own larger button beside it
         Row(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
@@ -247,6 +268,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 expanded = true,
                 colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
                 content = {
+                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Mark up this canvas") }
                     IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Stickers") }
                     IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") }
                 },
@@ -261,6 +283,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         }
     }
 }
+
+/** Where to drop a new item so it lands in the middle of what is on screen (fractions of the canvas width). */
+private fun centreX(scroll: Int, sw: Float, cw: Float, w: Float) = (scroll + sw / 2) / cw - w / 2
+private fun centreY(scroll: Int, sh: Float, cw: Float, topInset: Float, h: Float) = (scroll + sh / 2 - topInset) / cw - h / 2
 
 private fun persist(repo: Repo, tag: String, changed: List<Card>) {
     val latest = repo.loaded?.library?.notes ?: return

@@ -132,6 +132,7 @@ suspend fun Rec.fetchLink(ctx: Context): Boolean {
     if (p.isNotEmpty()) {
         if (title.isEmpty()) title = p["title"] ?: ""
         f["desc"] = p["desc"] ?: ""; f["site"] = p["site"] ?: ""
+        p["src"]?.let { f["src"] = it }; p["stats"]?.let { f["stats"] = it }
         saveImage(p["image"], imageDir(ctx))?.let { path = it }
     }
     busy = false
