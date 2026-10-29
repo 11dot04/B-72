@@ -55,6 +55,13 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // 0 notes, 1 canvas, 2 stickers: the three top-level places in the floating bar
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var editTag by remember { mutableStateOf<String?>(null) }
+    // a note just started from the + menu opens on its page with the cursor in it
+    var draft by remember { mutableStateOf<String?>(null) }
+    fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }
+    fun start(kind: Kind, tag: String?) {
+        if (kind == Kind.Text || kind == Kind.Checklist) { val id = repo.newDraft(kind, tag); draft = id; open = id }
+        else { editTag = tag; editing = null to kind }
+    }
     var shareIn by remember { mutableStateOf<com.b72.keep_canvas.data.Share?>(null) }
     // something shared from another app opens a new note, ready to save
     LaunchedEffect(share) {
@@ -72,7 +79,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     BackHandler(tab != 0 && open == null && board == null && editing == null) { tab = 0 }
-    BackHandler((open != null || board != null) && editing == null) { if (open != null) open = null else board = null }
+    BackHandler((open != null || board != null) && editing == null) { if (open != null) leave() else board = null }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
       Box(Modifier.fillMaxSize()) {
@@ -87,7 +94,9 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
                     value = note?.let { repo.related(it.id) }.orEmpty()
                 }
-                if (note != null) NotePage(note, shared, onBack = { open = null }, onEdit = { editing = note.id to null }, onTag = { open = null; board = it },
+                if (note != null) NotePage(note, shared, onBack = { leave() }, autoFocus = draft == note.id,
+                    onStar = { repo.toggleStar(note.id) }, onTitle = { repo.setTitle(note.id, it) },
+                    onBody = { b, t -> repo.setBody(note.id, b, t) }, onItems = { b, l -> repo.setItems(note.id, b, l) }, onEdit = { editing = note.id to null }, onTag = { open = null; board = it },
                     onDelete = {
                         repo.delete(note.id)
                         open = null
@@ -116,13 +125,13 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 else if (tag != null) BoardScreen(
                     repo, loaded, tag,
                     onBack = { board = null }, onOpen = { open = it },
-                    onAdd = { editTag = tag; editing = null to null },
+                    onAdd = { start(Kind.Text, tag) },
                     onStickers = { board = null; tab = 2 },
                 )
                 else when (tab) {
                     1 -> CanvasHub(loaded) { board = it }
                     2 -> StickersScreen(repo, loaded) { tab = 0 }
-                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { editTag = null; editing = null to it }, onTag = { board = it })
+                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { start(it, null) }, onTag = { board = it })
                 }
             }
         }
@@ -148,10 +157,10 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         // the floating bar belongs to the three top-level places only
         AnimatedVisibility(
             visible = open == null && board == null && editing == null,
-            modifier = Modifier.align(Alignment.BottomStart),
+            modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeIn(fx),
             exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeOut(fx),
-        ) { FloatingNav(tab, { tab = it }, Modifier.navigationBarsPadding().padding(16.dp)) }
+        ) { FloatingNav(tab, { tab = it }, Modifier.navigationBarsPadding().padding(bottom = 14.dp)) }
         androidx.compose.material3.SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
       }
     }

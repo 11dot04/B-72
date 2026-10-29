@@ -110,6 +110,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.rounded.Contrast
 
 private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
 
@@ -125,10 +126,14 @@ fun NotePage(
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
     onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {},
     onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {},
+    onStar: () -> Unit = {}, onTitle: (String) -> Unit = {}, onBody: (blockId: String, text: String) -> Unit = { _, _ -> },
+    onItems: (blockId: String, items: List<String>) -> Unit = { _, _ -> }, autoFocus: Boolean = false,
 ) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
     var tint by remember { mutableStateOf(true) }
+    var viewer by remember { mutableStateOf<Int?>(null) }
+    var editTitle by remember { mutableStateOf(false) }
 
     // The width axis runs from condensed to the fit. The layout is measured once; only the typeface step changes.
     val flex = remember { Animatable(0f) }
@@ -157,6 +162,7 @@ fun NotePage(
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+    viewer?.let { v -> PhotoViewer(photos.mapNotNull { it.path }, v) { viewer = null } }
     BoxWithConstraints(Modifier.fillMaxSize().background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
@@ -167,10 +173,21 @@ fun NotePage(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 72.dp, bottom = bottom + 112.dp),
         ) {
-            if (lay != null) item {
+            // the title is a field when there is none yet (or after a tap); otherwise it is the big flexing title
+            val explicit = note.blocks.firstOrNull { it.kind != Kind.Checklist && it.title.isNotBlank() }?.title.orEmpty()
+            val hasText = note.blocks.any { it.kind == Kind.Text }
+            val hasList = note.blocks.any { it.kind == Kind.Checklist }
+            val fieldTitle = (explicit.isEmpty() && title.isEmpty()) || editTitle
+            if (fieldTitle) item(key = "title-field") {
+                InlineTitle(
+                    explicit, if (title.isNotEmpty()) title else "Title", pal, focus = editTitle,
+                    onDone = { editTitle = false }, onChange = onTitle,
+                )
+            } else if (lay != null) item(key = "title-big") {
                 FitTitle(
                     title, pal.fg, note.id,
-                    modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom },
+                    modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
+                        .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                     flex = { flex.value },
                 )
             }
@@ -195,7 +212,7 @@ fun NotePage(
                                 .align(Alignment.TopCenter)
                                 .offset { androidx.compose.ui.unit.IntOffset(0, -lift.roundToInt()) }
                                 .shared(shared, "img-${note.id}")
-                                .clickable(onClickLabel = "Switch the colour tint") { tint = !tint },
+                                .clickable(onClickLabel = "View photo") { viewer = 0 },
                         )
                     }
                 } else if (photos.size == 1) {
@@ -208,7 +225,7 @@ fun NotePage(
                             .aspectRatio((1 / b.aspect).toFloat().coerceIn(.7f, 1.6f))
                             .shared(shared, "img-${note.id}")
                             .clip(RoundedCornerShape(28.dp))
-                            .clickable { tint = !tint },
+                            .clickable(onClickLabel = "View photo") { viewer = 0 },
                     )
                 } else {
                     Spacer(Modifier.height(20.dp))
@@ -218,7 +235,7 @@ fun NotePage(
                         itemSpacing = 8.dp,
                         modifier = Modifier.fillMaxWidth().height(w * .7f).shared(shared, "img-${note.id}"),
                     ) { i ->
-                        PhotoImage(photos[i].path!!, 1000, tint, pal.primary, Modifier.fillMaxSize().maskClip(MaterialTheme.shapes.extraLarge).clickable { tint = !tint })
+                        PhotoImage(photos[i].path!!, 1000, tint, pal.primary, Modifier.fillMaxSize().maskClip(MaterialTheme.shapes.extraLarge).clickable(onClickLabel = "View photo") { viewer = i })
                     }
                 }
             }
@@ -236,17 +253,25 @@ fun NotePage(
                     modifier = Modifier.padding(bottom = 18.dp),
                 )
             }
-            if (photos.size == 1 && photos[0].cutPath() != null) item {
+            if (photos.isNotEmpty()) item {
                 val pb = photos[0]
-                val on = canPopOut(pb)
+                val cut = photos.size == 1 && pb.cutPath() != null
+                val on = cut && canPopOut(pb)
                 Column(Modifier.padding(bottom = 18.dp)) {
-                    androidx.compose.material3.ToggleButton(checked = on, onCheckedChange = { onSetData(pb.id, "pop", if (it) 1 else 0) }) {
-                        Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Pop out")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.ToggleButton(checked = tint, onCheckedChange = { tint = it }) {
+                            Icon(Icons.Rounded.Contrast, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Duotone")
+                        }
+                        if (cut) androidx.compose.material3.ToggleButton(checked = on, onCheckedChange = { onSetData(pb.id, "pop", if (it) 1 else 0) }) {
+                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Pop out")
+                        }
                     }
-                    val why = popWhy(pb)
-                    if (!on && why.isNotEmpty() && pb.dbl("pop") == null) Text(
+                    val why = if (cut) popWhy(pb) else ""
+                    if (cut && !on && why.isNotEmpty() && pb.dbl("pop") == null) Text(
                         "Left flat automatically: $why",
                         style = MaterialTheme.typography.labelSmall, color = pal.fg.copy(alpha = .6f), modifier = Modifier.padding(top = 6.dp, start = 4.dp),
                     )
@@ -258,27 +283,18 @@ fun NotePage(
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
-            for (t in texts) item {
-                val linked = rememberLinked(t, allNotes, pal.primary, onOpenNote)
-                androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text(linked, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp), color = pal.fg, modifier = Modifier.padding(bottom = 12.dp))
-                }
+            val textBlocks = note.blocks.filter { it.kind == Kind.Text }
+            val isDraft = autoFocus
+            for ((ti, b) in textBlocks.withIndex()) item(key = "t-${b.id}") {
+                val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
+                InlineBody(b.body, if (ti == 0) "Note" else "", pal, linked, focus = isDraft && ti == 0 && b.body.isEmpty() && !hasList) { onBody(b.id, it) }
             }
-            for (b in note.blocks) if (b.kind == Kind.Checklist) b.checkItems.forEachIndexed { i, s ->
-                item(key = "${b.id}-$i") {
-                    val done = s.startsWith("x ")
-                    // the whole row is the target (48dp high) and reads as one checkbox to a screen reader
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .toggleable(value = done, role = Role.Checkbox, onValueChange = { onToggle(b.id, i) })
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, tint = if (done) pal.primary else pal.fg)
-                        Spacer(Modifier.width(12.dp))
-                        ScribbleText(if (done) s.substring(2) else s, done, pal.fg, pal.primary, MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp), Modifier.weight(1f))
-                    }
-                }
+            // a note with no words yet (a photo, a record) still takes some
+            if (!hasText && !hasList && note.blocks.none { it.kind == Kind.Poster }) item(key = "t-in_${note.id}") {
+                InlineBody("", "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false) { onBody("in_${note.id}", it) }
+            }
+            for (b in note.blocks) if (b.kind == Kind.Checklist) item(key = "l-${b.id}") {
+                InlineChecklist(b.checkItems, pal, focus = isDraft && b.checkItems.all { it.isBlank() }) { onItems(b.id, it) }
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
         }
@@ -339,6 +355,7 @@ fun NotePage(
             ),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
             leadingContent = {
+                IconButton(onClick = onStar) { Icon(if (note.starred) Icons.Rounded.Star else Icons.Rounded.StarOutline, if (note.starred) "Remove star" else "Star this note") }
                 IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
             },
             trailingContent = {

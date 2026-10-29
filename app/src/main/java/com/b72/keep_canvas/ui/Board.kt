@@ -301,7 +301,6 @@ private fun BoardCard(
             .size(s.dp(c.w * s.cw), s.dp(c.h * s.cw))
             .scale(lift)
             .rotate(Math.toDegrees(c.angle.toDouble()).toFloat())
-            .then(if (bare) Modifier else Modifier.shadow(s.dp(u * (if (dragging) .03f else .012f)), RoundedCornerShape(s.dp(radius + ring)), clip = false))
             .background(ringColor, RoundedCornerShape(s.dp(radius + ring)))
             .padding(s.dp(ring))
             .clip(RoundedCornerShape(s.dp(radius)))

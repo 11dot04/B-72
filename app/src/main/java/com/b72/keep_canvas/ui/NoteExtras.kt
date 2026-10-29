@@ -82,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -250,9 +251,13 @@ fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, mo
 fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
     if (related.isEmpty()) return
     val cs = MaterialTheme.colorScheme
-    val ink = cs.onTertiaryContainer
+    // tertiary container suits a page tinted from a photo; on a page in the plain system colours (and toned-down themes)
+    // it is too close to the page, so the panel steps up to the solid tertiary instead
+    val close = kotlin.math.abs(pal.bg.luminance() - cs.tertiaryContainer.luminance()) < .08f
+    val panel = if (close) cs.tertiary else cs.tertiaryContainer
+    val ink = if (close) cs.onTertiary else cs.onTertiaryContainer
     val head = flexStyle(40.sp, wght = 360, wdth = 52f, lh = 1f)
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(cs.tertiaryContainer).padding(vertical = 18.dp)) {
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(panel).padding(vertical = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("RELATED", style = head, color = ink)
             Text("NOTES", style = head, color = ink)
@@ -264,25 +269,26 @@ fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Uni
         ) {
             itemsIndexed(related, key = { _, n -> n.id }) { i, n ->
                 val tall = i % 2 == 0
-                RelatedTile(n, if (tall) 146.dp else 118.dp, if (tall) 196.dp else 150.dp, if (tall) 0.dp else 46.dp, onOpen)
+                RelatedTile(n, if (tall) 146.dp else 118.dp, if (tall) 196.dp else 150.dp, if (tall) 0.dp else 46.dp, ink, onOpen)
             }
         }
     }
 }
 
 @Composable
-private fun RelatedTile(r: Note, w: Dp, h: Dp, top: Dp, onOpen: (String) -> Unit) {
+private fun RelatedTile(r: Note, w: Dp, h: Dp, top: Dp, ink: Color, onOpen: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val path = r.cover?.path
     Box(
-        Modifier.padding(top = top).width(w).height(h).clip(RoundedCornerShape(26.dp)).background(cs.tertiary.copy(alpha = .22f))
-            .clickable(onClickLabel = "Open ${r.title}") { onOpen(r.id) },
+        Modifier.padding(top = top).width(w).height(h).clip(RoundedCornerShape(26.dp)).background(ink.copy(alpha = .16f))
+            .clickable(onClickLabel = "Open note") { onOpen(r.id) },
     ) {
         path?.let { PhotoImage(it, 500, false, cs.tertiary, Modifier.fillMaxSize()) }
         if (path != null) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(.45f to Color.Transparent, 1f to Color.Black.copy(alpha = .7f))))
         Text(
-            r.title.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
-            style = flexStyle(17.sp, wght = 700, rond = 40f, lh = 1.05f), color = if (path != null) Color.White else cs.onTertiaryContainer,
+            r.title.ifBlank { r.snippet(50) }, maxLines = 3, overflow = TextOverflow.Ellipsis,
+            style = if (r.title.isBlank()) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 14.sp, lineHeight = 18.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) else flexStyle(17.sp, wght = 700, rond = 40f, lh = 1.05f),
+            color = if (path != null) Color.White else ink,
             modifier = Modifier.align(if (path != null) Alignment.BottomStart else Alignment.TopStart).padding(12.dp),
         )
     }

@@ -63,36 +63,36 @@ private val DESTS = listOf(
     Dest("Stickers", Icons.Rounded.EmojiEmotions),
 )
 
-/** The three top-level places as one floating pill: the chosen one opens up to show its name. */
+/** The three top-level places as one centred tertiary pill. Depth comes from a surface-coloured halo and tone, not a shadow. */
 @Composable
 fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    HorizontalFloatingToolbar(
-        expanded = true,
-        colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-        modifier = modifier,
-        content = {
-            DESTS.forEachIndexed { i, d ->
-                val on = tab == i
-                val bg by animateColorAsState(if (on) cs.primary else Color.Transparent, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "navbg")
-                Row(
-                    Modifier.clip(CircleShape).background(bg)
-                        .clickable(role = Role.Tab, onClickLabel = d.label) { onTab(i) }
-                        .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
-                        .padding(horizontal = if (on) 18.dp else 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = if (on) cs.onPrimary else LocalContentColor.current)
-                    AnimatedVisibility(on) {
-                        Row {
-                            Spacer(Modifier.width(8.dp))
-                            Text(d.label, style = MaterialTheme.typography.labelLarge, color = cs.onPrimary, maxLines = 1)
-                        }
+    Row(
+        modifier.clip(CircleShape).background(cs.surface).padding(5.dp)
+            .clip(CircleShape).background(cs.tertiaryContainer).padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DESTS.forEachIndexed { i, d ->
+            val on = tab == i
+            val bg by animateColorAsState(if (on) cs.tertiary else Color.Transparent, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "navbg")
+            val fg = if (on) cs.onTertiary else cs.onTertiaryContainer
+            Row(
+                Modifier.clip(CircleShape).background(bg)
+                    .clickable(role = Role.Tab, onClickLabel = d.label) { onTab(i) }
+                    .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
+                    .padding(horizontal = if (on) 18.dp else 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = fg)
+                AnimatedVisibility(on) {
+                    Row {
+                        Spacer(Modifier.width(8.dp))
+                        Text(d.label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
                     }
                 }
             }
-        },
-    )
+        }
+    }
 }
 
 /** Every tag is a canvas; this is the page that lists them, each as a card with a little spread of its photos. */

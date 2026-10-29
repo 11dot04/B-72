@@ -30,40 +30,34 @@ private fun jitter(seed: Int, k: Int): Float {
 }
 
 /**
- * One bold marker stroke through a line of text, drawn from left to right up to [p] (0..1): a single fat felt-tip
- * pass that wanders a little and rises toward the end, like a hand striking the item off. It sits over the words
- * and is translucent, so they stay readable underneath.
+ * A bold dark Z-scribble through a line of text, drawn left to right up to [p] (0..1): a pen zigzagging back and
+ * forth across the line height, a little uneven, like a hand crossing the item out. Sits over the words.
  */
 private fun DrawScope.marker(left: Float, right: Float, top: Float, bottom: Float, p: Float, color: Color, seed: Int) {
     if (p <= 0f || right - left < 4f) return
     val lh = bottom - top
-    val mid = (top + bottom) / 2f + lh * .04f
-    val x0 = left - lh * .25f
-    val x1 = right + lh * .3f
-    val rise = lh * (.06f + .1f * jitter(seed, 0))
+    val x0 = left - lh * .2f
+    val x1 = right + lh * .25f
+    val hi = top + lh * .2f
+    val lo = bottom - lh * .16f
+    val legs = (((x1 - x0) / (lh * 2.2f)).toInt()).coerceIn(2, 9) * 2
     val path = Path()
-    path.moveTo(x0, mid + lh * .1f * (jitter(seed, 1) - .5f))
-    val n = (((x1 - x0) / (lh * 2.4f)).toInt()).coerceIn(1, 14)
-    for (k in 1..n) {
-        val f0 = (k - .5f) / n
-        val f1 = k.toFloat() / n
-        val wob = lh * .13f * (jitter(seed, k + 2) - .5f) * 2f
-        path.cubicTo(
-            x0 + (x1 - x0) * (f0 - .2f / n), mid - rise * f0 + wob,
-            x0 + (x1 - x0) * (f0 + .2f / n), mid - rise * f0 - wob,
-            x0 + (x1 - x0) * f1, mid - rise * f1 + lh * .05f * (jitter(seed, k + 40) - .5f),
-        )
+    path.moveTo(x0, lo + lh * .08f * (jitter(seed, 1) - .5f))
+    for (k in 1..legs) {
+        val f = k / legs.toFloat()
+        val y = if (k % 2 == 1) hi else lo
+        path.lineTo(x0 + (x1 - x0) * f + lh * .12f * (jitter(seed, k + 3) - .5f), y + lh * .1f * (jitter(seed, k + 30) - .5f))
     }
     val m = PathMeasure()
     m.setPath(path, false)
     val part = Path()
     m.getSegment(0f, m.length * p, part, true)
-    drawPath(part, color, style = Stroke(width = lh * .52f, cap = StrokeCap.Round, join = StrokeJoin.Round), alpha = .78f)
+    drawPath(part, color, style = Stroke(width = lh * .17f, cap = StrokeCap.Round, join = StrokeJoin.Round), alpha = .9f)
 }
 
 /**
  * Text that is struck off with a marker stroke when [done]; every wrapped line gets its own stroke in turn.
- * [accent] is the marker's colour, [color] the text's.
+ * The scribble is drawn in [color], the text's own ink; [accent] is kept for callers.
  */
 @Composable
 fun ScribbleText(
@@ -82,7 +76,7 @@ fun ScribbleText(
             val lines = l.lineCount
             for (i in 0 until lines) {
                 val lp = (p * lines - i).coerceIn(0f, 1f)
-                marker(l.getLineLeft(i), l.getLineRight(i), l.getLineTop(i), l.getLineBottom(i), lp, accent, seed + i)
+                marker(l.getLineLeft(i), l.getLineRight(i), l.getLineTop(i), l.getLineBottom(i), lp, color, seed + i)
             }
         },
     )

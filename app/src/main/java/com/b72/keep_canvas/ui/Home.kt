@@ -28,7 +28,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Menu
 import com.b72.keep_canvas.data.Repo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,6 +61,14 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material.icons.rounded.Star
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
@@ -121,6 +129,7 @@ private class Filt(val name: String, val icon: ImageVector, val test: (Note) -> 
 
 private val FILTERS = listOf(
     Filt("All", Icons.Rounded.Apps) { true },
+    Filt("Starred", Icons.Rounded.Star) { it.starred },
     Filt("Photos", Icons.Rounded.Image) { it.photos.isNotEmpty() },
     Filt("Lists", Icons.Rounded.Checklist) { n -> n.blocks.any { it.kind == Kind.Checklist } },
     Filt("Quotes", Icons.Rounded.FormatQuote) { n -> n.blocks.any { it.kind == Kind.Quote } },
@@ -135,7 +144,17 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
   val test = FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true }
-  val shown = remember(loaded?.library, q, filter) { loaded?.library?.notes.orEmpty().asReversed().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) } }
+  var cols by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(2) }
+  var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+  val shown = remember(loaded?.library, q, filter, sort) {
+    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) }
+    when (sort) {
+      1 -> l
+      2 -> l.sortedByDescending { it.edited }
+      3 -> l.sortedBy { it.title.ifBlank { it.snippet() }.lowercase() }
+      else -> l.asReversed()
+    }
+  }
   val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
   val trip = remember(loaded?.library) { com.b72.keep_canvas.data.Trips.next(loaded?.library?.notes.orEmpty()) }
   BackHandler(menu) { menu = false }
@@ -143,48 +162,21 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
         LazyVerticalStaggeredGrid(
             state = grid,
-            columns = StaggeredGridCells.Fixed(2),
+            columns = StaggeredGridCells.Fixed(cols),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
-                top = inner.calculateTopPadding() + 8.dp,
-                bottom = inner.calculateBottomPadding() + 112.dp,
+                top = inner.calculateTopPadding() + 80.dp,
+                bottom = inner.calculateBottomPadding() + 150.dp,
             ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalItemSpacing = 8.dp,
         ) {
             item(span = StaggeredGridItemSpan.FullLine) {
                 val cs = MaterialTheme.colorScheme
-                Column(Modifier.padding(top = 16.dp, bottom = 12.dp)) {
-                    // a title with a big cookie behind it that carries the count
-                    Box(Modifier.fillMaxWidth()) {
-                        Box(
-                            Modifier.align(Alignment.TopEnd).offset(x = 22.dp, y = (-6).dp).size(132.dp).rotate(-10f)
-                                .clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(Modifier.rotate(10f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("${loaded?.library?.notes?.size ?: 0}", style = flexStyle(40.sp, wght = 800, wdth = 110f, rond = 60f, lh = 1f), color = cs.onPrimaryContainer)
-                                Text("notes", style = MaterialTheme.typography.labelMedium, color = cs.onPrimaryContainer.copy(alpha = .75f))
-                            }
-                        }
-                        Box(Modifier.align(Alignment.TopEnd).offset(x = (-118).dp, y = 84.dp).size(34.dp).rotate(20f).clip(MaterialShapes.Clover4Leaf.toShape()).background(cs.tertiaryContainer))
-                        Column(Modifier.padding(top = 28.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (loaded == null) androidx.compose.material3.LoadingIndicator(Modifier.padding(end = 12.dp).size(40.dp))
-                                Text("Collection", style = flexStyle(46.sp, wght = 720, wdth = 108f, rond = 50f), color = cs.onSurface)
-                            }
-                            val line = when {
-                                loaded == null -> "Loading…"
-                                loaded.error != null -> loaded.error
-                                loaded.source == Source.ImportedFromFlutter -> "Brought over from the previous version"
-                                else -> "Everything you keep, in one place"
-                            }
-                            Text(line ?: "", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, end = 120.dp))
-                        }
-                        Box(Modifier.align(Alignment.TopEnd).padding(top = 0.dp)) { BackupMenu(repo, onStickers) }
-                    }
-                    if (repo.prepTotal > 0) Column(Modifier.padding(top = 12.dp)) {
+                Column(Modifier.padding(bottom = 4.dp)) {
+                    loaded?.error?.let { err -> Text(err, style = MaterialTheme.typography.bodyMedium, color = cs.error, modifier = Modifier.padding(bottom = 8.dp)) }
+                    if (repo.prepTotal > 0) Column(Modifier.padding(bottom = 10.dp)) {
                         androidx.compose.material3.LinearWavyProgressIndicator(
                             progress = { (repo.prepDone.toFloat() / repo.prepTotal).coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth(),
@@ -195,27 +187,16 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
-                    androidx.compose.material3.TextField(
-                        q, { q = it }, Modifier.fillMaxWidth().padding(top = 18.dp), singleLine = true,
-                        placeholder = { Text("Search notes, tags and text in photos") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        trailingIcon = { if (q.isNotEmpty()) androidx.compose.material3.IconButton({ q = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
-                        shape = RoundedCornerShape(50),
-                        colors = androidx.compose.material3.TextFieldDefaults.colors(
-                            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = cs.surfaceContainerHigh, unfocusedContainerColor = cs.surfaceContainerHigh,
-                        ),
-                    )
-                    // narrow by what a note contains
+                    // narrow by what a note contains; chips wrap onto the next line instead of being cut off
                     val have = remember(loaded?.library) { FILTERS.filter { f -> f.name == "All" || loaded?.library?.notes.orEmpty().any(f.test) } }
-                    if (have.size > 1) LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (f in have) item(key = f.name) {
-                            FilterChip(
-                                selected = filter == f.name, onClick = { filter = f.name }, label = { Text(f.name) },
-                                leadingIcon = { Icon(f.icon, null, Modifier.size(18.dp)) },
-                                shape = RoundedCornerShape(50),
-                            )
-                        }
+                    if (have.size > 1) androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (f in have) FilterChip(
+                            selected = filter == f.name, onClick = { filter = f.name }, label = { Text(f.name) },
+                            leadingIcon = { Icon(f.icon, null, Modifier.size(18.dp)) },
+                            shape = RoundedCornerShape(50),
+                        )
                     }
                 }
             }
@@ -235,12 +216,18 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         }
     }
 
+    KeepBar(
+        q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
+        count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
+        menu = { BackupMenu(repo, onStickers) },
+        modifier = Modifier.align(Alignment.TopCenter),
+    )
     if (menu) Box(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .32f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = false },
     )
     FloatingActionButtonMenu(
-        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
         expanded = menu,
         button = {
             ToggleFloatingActionButton(checked = menu, onCheckedChange = { menu = it }) {
@@ -270,7 +257,7 @@ private fun pickRevisit(notes: List<Note>): Pair<Note, Int>? {
     val old = notes.mapNotNull { n ->
         val born = n.id.toLongOrNull()?.div(1000) ?: return@mapNotNull null
         val days = ((now - born) / 86_400_000L).toInt()
-        if (days >= 7 && n.title.isNotBlank()) n to days else null
+        if (days >= 7 && (n.title.isNotBlank() || n.snippet().isNotBlank())) n to days else null
     }
     if (old.isEmpty()) return null
     val day = now / 86_400_000L
@@ -291,18 +278,13 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
         img?.let { Image(it, null, Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)), contentScale = ContentScale.Crop); Spacer(Modifier.width(14.dp)) }
         Column(Modifier.weight(1f)) {
             Text("FROM $ago".uppercase(), style = MaterialTheme.typography.labelSmall, color = cs.onTertiaryContainer.copy(alpha = .7f))
-            Text(n.title, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = flexStyle(22.sp, wght = 680, rond = 40f), color = cs.onTertiaryContainer)
+            Text(n.title.ifBlank { n.snippet(60) }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = if (n.title.isBlank()) TextStyle(fontFamily = Serif, fontSize = 17.sp, lineHeight = 22.sp, fontStyle = FontStyle.Italic) else flexStyle(22.sp, wght = 680, rond = 40f), color = cs.onTertiaryContainer)
         }
         Icon(Icons.Rounded.History, null, tint = cs.onTertiaryContainer)
     }
 }
 
-private val TileShapes = listOf(
-    RoundedCornerShape(34.dp),
-    RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp, bottomEnd = 34.dp, bottomStart = 10.dp),
-    RoundedCornerShape(topStart = 10.dp, topEnd = 34.dp, bottomEnd = 34.dp, bottomStart = 34.dp),
-    RoundedCornerShape(topStart = 34.dp, topEnd = 10.dp, bottomEnd = 34.dp, bottomStart = 34.dp),
-)
+private val TileShape = RoundedCornerShape(28.dp)
 
 @Composable
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
@@ -325,7 +307,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             .fillMaxWidth()
             .scale(press)
             .aspectRatio((1 / ratio).toFloat())
-            .clip(TileShapes[seedMod(n.id, TileShapes.size)])
+            .clip(TileShape)
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
     ) {
@@ -347,6 +329,12 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
+            // a little felt-tip picture of what the note is about, tucked into the corner behind the words
+            val pic = remember(n) { picFor(n, seedMod(n.id, 997)) }
+            if (pic != null) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val sz = size.minDimension * .5f
+                drawPic(pic, size.width - sz - 10.dp.toPx(), size.height - sz - 8.dp.toPx(), sz, fg.copy(alpha = .22f), seedMod(n.id, 997))
+            }
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
                 Spacer(Modifier.height(10.dp))
@@ -424,7 +412,7 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
         }
     }
     Box {
-        androidx.compose.material3.IconButton({ open = true }) { Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More") }
+        androidx.compose.material3.IconButton({ open = true }) { Icon(Icons.Rounded.Menu, "Menu") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
             androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
@@ -432,3 +420,45 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
         }
     }
 }
+
+/** The top bar, as Keep has it: a menu, a pill to search in, and the layout and sort controls inside the pill. */
+@Composable
+private fun KeepBar(
+    q: String, onQ: (String) -> Unit, list: Boolean, onLayout: () -> Unit, sort: Int, onSort: (Int) -> Unit,
+    count: Int, loading: Boolean, menu: @Composable () -> Unit, modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    var sorting by remember { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().androidx_statusBars().padding(horizontal = 12.dp, vertical = 8.dp)
+            .height(56.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainerHigh).padding(start = 4.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        menu()
+        Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
+            if (q.isEmpty()) Text(if (loading) "Loading…" else "Search $count notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
+            androidx.compose.foundation.text.BasicTextField(
+                q, onQ, Modifier.fillMaxWidth(), singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(cs.primary),
+            )
+        }
+        if (q.isNotEmpty()) androidx.compose.material3.IconButton({ onQ("") }) { Icon(Icons.Rounded.Close, "Clear") }
+        else {
+            androidx.compose.material3.IconButton(onLayout) { Icon(if (list) Icons.Rounded.GridView else Icons.Rounded.ViewAgenda, if (list) "Grid view" else "List view") }
+            Box {
+                androidx.compose.material3.IconButton({ sorting = true }) { Icon(Icons.Rounded.SwapVert, "Sort") }
+                androidx.compose.material3.DropdownMenu(sorting, { sorting = false }) {
+                    listOf("Newest first", "Oldest first", "Recently edited", "A to Z").forEachIndexed { i, t ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            { Text(t) }, { sorting = false; onSort(i) },
+                            trailingIcon = { if (sort == i) Icon(Icons.Rounded.Check, null) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun Modifier.androidx_statusBars(): Modifier = this.windowInsetsPadding(WindowInsets.statusBars)
