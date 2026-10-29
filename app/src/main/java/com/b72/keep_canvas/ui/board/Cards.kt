@@ -85,7 +85,7 @@ class Scale(val cw: Float, val d: Density, val tm: TextMeasurer) {
 /** Height of a card and what had to be cut to fit: lines of body, checklist rows, hidden count, and a quote's font size. */
 class Lay(val h: Float, val lines: Int = 0, val rows: Int = 0, val hidden: Int = 0, val fs: Float = 0f)
 
-fun cardWidth(b: Block, big: Boolean): Float = when (b.kind) {
+fun cardWidth(b: Block, big: Boolean): Float = K_WIDE * when (b.kind) {
     // hero photos are big, supporting pieces small: scale contrast is what makes a collage read as composed
     Kind.Photo -> if (big) .44f + (seedOf(b.id) % 5) * .035f else .26f + (seedOf(b.id) % 3) * .04f
     Kind.Bare -> .5f

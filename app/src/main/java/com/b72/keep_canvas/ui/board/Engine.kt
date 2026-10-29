@@ -17,10 +17,12 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** The canvas is this many times as wide as the screen. All geometry below is in fractions of the canvas WIDTH. */
-const val WIDE = 1.2f
-private const val GAP = .010f
-private const val BAND_L = .083f
-private const val BAND_R = .917f
+const val WIDE = 2.0f
+/** Card sizes are fractions of the canvas width; this keeps cards the size they were on a 1.2-wide canvas. */
+const val K_WIDE = 1.2f / WIDE
+private const val GAP = .010f * K_WIDE
+private const val BAND_L = .05f
+private const val BAND_R = .95f
 
 /** One block of one note, placed on a tag's canvas. */
 class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "") {
@@ -43,9 +45,9 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     /** Tilt in radians, stable per card. */
     val angle: Float get() = when {
         bare -> 0f
-        isPhoto -> (((seedOf(id) % 11) - 5) * .01f)
-        isPictureCard -> (((seedOf(id) % 9) - 4) * .008f)
-        else -> (((seedOf(id) % 7) - 3) * .0065f)
+        isPhoto -> (((seedOf(id) % 11) - 5) * .019f)
+        isPictureCard -> (((seedOf(id) % 9) - 4) * .017f)
+        else -> (((seedOf(id) % 7) - 3) * .016f)
     }
 
     /** The part of a card that must stay visible, in its own coordinates: a photo's subject (an oval), a picture card's title area,
@@ -413,7 +415,7 @@ fun bottomOf(cards: List<Card>) = cards.maxOfOrNull { it.rect.bottom } ?: 0f
 fun placeKey(tag: String, b: Block) = "$tag|${b.id}"
 
 /** Bumped whenever the layout rules change: positions stored by an older version are laid out again once. */
-const val LAYOUT_VERSION = 3.0
+const val LAYOUT_VERSION = 4.0
 fun versionKey(tag: String) = "$tag|#v"
 
 /** One card per block of every note with this tag. [size] returns (w, h) in canvas widths for a block. */
