@@ -199,7 +199,7 @@ fun NotePage(
                     flex = { flex.value },
                 )
             }
-            if (coverMode) item(key = "cover") { CoverBlock(title, photos[0], pal, note.id, tint, { editTitle = true }) { viewer = 0 } }
+            if (coverMode) item(key = "cover") { CoverBlock(title, photos[0], pal, note.id, tint, onTitle = { editTitle = true }, onView = { viewer = 0 }) }
             if (photos.isNotEmpty() && !coverMode && !besideMode) item {
                 if (hero != null) {
                     // The shape's frame is sized from the subject; the area is trimmed to the frame and the subject's head

@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -196,7 +197,7 @@ fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, mod
     val vsNow by androidx.compose.runtime.rememberUpdatedState(vs)
     Canvas(
         modifier.pointerInput(cw) {
-            androidx.compose.foundation.gestures.detectDragGestures(
+            detectDragGestures(
                 onDragStart = { pts.clear(); pts.add(it) },
                 onDrag = { c, _ -> pts.add(c.position) },
                 onDragEnd = {
