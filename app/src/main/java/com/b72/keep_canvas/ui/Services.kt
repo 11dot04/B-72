@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -40,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.b72.keep_canvas.data.Cand
+import com.b72.keep_canvas.data.Follow
+import com.b72.keep_canvas.data.Team
 import com.b72.keep_canvas.data.Repo
 import com.b72.keep_canvas.data.Spotify
 import kotlinx.coroutines.launch
@@ -50,7 +53,7 @@ fun ServicesSheet(repo: Repo, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val cs = MaterialTheme.colorScheme
-    LaunchedEffect(Unit) { Spotify.refresh(ctx) }
+    LaunchedEffect(Unit) { Spotify.refresh(ctx); Follow.load(ctx) }
     var client by remember { mutableStateOf(Spotify.clientId(ctx)) }
     var source by remember { mutableStateOf(Spotify.Source.Recent) }
     var busy by remember { mutableStateOf(false) }
@@ -97,6 +100,27 @@ fun ServicesSheet(repo: Repo, onClose: () -> Unit) {
                     }
                 }
                 OutlinedButton({ Spotify.logout(ctx) }, Modifier.padding(top = 8.dp)) { Text("Sign out of Spotify") }
+            }
+            Text("TEAMS YOU FOLLOW", style = MaterialTheme.typography.labelMedium, color = cs.primary, modifier = Modifier.padding(top = 20.dp))
+            Text("After a match, the Notes tab gently asks what you thought of it.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+            val followed = Follow.teams
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (t in followed.toList()) androidx.compose.material3.InputChip(true, { Follow.unfollow(ctx, t) }, { Text(t.name) }, trailingIcon = { Icon(Icons.Rounded.Close, "Unfollow", Modifier.size(16.dp)) })
+            }
+            var tq by remember { mutableStateOf("") }
+            var found by remember { mutableStateOf<List<Team>>(emptyList()) }
+            OutlinedTextField(
+                tq, { tq = it }, Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true, label = { Text("Find a team (Arsenal, Mumbai Indians, Lakers…)") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { scope.launch { found = Follow.search(tq) } }),
+            )
+            for (t in found.take(6)) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(t.name, style = MaterialTheme.typography.titleSmall)
+                    Text(listOf(t.sport, t.league).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                }
+                val on = followed.any { it.id == t.id }
+                FilledTonalIconButton({ if (!on) Follow.follow(ctx, t) }) { Icon(if (on) Icons.Rounded.Check else Icons.Rounded.Add, if (on) "Following" else "Follow") }
             }
             Spacer(Modifier.height(8.dp))
         }

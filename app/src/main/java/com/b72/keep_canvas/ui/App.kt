@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,39 +50,37 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // photos that have not been read yet are read once, in the background, so search can find their text
     val unread = loaded?.library?.notes?.sumOf { n -> n.blocks.count { com.b72.keep_canvas.data.needsWork(it) } } ?: 0
     LaunchedEffect(unread) { if (unread > 0) repo.prepare() }
-    // null = no editor; (null, kind) = a new note; (id, null) = editing that note
-    var editing by remember { mutableStateOf<Pair<String?, Kind?>?>(null) }
+    // what to offer straight away on a new note (a photo picker, a quote box…)
+    var addFirst by remember { mutableStateOf<String?>(null) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     // the tag whose canvas is showing; a note opened from it returns here
     var board by rememberSaveable { mutableStateOf<String?>(null) }
     // 0 notes, 1 canvas, 2 stickers: the three top-level places in the floating bar
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var editTag by remember { mutableStateOf<String?>(null) }
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
     fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }
-    fun start(kind: Kind, tag: String?) {
+    fun begin(kind: Kind, tag: String?) {
         if (kind == Kind.Text || kind == Kind.Checklist) { val id = repo.newDraft(kind, tag); draft = id; open = id }
-        else { editTag = tag; editing = null to kind }
+        else { val id = repo.newDraft(Kind.Text, tag); draft = id; open = id; addFirst = when (kind) { Kind.Photo -> "photo"; Kind.Quote -> "quote"; Kind.Link -> "link"; Kind.Film -> "film"; Kind.Book -> "book"; Kind.Track -> "track"; Kind.Recipe -> "recipe"; else -> null } }
     }
-    var shareIn by remember { mutableStateOf<com.b72.keep_canvas.data.Share?>(null) }
     // something shared from another app opens a new note, ready to save
-    LaunchedEffect(share) {
-        if (share != null) { shareIn = share; editTag = null; editing = null to null; onShareHandled() }
+    LaunchedEffect(share, loaded != null) {
+        if (share != null && loaded != null) { scope.launch { val id = repo.addShare(share); open = id; board = null }; onShareHandled() }
     }
     // a launcher shortcut starts a new note of one kind; a reminder notification opens its note
     LaunchedEffect(start) {
         if (start != null) {
             start.openId?.let { open = it; board = null }
-            start.newKind?.let { editTag = null; editing = null to it }
+            start.newKind?.let { begin(it, null) }
             onLaunchHandled()
         }
     }
     val grid = rememberLazyStaggeredGridState()
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    BackHandler(tab != 0 && open == null && board == null && editing == null) { tab = 0 }
-    BackHandler((open != null || board != null) && editing == null) { if (open != null) leave() else board = null }
+    BackHandler(tab != 0 && open == null && board == null) { tab = 0 }
+    BackHandler((open != null || board != null)) { if (open != null) leave() else board = null }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
       Box(Modifier.fillMaxSize()) {
@@ -96,7 +97,9 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 }
                 if (note != null) NotePage(note, shared, onBack = { leave() }, autoFocus = draft == note.id,
                     onStar = { repo.toggleStar(note.id) }, onTitle = { repo.setTitle(note.id, it) },
-                    onBody = { b, t -> repo.setBody(note.id, b, t) }, onItems = { b, l -> repo.setItems(note.id, b, l) }, onEdit = { editing = note.id to null }, onTag = { open = null; board = it },
+                    onRich = { b, t, sp, ind -> repo.setRich(note.id, b, t, sp, ind) }, onItems = { b, l -> repo.setItems(note.id, b, l) }, onEdit = {},
+                    repo = repo, addFirst = if (addFirst != null && draft == note.id) addFirst else null, onAddFirstDone = { addFirst = null },
+                    onLayout = { l -> repo.upsert(note.copy(layout = l)) }, onTag = { open = null; board = it },
                     onDelete = {
                         repo.delete(note.id)
                         open = null
@@ -125,38 +128,32 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 else if (tag != null) BoardScreen(
                     repo, loaded, tag,
                     onBack = { board = null }, onOpen = { open = it },
-                    onAdd = { start(Kind.Text, tag) },
+                    onAdd = { begin(Kind.Text, tag) },
                     onStickers = { board = null; tab = 2 },
                 )
                 else when (tab) {
                     1 -> CanvasHub(loaded) { board = it }
                     2 -> StickersScreen(repo, loaded) { tab = 0 }
-                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { start(it, null) }, onTag = { board = it })
+                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
+                        onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 }
             }
         }
+        // the nav floats over a soft darkening so it reads against anything scrolling under it
         AnimatedVisibility(
-            visible = editing != null,
-            enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeIn(fx),
-            exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeOut(fx),
+            visible = open == null && board == null,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(fx), exit = fadeOut(fx),
         ) {
-            // keep the last target while the exit animation plays
-            val hold = remember { object { var v: Pair<String?, Kind?>? = null } }
-            if (editing != null) hold.v = editing
-            val target = hold.v
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-                target?.let { (id, kind) ->
-                    Editor(repo, id, kind, tag = editTag, share = shareIn) { deleted ->
-                        shareIn = null
-                        if (deleted) open = null
-                        editing = null
-                    }
-                }
-            }
+            Box(
+                Modifier.fillMaxWidth().height(150.dp).background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.colorScheme.scrim.copy(alpha = .34f))),
+                ),
+            )
         }
         // the floating bar belongs to the three top-level places only
         AnimatedVisibility(
-            visible = open == null && board == null && editing == null,
+            visible = open == null && board == null,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeIn(fx),
             exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeOut(fx),

@@ -68,8 +68,7 @@ private val DESTS = listOf(
 fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Row(
-        modifier.clip(CircleShape).background(cs.surface).padding(5.dp)
-            .clip(CircleShape).background(cs.tertiaryContainer).padding(5.dp),
+        modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(5.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         DESTS.forEachIndexed { i, d ->
@@ -152,7 +151,7 @@ private fun CanvasCard(tag: String, notes: List<Note>, bg: Color, fg: Color, onC
             Modifier.align(Alignment.TopEnd).padding(14.dp).size(64.dp).clip(MaterialShapes.Cookie6Sided.toShape()).background(fg.copy(alpha = .14f)),
         )
         Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-            Text(tag, style = flexStyle(26.sp, wght = 740, rond = 40f, lh = 1f), color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            FitLine(tag, flexStyle(28.sp, wght = 740, rond = 40f, lh = 1f), fg)
             Text("${notes.size} note${if (notes.size == 1) "" else "s"}", style = MaterialTheme.typography.labelLarge, color = fg.copy(alpha = .75f), modifier = Modifier.padding(top = 4.dp))
         }
     }

@@ -82,7 +82,11 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val base = TextStyle(
         fontFamily = flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
-        lineHeight = (sz.value * 0.98f - 1f).sp,
+        lineHeight = (sz.value * 0.88f).sp,
+        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+            alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+            trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+        ),
         letterSpacing = with(d) { (-sPx * .01f).toSp() },
         color = color,
         // the width axis animates, so glyphs are drawn as paths instead of snapped to hinted pixels
@@ -184,5 +188,25 @@ fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modi
                 Text(p.text, style = p.style, maxLines = 1, softWrap = false)
             }
         }
+    }
+}
+
+/** One line of text that shrinks (down to [min]) until it fits its width, so a long word is never broken across lines. */
+@Composable
+fun FitLine(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, min: Float = 12f) {
+    val m = rememberTextMeasurer()
+    BoxWithConstraints(modifier) {
+        val w = constraints.maxWidth
+        val shown = remember(text, style, w) {
+            var size = style.fontSize.value
+            var s = style
+            while (size > min) {
+                s = style.copy(fontSize = size.sp, lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified)
+                if (m.measure(text, s, softWrap = false, maxLines = 1).size.width <= w) break
+                size *= .93f
+            }
+            s.copy(fontSize = size.coerceAtLeast(min).sp)
+        }
+        Text(text, style = shown, color = color, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }

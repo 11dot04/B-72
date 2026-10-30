@@ -36,6 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.drawText
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -84,33 +87,56 @@ fun InlineTitle(initial: String, placeholder: String, pal: NotePalette, focus: B
     }
 }
 
-/** A block of words edited in place. With links in it, it reads as live text until you tap it. */
+/** A block of words edited in place, with formatting. With links in it, it reads as live text until you tap it. */
 @Composable
 fun InlineBody(
-    body: String, placeholder: String, pal: NotePalette, linked: AnnotatedString, focus: Boolean, onChange: (String) -> Unit,
+    body: String, spans: String, indent: Boolean, placeholder: String, pal: NotePalette, linked: AnnotatedString, focus: Boolean,
+    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
 ) {
-    var tv by remember { mutableStateOf(TextFieldValue(body, TextRange(body.length))) }
+    val st = remember { RichState(body, parseSpans(spans), indent) }
     var focused by remember { mutableStateOf(false) }
     val fr = remember { FocusRequester() }
     val links = remember(linked) { linked.getLinkAnnotations(0, linked.length).isNotEmpty() }
     var editing by remember { mutableStateOf(!links) }
-    SaveSoon(tv.text, body, onSave = onChange)
-    LaunchedEffect(body) { if (!focused && tv.text != body) tv = TextFieldValue(body, TextRange(body.length)) }
+    val sig = st.tv.text + "\u0001" + spansToString(st.spans) + "\u0001" + st.indentOn
+    val saved = body + "\u0001" + spans + "\u0001" + indent
+    val latest by rememberUpdatedState(st)
+    val cb by rememberUpdatedState(onChange)
+    LaunchedEffect(sig) { if (sig != saved) { delay(700); cb(latest.tv.text, spansToString(latest.spans), latest.indentOn) } }
+    DisposableEffect(Unit) { onDispose { if (latest.tv.text + "\u0001" + spansToString(latest.spans) + "\u0001" + latest.indentOn != saved) cb(latest.tv.text, spansToString(latest.spans), latest.indentOn) } }
+    LaunchedEffect(body) { if (!focused && st.tv.text != body) { st.tv = TextFieldValue(body, TextRange(body.length)); st.spans = parseSpans(spans) } }
     LaunchedEffect(Unit) { if (focus) runCatching { fr.requestFocus() } }
     LaunchedEffect(editing) { if (editing && links && !focused) runCatching { fr.requestFocus() } }
-    val style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp, color = pal.fg)
-    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(bottom = 12.dp)) {
-        if (!editing && links && tv.text.isNotEmpty()) {
-            Text(
-                linked, style = style,
-                modifier = Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = true },
-            )
+    val base = (if (serif) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 19.sp, lineHeight = 29.sp) else MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)).copy(color = pal.fg)
+    val tm = androidx.compose.ui.text.rememberTextMeasurer()
+    var lay by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    val style = if (st.indentOn) base.copy(textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = 28.sp)) else base
+    val vt = remember(st.spans) { richTransformation(st.spans, 18f) }
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(bottom = 12.dp).then(
+            if (!numbered) Modifier else Modifier.drawBehind {
+                val l = lay ?: return@drawBehind
+                for (i in 4 until l.lineCount step 5) drawText(tm, "${i + 1}", Offset(0f, l.getLineTop(i)), style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = pal.fg.copy(alpha = .45f), fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+            }.padding(start = 32.dp),
+        ),
+    ) {
+        if (!editing && links && st.tv.text.isNotEmpty()) {
+            val shown = remember(linked, st.spans) {
+                if (linked.text != st.tv.text) linked else androidx.compose.ui.text.buildAnnotatedString {
+                    append(linked)
+                    for (sp in st.spans) styleOf(sp.c, 18f)?.let { addStyle(it, sp.s.coerceIn(0, length), sp.e.coerceIn(0, length)) }
+                }
+            }
+            Text(shown, style = style, modifier = Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = true })
         } else {
-            if (tv.text.isEmpty()) Text(placeholder, style = style, color = pal.fg.copy(alpha = .4f))
+            if (st.tv.text.isEmpty()) Text(placeholder, style = style, color = pal.fg.copy(alpha = .4f))
             BasicTextField(
-                tv, { tv = it },
-                Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged { focused = it.isFocused; if (!it.isFocused && links) editing = false },
-                textStyle = style, cursorBrush = SolidColor(pal.primary),
+                st.tv, { st.edit(it) },
+                Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onRich(st) else { onRich(null); if (links) editing = false }
+                },
+                textStyle = style, cursorBrush = SolidColor(pal.primary), visualTransformation = vt, onTextLayout = { lay = it },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             )
         }

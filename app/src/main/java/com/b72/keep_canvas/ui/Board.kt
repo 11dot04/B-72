@@ -45,6 +45,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.Gesture
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
@@ -229,6 +230,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 }
                 // marks and stickers the person put here themselves, above everything
                 PlacedLayer(placed, s.cw, topInset, t.primary)
+                if (placed.drawing) Unit
             }
         }
         if (cards.isEmpty() && loaded != null) Text(
@@ -243,6 +245,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 tag, style = flexStyle(26.sp, wght = 720, wdth = 108f, rond = 40f), color = t.onBg, maxLines = 1,
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
+        }
+        if (placed.drawing) {
+            DrawLayer(placed, hs.value, vs.value, s.cw, topInset, Modifier.fillMaxSize())
+            DrawBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
         }
         PlacedBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
         if (tray) PlacedTray(
@@ -268,7 +274,8 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 expanded = true,
                 colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
                 content = {
-                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Mark up this canvas") }
+                    IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw a shape") }
+                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Marks and stickers") }
                     IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Stickers") }
                     IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") }
                 },

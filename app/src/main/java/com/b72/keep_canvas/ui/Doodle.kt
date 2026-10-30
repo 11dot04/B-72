@@ -27,6 +27,8 @@ enum class Mark(val label: String, val aspect: Float) {
     Arrow("Arrow", 1f), Swirl("Loop arrow", 1f), Circle("Circle", 1f), Cross("Cross", 1f), Check("Tick", 1f),
     Underline("Underline", .32f), Squiggle("Squiggle", .32f), Box("Box", .75f), Scribble("Scribble", .55f),
     Star("Star", 1f), Heart("Heart", 1f), Sparkle("Sparkle", 1f), Bang("Bang", 1f),
+    // shapes a rough stroke is corrected into; their height is free
+    Line("Line", .1f), Oval("Circle", 1f), Rect("Box", .7f), Tri("Triangle", .9f),
 }
 
 /** The pen colours, in the order a mark cycles through them. */
@@ -104,8 +106,8 @@ private fun DrawScope.taperedArrow(c: List<Offset>, color: Color, pen: Float, he
 }
 
 /** Draws [m] with its top-left corner at ([x], [y]) and the given [w]idth; its height follows the mark's aspect. */
-fun DrawScope.drawMark(m: Mark, x: Float, y: Float, w: Float, color: Color, seed: Int) {
-    val h = w * m.aspect
+fun DrawScope.drawMark(m: Mark, x: Float, y: Float, w: Float, color: Color, seed: Int, hFree: Float = -1f) {
+    val h = if (hFree >= 0f) hFree else w * m.aspect
     val pen = w * .085f
     when (m) {
         Mark.Arrow -> taperedArrow(
@@ -166,6 +168,10 @@ fun DrawScope.drawMark(m: Mark, x: Float, y: Float, w: Float, color: Color, seed
             listOf(Line(floatArrayOf(.5f, .04f, .58f, .42f, .96f, .5f, .58f, .58f, .5f, .96f, .42f, .58f, .04f, .5f, .42f, .42f), false, true)),
             x, y, w, h, color, seed, pen * .9f, .01f,
         )
+        Mark.Line -> drawLine(color, Offset(x + pen, y + h / 2), Offset(x + w - pen, y + h / 2), pen * 1.2f, StrokeCap.Round)
+        Mark.Oval -> drawOval(color, Offset(x + pen, y + pen), androidx.compose.ui.geometry.Size(w - 2 * pen, h - 2 * pen), style = Stroke(pen * 1.2f, cap = StrokeCap.Round))
+        Mark.Rect -> drawRoundRect(color, Offset(x + pen, y + pen), androidx.compose.ui.geometry.Size(w - 2 * pen, h - 2 * pen), androidx.compose.ui.geometry.CornerRadius(pen * 1.5f), style = Stroke(pen * 1.2f, join = StrokeJoin.Round))
+        Mark.Tri -> drawPath(Path().apply { moveTo(x + w / 2, y + pen); lineTo(x + w - pen, y + h - pen); lineTo(x + pen, y + h - pen); close() }, color, style = Stroke(pen * 1.2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         Mark.Bang -> strokes(listOf(ln(true, .5f, .06f, .52f, .4f, .5f, .62f), ln(false, .5f, .86f, .5f, .875f)), x, y, w, h, color, seed, pen * 1.5f, .008f)
     }
 }
@@ -263,5 +269,26 @@ fun picFor(n: Note, seed: Int): Pic? {
         n.blocks.any { it.kind == Kind.Poster } -> Pic.Bulb
         n.blocks.any { it.kind == Kind.Text } -> if (sqrt(seed.toDouble().let { it * it }).toInt() % 3 == 0) Pic.Pencil else null
         else -> null
+    }
+}
+
+
+/** A single bold, tapered brush swash: four restrained shapes, chosen by [v]. It is a mark of the pen, not a picture. */
+fun DrawScope.drawSwash(v: Int, x: Float, y: Float, w: Float, color: Color) {
+    val h = w * .45f
+    val c = when (v.mod(4)) {
+        0 -> listOf(Offset(x, y + h * .9f), Offset(x + w * .3f, y + h * .1f), Offset(x + w * .7f, y + h * 1.0f), Offset(x + w, y + h * .2f)) // a wave
+        1 -> listOf(Offset(x, y + h * .2f), Offset(x + w * .25f, y + h * 1.0f), Offset(x + w * .75f, y + h * 1.0f), Offset(x + w, y + h * .1f)) // an underswoop
+        2 -> listOf(Offset(x, y + h), Offset(x + w * .3f, y + h * .55f), Offset(x + w * .65f, y + h * .3f), Offset(x + w, y)) // a rising slash
+        else -> listOf(Offset(x, y + h * .5f), Offset(x + w * .3f, y - h * .3f), Offset(x + w * .7f, y + h * 1.2f), Offset(x + w, y + h * .5f)) // a tilde
+    }
+    fun at(t: Float): Offset { val u = 1f - t; return c[0] * (u * u * u) + c[1] * (3 * u * u * t) + c[2] * (3 * u * t * t) + c[3] * (t * t * t) }
+    var prev = at(0f)
+    val pen = w * .11f
+    for (i in 1..36) {
+        val t = i / 36f
+        val cur = at(t)
+        drawLine(color, prev, cur, pen * (.25f + .75f * sin(PI.toFloat() * (t * .85f + .08f))), StrokeCap.Round)
+        prev = cur
     }
 }

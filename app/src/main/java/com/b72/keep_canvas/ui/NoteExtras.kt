@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -296,30 +299,40 @@ private fun RelatedTile(r: Note, w: Dp, h: Dp, top: Dp, ink: Color, onOpen: (Str
 
 // ---------------------------------------------------------------- toolbar pieces
 
-/** "Edit" with a drop-down of the smart things you can do with the note: its layout and extraction, and an AI brainstorm. */
+/** "Add" opens the plus menu; the chevron holds the page's layout, smart extraction and an AI brainstorm. */
 @Composable
-fun EditSplit(container: Color, content: Color, smart: Boolean, onEdit: () -> Unit, onSmart: () -> Unit, onBrainstorm: () -> Unit) {
+fun EditSplit(
+    container: Color, content: Color, smart: Boolean, layout: String,
+    onAdd: () -> Unit, onLayout: (String) -> Unit, onSmart: () -> Unit, onBrainstorm: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     val colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = content)
     val turn by animateFloatAsState(if (open) 180f else 0f, MaterialTheme.motionScheme.defaultEffectsSpec<Float>(), label = "chevron")
     Box {
         SplitButtonLayout(
             leadingButton = {
-                SplitButtonDefaults.LeadingButton(onClick = onEdit, colors = colors) {
-                    Icon(Icons.Rounded.Edit, null, Modifier.size(SplitButtonDefaults.LeadingIconSize))
+                SplitButtonDefaults.LeadingButton(onClick = onAdd, colors = colors) {
+                    Icon(Icons.Rounded.Add, null, Modifier.size(SplitButtonDefaults.LeadingIconSize))
                     Spacer(Modifier.width(8.dp))
-                    Text("Edit")
+                    Text("Add")
                 }
             },
             trailingButton = {
                 SplitButtonDefaults.TrailingButton(checked = open, onCheckedChange = { open = it }, colors = colors) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, "Smart tools for this note", Modifier.size(SplitButtonDefaults.TrailingIconSize).graphicsLayer { rotationZ = turn })
+                    Icon(Icons.Rounded.KeyboardArrowDown, "Layout and smart tools", Modifier.size(SplitButtonDefaults.TrailingIconSize).graphicsLayer { rotationZ = turn })
                 }
             },
         )
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(28.dp)) {
+            Text("PAGE LAYOUT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 2.dp))
+            for (l in LAYOUTS) DropdownMenuItem(
+                { Column { Text(l.name); Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                { open = false; onLayout(l.id) },
+                leadingIcon = { Icon(if (layout == l.id) Icons.Rounded.Check else Icons.Rounded.ViewAgenda, null) },
+            )
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
             DropdownMenuItem(
-                { Column { Text(if (smart) "Plain layout" else "Smart layout"); Text(if (smart) "Show the text as written" else "Pull out the facts and the one that matters", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                { Column { Text(if (smart) "Plain text" else "Smart extraction"); Text(if (smart) "Show the text as written" else "For notes built around one fact", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
                 { open = false; onSmart() }, leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) },
             )
             DropdownMenuItem(

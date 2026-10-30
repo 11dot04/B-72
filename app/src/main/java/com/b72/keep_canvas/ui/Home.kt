@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -90,6 +90,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -136,7 +137,11 @@ private val FILTERS = listOf(
 )
 
 @Composable
-fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}) {
+fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
+  val appCtx = androidx.compose.ui.platform.LocalContext.current
+  androidx.compose.runtime.LaunchedEffect(Unit) { com.b72.keep_canvas.data.Follow.load(appCtx) }
+  val match by produceState<com.b72.keep_canvas.data.Match?>(null, com.b72.keep_canvas.data.Follow.teams.size) { value = com.b72.keep_canvas.data.Follow.recent(appCtx).firstOrNull() }
+  var dismissed by remember { mutableStateOf<String?>(null) }
   var menu by remember { mutableStateOf(false) }
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
@@ -204,7 +209,13 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 TripCard(trip.second, cs.tertiaryContainer, cs.onTertiaryContainer, cs.tertiary, Modifier.padding(bottom = 4.dp)) { onOpen(trip.first.id) }
             }
             // one older note, different each day: a second mind brings things back
-            if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
+            val mt = match?.takeIf { it.eventId != dismissed }
+            if (mt != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) {
+                MatchPrompt(mt, onWrite = {
+                    com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId
+                    onMatch("${mt.title}  ${mt.score}", mt.team.sport.ifBlank { mt.team.name }.lowercase())
+                }, onSkip = { com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId })
+            } else if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
                 items(shown, key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
@@ -300,16 +311,19 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val img by produceState<ImageBitmap?>(coverPath?.let { Images.peek(it, 600) }, n.id) { value = coverPath?.let { Images.load(it, 600) } }
     val hasList = n.blocks.any { it.kind == Kind.Checklist }
     val hasTrip = n.blocks.any { it.trip() != null }
+    val starred = n.starred
     Box(
         Modifier
             .fillMaxWidth()
             .scale(press)
+            .graphicsLayer { rotationZ = if (n.starred) (seedMod(n.id, 5) - 2) * 1.1f + 1.4f else 0f }
             .aspectRatio((1 / ratio).toFloat())
             .clip(TileShape)
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
     ) {
         img?.let { Image(it, null, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
+        if (starred) Icon(Icons.Rounded.Star, "Starred", Modifier.align(Alignment.TopEnd).padding(10.dp).size(20.dp), tint = if (img != null) Color(0xFFFFC928) else fg)
         val t = n.title
         if (img != null) {
             if (t.isNotEmpty()) Box(
@@ -327,11 +341,12 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
-            // a little felt-tip picture of what the note is about, tucked into the corner behind the words
-            val pic = remember(n) { picFor(n, seedMod(n.id, 997)) }
-            if (pic != null) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                val sz = size.minDimension * .5f
-                drawPic(pic, size.width - sz - 10.dp.toPx(), size.height - sz - 8.dp.toPx(), sz, fg.copy(alpha = .22f), seedMod(n.id, 997))
+            // a swash of the pen
+            // one bold, restrained swash in the corner of some tiles
+            val sw = seedMod(n.id, 8)
+            if (sw < 4 && !hasList) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val wd = size.width * .46f
+                drawSwash(sw, size.width - wd - 14.dp.toPx(), size.height - wd * .45f - 16.dp.toPx(), wd, fg.copy(alpha = .16f))
             }
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
@@ -363,12 +378,13 @@ private fun Preview(n: Note, fg: Color) {
                 }
             }
             if (items.size > 4) Text("+ ${items.size - 4} more", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = .65f))
-            if (items.isNotEmpty()) {
-                LinearProgressIndicator(
-                    progress = { done.toFloat() / items.size }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(5.dp).clip(CircleShape),
-                    color = fg, trackColor = fg.copy(alpha = .18f), gapSize = 0.dp, drawStopIndicator = {},
+            if (items.isNotEmpty()) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    progress = { done.toFloat() / items.size }, modifier = Modifier.size(26.dp),
+                    color = fg, trackColor = fg.copy(alpha = .18f), strokeWidth = 4.dp, gapSize = 0.dp,
                 )
-                Text("$done of ${items.size} done", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = .7f))
+                Spacer(Modifier.width(8.dp))
+                Text("$done of ${items.size}", style = MaterialTheme.typography.labelMedium, color = fg.copy(alpha = .75f))
             }
         }
         return
@@ -463,3 +479,25 @@ private fun KeepBar(
     }
 }
 
+
+/** Sits where the "from 7 days ago" tile does: a followed team has played, and this asks, once and quietly, what you made of it. */
+@Composable
+private fun MatchPrompt(m: com.b72.keep_canvas.data.Match, onWrite: () -> Unit, onSkip: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val whenText = when (m.daysAgo) { 0 -> "today"; 1 -> "yesterday"; else -> "${m.daysAgo} days ago" }
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiaryContainer).clickable(onClickLabel = "Write about this match", onClick = onWrite).padding(18.dp),
+    ) {
+        Text("${m.team.name.uppercase()} · ${whenText.uppercase()}", style = MaterialTheme.typography.labelSmall, color = cs.onTertiaryContainer.copy(alpha = .7f))
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Bottom) {
+            Text(m.score, style = flexStyle(40.sp, wght = 800, rond = 30f, lh = 1f), color = cs.onTertiaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Text(m.title, style = MaterialTheme.typography.titleSmall, color = cs.onTertiaryContainer, modifier = Modifier.weight(1f).padding(bottom = 4.dp), maxLines = 2)
+        }
+        Text("What did you make of it?", style = TextStyle(fontFamily = Serif, fontSize = 17.sp, fontStyle = FontStyle.Italic), color = cs.onTertiaryContainer, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.FilledTonalButton(onWrite) { Text("Write it down") }
+            androidx.compose.material3.TextButton(onSkip) { Text("Not now", color = cs.onTertiaryContainer) }
+        }
+    }
+}

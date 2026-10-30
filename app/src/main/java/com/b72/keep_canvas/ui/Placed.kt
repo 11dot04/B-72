@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -69,6 +69,8 @@ import kotlin.math.roundToInt
 class PlacedState(private val repo: Repo, private val tag: String) {
     val items = mutableStateListOf<Stuck>()
     var selected by mutableStateOf<String?>(null)
+    var drawing by mutableStateOf(false)
+    var pen by mutableStateOf(0)
     private var seeded = false
 
     fun seed() { if (!seeded) { repo.loaded?.library?.let { items.addAll(it.placed[tag].orEmpty()); seeded = true } } }
@@ -93,7 +95,7 @@ fun PlacedLayer(st: PlacedState, cw: Float, topInset: Float, ring: Color) {
 private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ring: Color) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val mark = markOf(s.k)
-    val aspect = mark?.aspect ?: 1f
+    val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: 1f
     val wPx = s.w * cw
     val on = st.selected == s.id
     val latest by androidx.compose.runtime.rememberUpdatedState(s)
@@ -113,7 +115,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
             }
             .graphicsLayer { rotationZ = latest.r },
     ) {
-        if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode()) }
+        if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
         else {
             val img by produceState<ImageBitmap?>(Images.peek(s.k.substring(2), 500), s.k) { value = Images.load(s.k.substring(2), 500) }
             img?.let { Image(it, null, Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit) }
@@ -182,5 +184,46 @@ fun PlacedTray(stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (
                 }
             }
         }
+    }
+}
+
+
+/** Draw mode: a finger-drawn line, circle, box or triangle is corrected into the clean shape as soon as the finger lifts. */
+@Composable
+fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, modifier: Modifier = Modifier) {
+    val pts = remember { mutableStateListOf<androidx.compose.ui.geometry.Offset>() }
+    val hsNow by androidx.compose.runtime.rememberUpdatedState(hs)
+    val vsNow by androidx.compose.runtime.rememberUpdatedState(vs)
+    Canvas(
+        modifier.pointerInput(cw) {
+            androidx.compose.foundation.gestures.detectDragGestures(
+                onDragStart = { pts.clear(); pts.add(it) },
+                onDrag = { c, _ -> pts.add(c.position) },
+                onDragEnd = {
+                    val canvasPts = pts.map { androidx.compose.ui.geometry.Offset((it.x + hsNow) / cw, (it.y + vsNow - topInset) / cw) }
+                    com.b72.keep_canvas.ui.Shapes.recognise(canvasPts, "p${System.nanoTime()}", st.pen)?.let { s -> st.items.add(s) }
+                    pts.clear()
+                },
+                onDragCancel = { pts.clear() },
+            )
+        },
+    ) {
+        if (pts.size > 1) drawPath(
+            androidx.compose.ui.graphics.Path().apply { moveTo(pts[0].x, pts[0].y); for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y) },
+            MarkColors[st.pen.mod(MarkColors.size)].copy(alpha = .8f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 7.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+        )
+    }
+}
+
+/** The pill shown while drawing: pick the pen, or finish. */
+@Composable
+fun DrawBar(st: PlacedState, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Row(modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Draw a shape", color = cs.onTertiary, style = MaterialTheme.typography.labelLarge)
+        for ((i, c) in MarkColors.withIndex()) Box(
+            Modifier.size(28.dp).clip(CircleShape).background(c).border(if (st.pen == i) 3.dp else 1.dp, cs.onTertiary.copy(alpha = if (st.pen == i) 1f else .4f), CircleShape).clickable(onClickLabel = "Pen colour") { st.pen = i },
+        )
+        IconButton({ st.drawing = false }) { Icon(Icons.Rounded.Check, "Done", tint = cs.onTertiary) }
     }
 }

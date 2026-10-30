@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
@@ -112,6 +113,8 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.rounded.Contrast
 
+private fun textBlocksOf(n: Note) = n.blocks.filter { it.kind == Kind.Text }
+
 private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
 
 /**
@@ -126,7 +129,7 @@ fun NotePage(
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
     onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {},
     onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {},
-    onStar: () -> Unit = {}, onTitle: (String) -> Unit = {}, onBody: (blockId: String, text: String) -> Unit = { _, _ -> },
+    onStar: () -> Unit = {}, onTitle: (String) -> Unit = {}, onRich: (blockId: String, text: String, spans: String, indent: Boolean) -> Unit = { _, _, _, _ -> }, onLayout: (String) -> Unit = {}, repo: com.b72.keep_canvas.data.Repo? = null, addFirst: String? = null, onAddFirstDone: () -> Unit = {},
     onItems: (blockId: String, items: List<String>) -> Unit = { _, _ -> }, autoFocus: Boolean = false,
 ) {
     val pal = rememberNotePalette(note)
@@ -134,6 +137,8 @@ fun NotePage(
     var tint by remember { mutableStateOf(true) }
     var viewer by remember { mutableStateOf<Int?>(null) }
     var editTitle by remember { mutableStateOf(false) }
+    var rich by remember { mutableStateOf<RichState?>(null) }
+    var adding by remember { mutableStateOf(addFirst != null) }
 
     // The width axis runs from condensed to the fit. The layout is measured once; only the typeface step changes.
     val flex = remember { Animatable(0f) }
@@ -178,20 +183,24 @@ fun NotePage(
             val hasText = note.blocks.any { it.kind == Kind.Text }
             val hasList = note.blocks.any { it.kind == Kind.Checklist }
             val fieldTitle = (explicit.isEmpty() && title.isEmpty()) || editTitle
+            val coverMode = note.layout == "cover" && photos.isNotEmpty() && title.isNotEmpty() && !fieldTitle
+            val besideMode = note.layout == "beside" && photos.isNotEmpty() && textBlocksOf(note).isNotEmpty()
             if (fieldTitle) item(key = "title-field") {
                 InlineTitle(
                     explicit, if (title.isNotEmpty()) title else "Title", pal, focus = editTitle,
                     onDone = { editTitle = false }, onChange = onTitle,
                 )
-            } else if (lay != null) item(key = "title-big") {
-                FitTitle(
+            } else if (lay != null && !coverMode) item(key = "title-big") {
+                if (note.layout == "script") ScriptTitle(title, pal, Modifier.clickable { editTitle = true })
+                else FitTitle(
                     title, pal.fg, note.id,
                     modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                     flex = { flex.value },
                 )
             }
-            if (photos.isNotEmpty()) item {
+            if (coverMode) item(key = "cover") { CoverBlock(title, photos[0], pal, note.id, tint, { editTitle = true }) { viewer = 0 } }
+            if (photos.isNotEmpty() && !coverMode && !besideMode) item {
                 if (hero != null) {
                     // The shape's frame is sized from the subject; the area is trimmed to the frame and the subject's head
                     // rides up over the title's last line.
@@ -287,11 +296,21 @@ fun NotePage(
             val isDraft = autoFocus
             for ((ti, b) in textBlocks.withIndex()) item(key = "t-${b.id}") {
                 val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
-                InlineBody(b.body, if (ti == 0) "Note" else "", pal, linked, focus = isDraft && ti == 0 && b.body.isEmpty() && !hasList) { onBody(b.id, it) }
+                val body: @Composable () -> Unit = {
+                    InlineBody(
+                        b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || note.layout == "script", if (ti == 0) "Note" else "", pal, linked,
+                        focus = isDraft && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
+                        serif = note.layout == "script" || note.layout == "ledger", numbered = note.layout == "ledger",
+                    ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
+                }
+                if (besideMode && ti == 0) androidx.compose.foundation.layout.Row {
+                    BesidePhoto(photos[0], pal, tint, { viewer = 0 }, Modifier.weight(.4f))
+                    Box(Modifier.weight(.6f)) { body() }
+                } else body()
             }
             // a note with no words yet (a photo, a record) still takes some
             if (!hasText && !hasList && note.blocks.none { it.kind == Kind.Poster }) item(key = "t-in_${note.id}") {
-                InlineBody("", "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false) { onBody("in_${note.id}", it) }
+                InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
             }
             for (b in note.blocks) if (b.kind == Kind.Checklist) item(key = "l-${b.id}") {
                 InlineChecklist(b.checkItems, pal, focus = isDraft && b.checkItems.all { it.isBlank() }) { onItems(b.id, it) }
@@ -367,10 +386,17 @@ fun NotePage(
             content = {
                 EditSplit(
                     container = MaterialTheme.colorScheme.onTertiary, content = MaterialTheme.colorScheme.tertiary,
-                    smart = smartOn, onEdit = onEdit, onSmart = { onSmart(!smartOn) }, onBrainstorm = { brainstorm = true },
+                    smart = smartOn, layout = note.layout, onAdd = { adding = true }, onLayout = onLayout, onSmart = { onSmart(!smartOn) }, onBrainstorm = { brainstorm = true },
                 )
             },
         )
+        if (adding && repo != null) AddSheet(repo, note.id, hasList = note.blocks.any { it.kind == Kind.Checklist }, initial = addFirst) { adding = false; onAddFirstDone() }
+        // while words are being typed: the formatting strip over the keyboard, with a tick to finish
+        rich?.let { r ->
+            val fm = androidx.compose.ui.platform.LocalFocusManager.current
+            val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+            FormatBar(r, { fm.clearFocus(); kb?.hide() }, Modifier.align(Alignment.BottomCenter).imePadding().padding(bottom = 8.dp))
+        }
         if (brainstorm) BrainstormSheet(note, { brainstorm = false }, onAppend, { setupAi = true })
         if (setupAi) AssistantDialog { setupAi = false }
         if (pickDate) {
