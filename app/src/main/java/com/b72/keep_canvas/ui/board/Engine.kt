@@ -25,7 +25,7 @@ private const val BAND_L = .05f
 private const val BAND_R = .95f
 
 /** One block of one note, placed on a tag's canvas. */
-class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "") {
+class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "", val starred: Boolean = false) {
     val id: String get() = b.id
     // plain fields: the packer reads and writes these millions of times; the UI watches [rev] instead
     var x: Float = x0
@@ -43,7 +43,8 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     val bare get() = kind == Kind.Bare
     val rect: Rect get() = Rect(x, y, x + w, y + h)
     /** Tilt in radians, stable per card. */
-    val angle: Float get() = when {
+    val angle: Float get() = if (starred && !bare) 0.045f * (if (seedOf(id) % 2 == 0) 1 else -1) + base else base
+    private val base: Float get() = when {
         bare -> 0f
         isPhoto -> (((seedOf(id) % 11) - 5) * .019f)
         isPictureCard -> (((seedOf(id) % 9) - 4) * .017f)
@@ -432,7 +433,7 @@ fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Floa
             val what = when (b.kind) { Kind.Photo -> "Photo"; Kind.Checklist -> "Checklist"; Kind.Quote -> "Quote"; Kind.Film -> "Film"; Kind.Track -> "Track"; Kind.Book -> "Book"; Kind.Recipe -> "Recipe"; Kind.Link -> "Link"; else -> "Note" }
             val label = "$what: ${b.title.ifBlank { b.body.take(50) }.ifBlank { n.title }}. Opens the note."
             val current = n.places[versionKey(tag)]?.getOrNull(0) == LAYOUT_VERSION
-            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label))
+            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label, n.starred))
         }
     }
     return out
