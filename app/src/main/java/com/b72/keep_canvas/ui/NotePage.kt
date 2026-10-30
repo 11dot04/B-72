@@ -127,7 +127,7 @@ fun NotePage(
     onDelete: () -> Unit = {}, onToggle: (blockId: String, index: Int) -> Unit = { _, _ -> },
     onSetData: (blockId: String, key: String, value: Int) -> Unit = { _, _, _ -> },
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
-    onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {},
+    onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {}, onRemoveTag: (String) -> Unit = {},
     onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {},
     onStar: () -> Unit = {}, onTitle: (String) -> Unit = {}, onRich: (blockId: String, text: String, spans: String, indent: Boolean) -> Unit = { _, _, _, _ -> }, onLayout: (String) -> Unit = {}, repo: com.b72.keep_canvas.data.Repo? = null, addFirst: String? = null, onAddFirstDone: () -> Unit = {},
     onItems: (blockId: String, items: List<String>) -> Unit = { _, _ -> }, autoFocus: Boolean = false,
@@ -139,6 +139,7 @@ fun NotePage(
     var editTitle by remember { mutableStateOf(false) }
     var rich by remember { mutableStateOf<RichState?>(null) }
     var adding by remember { mutableStateOf(addFirst != null) }
+    var tagging by remember { mutableStateOf(false) }
 
     // The width axis runs from condensed to the fit. The layout is measured once; only the typeface step changes.
     val flex = remember { Animatable(0f) }
@@ -183,9 +184,22 @@ fun NotePage(
             val hasText = note.blocks.any { it.kind == Kind.Text }
             val hasList = note.blocks.any { it.kind == Kind.Checklist }
             val fieldTitle = (explicit.isEmpty() && title.isEmpty()) || editTitle
-            val headerMode = note.layout in HEADER_LAYOUTS && title.isNotEmpty() && !fieldTitle && (photos.isNotEmpty() || note.layout != "cover")
+            val headerMode = note.layout in HEADER_LAYOUTS && title.isNotEmpty() && !fieldTitle && (photos.isNotEmpty() || note.layout !in NEEDS_PHOTO)
+            val embed = headerMode && note.layout == "poster"
             val coverMode = headerMode
             val besideMode = false
+            val bodies: @Composable (Boolean) -> Unit = { compact ->
+                val tbs = note.blocks.filter { it.kind == Kind.Text }
+                for ((ti, b) in tbs.withIndex()) {
+                    val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
+                    InlineBody(
+                        b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || note.layout == "script", if (ti == 0) "Note" else "", pal, linked,
+                        focus = autoFocus && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
+                        serif = note.layout == "script" || note.layout == "ledger", numbered = note.layout == "ledger", compact = compact,
+                    ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
+                }
+                if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
+            }
             if (fieldTitle) item(key = "title-field") {
                 InlineTitle(
                     explicit, if (title.isNotEmpty()) title else "Title", pal, focus = editTitle,
@@ -206,9 +220,8 @@ fun NotePage(
                 when (note.layout) {
                     "cover" -> CoverBlock(title, photos[0], pal, note.id, tint, onTitle = edit, onView = { viewer = 0 })
                     "wordmark" -> WordmarkHeader(title, photos, note.tags, pal, tint, edit, view)
-                    "glow" -> GlowHeader(title, photos, pal, tint, edit, view)
-                    "poster" -> PosterHeader(title, photos, pal, tint, edit, view)
-                    else -> BleedHeader(title, photos, pal, edit, view)
+                    "poster" -> PosterHeader(title, photos[0], note.tags, pal, note.id, tint, edit, { viewer = 0 }, { bodies(true) })
+                    else -> ColumnHeader(title, photos, note.tags, pal, tint, edit, view)
                 }
             }
             if (photos.isNotEmpty() && !coverMode && !besideMode) item {
@@ -303,25 +316,17 @@ fun NotePage(
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
             }
-            val textBlocks = note.blocks.filter { it.kind == Kind.Text }
             val isDraft = autoFocus
-            for ((ti, b) in textBlocks.withIndex()) item(key = "t-${b.id}") {
-                val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
-                val body: @Composable () -> Unit = {
-                    InlineBody(
-                        b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || note.layout == "script", if (ti == 0) "Note" else "", pal, linked,
-                        focus = isDraft && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
-                        serif = note.layout == "script" || note.layout == "ledger", numbered = note.layout == "ledger",
-                    ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
-                }
-                body()
-            }
-            // a note with no words yet (a photo, a record) still takes some
-            if (!hasText && !hasList && note.blocks.none { it.kind == Kind.Poster }) item(key = "t-in_${note.id}") {
-                InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
-            }
+            if (!embed) item(key = "bodies") { Column { bodies(false) } }
             for (b in note.blocks) if (b.kind == Kind.Checklist) item(key = "l-${b.id}") {
                 InlineChecklist(b.checkItems, pal, focus = isDraft && b.checkItems.all { it.isBlank() }) { onItems(b.id, it) }
+            }
+            item(key = "tags") {
+                TagEditor(note.tags, allNotes, pal, onAddTag, onRemoveTag, onTag, onEditing = { tagging = it }, modifier = Modifier.padding(top = 10.dp))
+            }
+            val words = note.blocks.filter { it.kind == Kind.Text }.sumOf { it.body.trim().split(Regex("\\s+")).count { w -> w.isNotEmpty() } }
+            if (words >= 20) item(key = "count") {
+                Text("$words words · ${max(1, words / 200)} min read", style = MaterialTheme.typography.labelMedium, color = pal.fg.copy(alpha = .5f), modifier = Modifier.padding(top = 10.dp, start = 4.dp))
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
         }
@@ -374,7 +379,7 @@ fun NotePage(
         var setupAi by remember { mutableStateOf(false) }
         val smartOn = note.blocks.any { it.kind == Kind.Poster }
         // reminder and details on the sides, the primary action in the middle as a split button
-        if (rich == null) HorizontalFloatingToolbar(
+        if (rich == null && !tagging) HorizontalFloatingToolbar(
             expanded = barOpen,
             colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(
                 toolbarContainerColor = MaterialTheme.colorScheme.tertiary,

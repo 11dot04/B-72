@@ -118,6 +118,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     },
                     onAppend = { repo.appendText(note.id, it) },
                     onAddTag = { t -> repo.upsert(note.copy(tags = (note.tags + t).distinct())) },
+                    onRemoveTag = { t -> repo.upsert(note.copy(tags = note.tags - t)) },
                     onOpenNote = { open = it },
                     onRemind = { at ->
                         repo.upsert(note.copy(remind = at))

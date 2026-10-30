@@ -16,6 +16,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
+import com.b72.keep_canvas.data.Images
+import com.b72.keep_canvas.data.cutPath
+import kotlin.math.max
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -45,47 +59,111 @@ class PageLayout(val id: String, val name: String, val blurb: String)
 
 val LAYOUTS = listOf(
     PageLayout("", "Plain", "Title, photo, words"),
-    PageLayout("cover", "Cover", "The title across a photo in a Material shape"),
+    PageLayout("cover", "Cover", "The title set in the empty space of your photo; words in a box below"),
+    PageLayout("poster", "Poster", "A high-contrast photo bleeding off one edge, title beneath, a tall column of words"),
     PageLayout("wordmark", "Wordmark", "A giant title, small captions, photos on a loose grid"),
-    PageLayout("glow", "Glow", "A soft glowing disc behind a light, centred title"),
-    PageLayout("poster", "Poster", "Stacked, tilted type, a dot, a photo with a hard shadow"),
-    PageLayout("bleed", "Bleed", "Condensed type running off the edge on a block of colour"),
-    PageLayout("script", "Script", "Handwritten heading, serif text, first-line indents"),
+    PageLayout("column", "Column", "A panel of colour: small caption left, large light title right, photos below"),
+    PageLayout("script", "Script", "A bold italic serif heading, serif text, first-line indents"),
     PageLayout("ledger", "Ledger", "Serif text with line numbers in the margin, every fifth"),
 )
 
 /** Layouts that replace the title and photo area with their own header. */
-val HEADER_LAYOUTS = setOf("cover", "wordmark", "glow", "poster", "bleed")
+val HEADER_LAYOUTS = setOf("cover", "wordmark", "poster", "column")
 
-/** A curated few of Material's shapes that hold a photo well; each note keeps its own. */
-@Composable
-private fun frameFor(seed: String): Pair<Shape, Float> = when (seedOf(seed) % 6) {
-    0 -> MaterialShapes.Arch.toShape() to .82f
-    1 -> MaterialShapes.Cookie9Sided.toShape() to 1f
-    2 -> MaterialShapes.Clover4Leaf.toShape() to 1f
-    3 -> MaterialShapes.SoftBurst.toShape() to 1f
-    4 -> MaterialShapes.Pill.toShape() to .78f
-    else -> MaterialShapes.Flower.toShape() to 1f
-}
+/** Layouts that need a photo to exist. */
+val NEEDS_PHOTO = setOf("cover", "poster")
 
-private fun upper(title: String) = breakTitle(title.uppercase(), 3)
+private fun upper(title: String, n: Int = 3) = breakTitle(title.uppercase(), n)
+
+private fun onColor(c: Color) = if (c.luminance() > .5f) Color(0xFF14110F) else Color(0xFFFFFBF5)
 
 @Composable
 private fun Snap(photo: Block, pal: NotePalette, tint: Boolean, aspect: Float, modifier: Modifier, shape: Shape = RoundedCornerShape(20.dp), onView: () -> Unit) {
     PhotoImage(photo.path!!, 900, tint, pal.primary, modifier.aspectRatio(aspect).clip(shape).clickable(onClickLabel = "View photo", onClick = onView))
 }
 
-/** Cover: a Material-shaped frame pushed to one side, a touch off level, the title set across its lower part. */
+/** Average brightness (0..1) of an area of a "cover"-fitted photo, so the title can pick light or dark ink. */
+private fun lumaIn(bm: ImageBitmap?, w: Float, h: Float, r: Rect): Float {
+    bm ?: return .3f
+    val bw = bm.width; val bh = bm.height
+    val px = IntArray(bw * bh)
+    bm.readPixels(px)
+    val s = max(w / bw, h / bh); val ox = (w - bw * s) / 2; val oy = (h - bh * s) / 2
+    var sum = 0f
+    for (gx in 0 until 8) for (gy in 0 until 8) {
+        val x = r.left + (gx + .5f) / 8 * r.width; val y = r.top + (gy + .5f) / 8 * r.height
+        val c = px[((y - oy) / s).toInt().coerceIn(0, bh - 1) * bw + ((x - ox) / s).toInt().coerceIn(0, bw - 1)]
+        sum += (0.299f * ((c shr 16) and 255) + 0.587f * ((c shr 8) and 255) + 0.114f * (c and 255)) / 255f
+    }
+    return sum / 64f
+}
+
+/**
+ * Cover: the title is set in the photo's own negative space, found from the subject ML Kit cut out. Where the subject can
+ * stand proud, it is laid back over the lettering. With no clear subject the title sits below the photo instead.
+ * The page keeps its colour all the way down and the words sit in their own box underneath.
+ */
 @Composable
 fun CoverBlock(title: String, photo: Block, pal: NotePalette, seed: String, tint: Boolean, onTitle: () -> Unit, onView: () -> Unit, modifier: Modifier = Modifier) {
-    val (shape, aspect) = frameFor(seed)
-    Box(modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Box(Modifier.fillMaxWidth(.92f).align(Alignment.TopEnd).aspectRatio(aspect).rotate(if (seedOf(seed) % 2 == 0) 2f else -2f).clip(shape)) {
-            PhotoImage(photo.path!!, 1200, tint, pal.primary, Modifier.fillMaxSize().clickable(onClickLabel = "View photo", onClick = onView))
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(.42f to Color.Transparent, 1f to Color.Black.copy(alpha = .75f))))
+    val shape = RoundedCornerShape(36.dp)
+    val cut by produceState<ImageBitmap?>(null, photo.id, photo.path) { value = if (canPopOut(photo)) photo.cutPath()?.let { Images.load(it, 1100) } else null }
+    val small by produceState<ImageBitmap?>(null, photo.path) { value = Images.load(photo.path!!, 240) }
+    BoxWithConstraints(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+        val wPx = with(LocalDensity.current) { maxWidth.toPx() }
+        val hPx = wPx * 1.25f
+        val subj = subjectIn(photo, wPx, hPx)
+        val topRoom = subj?.top ?: 0f
+        val botRoom = if (subj != null) hPx - subj.bottom else 0f
+        val roomy = subj != null && (cut != null || max(topRoom, botRoom) > hPx * .24f)
+        val top = cut != null || topRoom >= botRoom
+        val band = if (!roomy) Rect(0f, 0f, wPx, hPx * .3f) else if (top) Rect(0f, 0f, wPx, max(topRoom, hPx * .3f)) else Rect(0f, hPx - botRoom, wPx, hPx)
+        val ink = if (lumaIn(small, wPx, hPx, band) > .55f) Color(0xFF14110F) else Color(0xFFFFFBF5)
+        val lines = upper(title, if (roomy && max(topRoom, botRoom) > hPx * .4f) 3 else 2)
+        val type: @Composable (Color, Modifier) -> Unit = { c, m ->
+            Column(m.clickable(onClickLabel = "Edit title", onClick = onTitle)) {
+                for (l in lines) FitLine(l, flexStyle(400.sp, wght = 900, wdth = 64f, lh = .86f), c, min = 22f)
+            }
         }
-        Box(Modifier.fillMaxWidth(.66f).align(Alignment.BottomCenter).padding(bottom = 26.dp).clickable(onClickLabel = "Edit title", onClick = onTitle)) {
-            FitTitle(title, Color.White, seed, maxLines = 3)
+        if (roomy) Box(Modifier.fillMaxWidth().aspectRatio(.8f).clip(shape)) {
+            PhotoImage(photo.path!!, 1200, tint, pal.primary, Modifier.fillMaxSize().clickable(onClickLabel = "View photo", onClick = onView))
+            type(ink, Modifier.align(if (top) Alignment.TopCenter else Alignment.BottomCenter).padding(horizontal = 14.dp, vertical = 16.dp).rotate(if (seedOf(seed) % 2 == 0) -3f else 3f))
+            cut?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        } else Column {
+            Snap(photo, pal, tint, .9f, Modifier.fillMaxWidth(), shape, onView)
+            Spacer(Modifier.height(14.dp))
+            type(pal.fg, Modifier)
+        }
+    }
+}
+
+/**
+ * Poster: a high-contrast photo set to one edge and a little into the bleed, the title beneath it at the photo's own width,
+ * and a tall column of words on the other side. The edge alternates from note to note.
+ */
+@Composable
+fun PosterHeader(title: String, photo: Block, tags: List<String>, pal: NotePalette, seed: String, tint: Boolean, onTitle: () -> Unit, onView: () -> Unit, bodies: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    val left = seedOf(seed) % 2 == 0
+    val extra = 22.dp
+    val cap = TextStyle(fontSize = 10.sp, letterSpacing = 1.4.sp, color = pal.fg.copy(alpha = .65f))
+    BoxWithConstraints(modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        val photoW = maxWidth * .56f
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (left) Arrangement.Start else Arrangement.End) {
+            val photoCol = @Composable {
+                Column(
+                    Modifier.width(photoW).layout { m, c ->
+                        val p = m.measure(c.copy(minWidth = c.maxWidth + extra.roundToPx(), maxWidth = c.maxWidth + extra.roundToPx()))
+                        layout(c.maxWidth, p.height) { p.place(if (left) -extra.roundToPx() else 0, 0) }
+                    },
+                ) {
+                    PhotoImage(photo.path!!, 1000, tint, pal.primary, Modifier.fillMaxWidth().aspectRatio(.74f).clickable(onClickLabel = "View photo", onClick = onView))
+                    Column(Modifier.padding(start = if (left) extra else 0.dp, end = if (left) 0.dp else extra, top = 10.dp).clickable(onClickLabel = "Edit title", onClick = onTitle)) {
+                        Text(tags.firstOrNull()?.uppercase() ?: "NOTE", style = cap, modifier = Modifier.padding(bottom = 4.dp))
+                        for (l in upper(title, 4)) FitLine(l, flexStyle(400.sp, wght = 900, wdth = 56f, lh = .86f), pal.fg, min = 16f)
+                    }
+                }
+            }
+            val words = @Composable { Column(Modifier.weight(1f).padding(start = if (left) 14.dp else 0.dp, end = if (left) 0.dp else 14.dp)) { bodies() } }
+            if (left) { photoCol(); words() } else { words(); photoCol() }
         }
     }
 }
@@ -114,83 +192,33 @@ fun WordmarkHeader(title: String, photos: List<Block>, tags: List<String>, pal: 
     }
 }
 
-/** Glow: a soft disc of the page's colour behind a light, centred title; photos in Material shapes beneath. */
+/** Column: a panel of the page's colour, a small caption on the left, the title large and light on the right, photos side by side. */
 @Composable
-fun GlowHeader(title: String, photos: List<Block>, pal: NotePalette, tint: Boolean, onTitle: () -> Unit, onView: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1.05f).clickable(onClickLabel = "Edit title", onClick = onTitle), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) {
-                val r = size.minDimension * .5f
-                drawCircle(Brush.radialGradient(listOf(pal.primary.copy(alpha = .95f), pal.primary.copy(alpha = .7f), pal.primary.copy(alpha = 0f)), Offset(size.width / 2, size.height / 2), r), r)
-            }
+fun ColumnHeader(title: String, photos: List<Block>, tags: List<String>, pal: NotePalette, tint: Boolean, onTitle: () -> Unit, onView: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val ink = onColor(pal.primary)
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(pal.primary).padding(20.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 36.dp)) {
             Text(
-                upper(title).joinToString("\n") { it.lowercase().replaceFirstChar { c -> c.uppercase() } },
-                style = flexStyle(36.sp, wght = 320, lh = 1.08f), color = pal.bg, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 36.dp),
+                (tags.take(2).joinToString("\n").ifEmpty { "Note" }).uppercase(),
+                style = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 1.4.sp, color = ink.copy(alpha = .75f)),
+                modifier = Modifier.weight(.3f),
+            )
+            Text(
+                title, style = flexStyle(40.sp, wght = 300, wdth = 90f, lh = 1.04f), color = ink, textAlign = TextAlign.End,
+                modifier = Modifier.weight(.7f).clickable(onClickLabel = "Edit title", onClick = onTitle),
             )
         }
-        if (photos.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            photos.take(2).forEachIndexed { i, p ->
-                val shape = if (i == 0) MaterialShapes.Cookie9Sided.toShape() else MaterialShapes.Arch.toShape()
-                Snap(p, pal, tint, 1f, Modifier.weight(1f), shape) { onView(i) }
-            }
+        if (photos.isNotEmpty()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            photos.take(2).forEachIndexed { i, p -> Snap(p, pal, tint, if (photos.size == 1) 1.3f else .8f, Modifier.weight(1f), RoundedCornerShape(22.dp)) { onView(i) } }
         }
     }
 }
 
-/** Poster: each line of the title huge, tilted this way and that, an orange dot in the gap, a photo with a hard shadow. */
-@Composable
-fun PosterHeader(title: String, photos: List<Block>, pal: NotePalette, tint: Boolean, onTitle: () -> Unit, onView: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val lines = upper(title)
-    Column(modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-        Column(Modifier.clickable(onClickLabel = "Edit title", onClick = onTitle)) {
-            lines.forEachIndexed { i, l ->
-                Box(Modifier.fillMaxWidth().rotate(listOf(-4f, 2.5f, -2f)[i % 3]).padding(vertical = 2.dp)) {
-                    FitLine(l, flexStyle(400.sp, wght = 900, lh = .82f), pal.fg, min = 24f)
-                }
-                if (i == 0 && lines.size > 1) Box(Modifier.padding(start = 90.dp, top = 6.dp, bottom = 6.dp).size(54.dp).clip(CircleShape).background(pal.primary))
-            }
-        }
-        if (photos.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 18.dp, end = 10.dp), contentAlignment = Alignment.CenterEnd) {
-            Box(Modifier.fillMaxWidth(.62f).rotate(2f)) {
-                Box(Modifier.matchParentSizeShadow().offset(10.dp, 10.dp).background(pal.fg.copy(alpha = .88f)))
-                Snap(photos[0], pal, tint, 1.3f, Modifier.fillMaxWidth(), RoundedCornerShape(2.dp)) { onView(0) }
-            }
-        }
-    }
-}
-
-private fun Modifier.matchParentSizeShadow(): Modifier = this.fillMaxSize()
-
-/** Bleed: a full-width block of colour, a duotone photo bleeding off the left, condensed type running off the right. */
-@Composable
-fun BleedHeader(title: String, photos: List<Block>, pal: NotePalette, onTitle: () -> Unit, onView: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val panel = pal.primary
-    val ink = pal.bg
-    Box(
-        modifier.layout { m, c ->
-            val extra = 32.dp.roundToPx()
-            val p = m.measure(c.copy(minWidth = c.maxWidth + extra, maxWidth = c.maxWidth + extra))
-            layout(c.maxWidth, p.height) { p.place(-extra / 2, 0) }
-        }.background(panel).clipToBounds().padding(bottom = 22.dp),
-    ) {
-        Column {
-            if (photos.isNotEmpty()) Box(Modifier.fillMaxWidth(.66f).padding(top = 0.dp)) {
-                PhotoImage(photos[0].path!!, 900, true, panel, Modifier.fillMaxWidth().aspectRatio(.95f).clickable(onClickLabel = "View photo") { onView(0) })
-            }
-            Column(Modifier.padding(top = 18.dp).clickable(onClickLabel = "Edit title", onClick = onTitle).layout { m, c ->
-                // wider than the screen: the last letters run off the edge
-                val w = (c.maxWidth * 1.12f).toInt()
-                val p = m.measure(c.copy(minWidth = w, maxWidth = w))
-                layout(c.maxWidth, p.height) { p.place(8.dp.roundToPx(), 0) }
-            }) {
-                for (l in upper(title)) FitLine(l, flexStyle(400.sp, wght = 800, wdth = 42f, lh = .84f), ink, min = 24f)
-            }
-        }
-    }
-}
-
-/** Script: a large handwritten heading. */
+/** Script: a large bold italic serif heading with a short rule beneath. */
 @Composable
 fun ScriptTitle(title: String, pal: NotePalette, modifier: Modifier = Modifier) {
-    Text(title, style = TextStyle(fontFamily = Script, fontSize = 64.sp, lineHeight = 58.sp, color = pal.fg), modifier = modifier.padding(bottom = 6.dp))
+    Column(modifier.padding(bottom = 10.dp)) {
+        Text(title, style = TextStyle(fontFamily = Script, fontSize = 52.sp, lineHeight = 56.sp, color = pal.fg))
+        Box(Modifier.padding(top = 8.dp).width(56.dp).height(3.dp).background(pal.primary))
+    }
 }

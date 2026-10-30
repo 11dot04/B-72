@@ -146,7 +146,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
-  val test = FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true }
+  val test: (Note) -> Boolean = if (filter.startsWith("#")) { n -> filter.substring(1) in n.tags } else (FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true })
   var cols by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(2) }
   var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
   val shown = remember(loaded?.library, q, filter, sort) {
@@ -200,6 +200,14 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                             leadingIcon = { Icon(f.icon, null, Modifier.size(18.dp)) },
                             shape = RoundedCornerShape(50),
                         )
+                    }
+                    val topTags = remember(loaded?.library) {
+                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().filter { it.value >= 2 }.entries.sortedByDescending { it.value }.take(8).map { it.key }
+                    }
+                    if (topTags.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+                        Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (t in topTags) FilterChip(selected = filter == "#$t", onClick = { filter = if (filter == "#$t") "All" else "#$t" }, label = { Text("#$t") }, shape = RoundedCornerShape(50))
                     }
                 }
             }

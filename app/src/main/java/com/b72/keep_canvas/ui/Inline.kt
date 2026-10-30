@@ -91,7 +91,7 @@ fun InlineTitle(initial: String, placeholder: String, pal: NotePalette, focus: B
 @Composable
 fun InlineBody(
     body: String, spans: String, indent: Boolean, placeholder: String, pal: NotePalette, linked: AnnotatedString, focus: Boolean,
-    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
+    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
 ) {
     val st = remember { RichState(body, parseSpans(spans), indent) }
     var focused by remember { mutableStateOf(false) }
@@ -107,7 +107,7 @@ fun InlineBody(
     LaunchedEffect(body) { if (!focused && st.tv.text != body) { st.tv = TextFieldValue(body, TextRange(body.length)); st.spans = parseSpans(spans) } }
     LaunchedEffect(Unit) { if (focus) runCatching { fr.requestFocus() } }
     LaunchedEffect(editing) { if (editing && links && !focused) runCatching { fr.requestFocus() } }
-    val base = (if (serif) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 19.sp, lineHeight = 29.sp) else MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)).copy(color = pal.fg)
+    val base = (if (compact) androidx.compose.ui.text.TextStyle(fontFamily = if (serif) Serif else MaterialTheme.typography.bodyLarge.fontFamily, fontSize = 15.sp, lineHeight = 22.sp) else if (serif) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 19.sp, lineHeight = 29.sp) else MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)).copy(color = pal.fg)
     val tm = androidx.compose.ui.text.rememberTextMeasurer()
     var lay by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     val style = if (st.indentOn) base.copy(textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = 28.sp)) else base
@@ -160,6 +160,10 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, onIt
     }
     val style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = pal.fg)
     Column(Modifier.fillMaxWidth()) {
+        if (items.any { it.startsWith("x ") }) androidx.compose.material3.TextButton(
+            onClick = { items.removeAll { it.startsWith("x ") }; if (items.isEmpty()) items.add("") },
+            modifier = Modifier.align(Alignment.End),
+        ) { Text("Clear ticked", color = pal.primary) }
         items.forEachIndexed { i, s ->
             val done = s.startsWith("x ")
             val fr = focusers.getOrPut(i) { FocusRequester() }
