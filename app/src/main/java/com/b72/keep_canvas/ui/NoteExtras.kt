@@ -306,6 +306,8 @@ fun EditSplit(
     onAdd: () -> Unit, onLayout: (String) -> Unit, onSmart: () -> Unit, onBrainstorm: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
+    if (picking) LayoutSheet(layout, { picking = false }) { onLayout(it) }
     val colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = content)
     val turn by animateFloatAsState(if (open) 180f else 0f, MaterialTheme.motionScheme.defaultEffectsSpec<Float>(), label = "chevron")
     Box {
@@ -324,11 +326,9 @@ fun EditSplit(
             },
         )
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(28.dp)) {
-            Text("PAGE LAYOUT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 2.dp))
-            for (l in LAYOUTS) DropdownMenuItem(
-                { Column { Text(l.name); Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                { open = false; onLayout(l.id) },
-                leadingIcon = { Icon(if (layout == l.id) Icons.Rounded.Check else Icons.Rounded.ViewAgenda, null) },
+            DropdownMenuItem(
+                { Column { Text("Page layout"); Text(LAYOUTS.firstOrNull { it.id == layout }?.name ?: "Plain", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                { open = false; picking = true }, leadingIcon = { Icon(Icons.Rounded.ViewAgenda, null) },
             )
             androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
             DropdownMenuItem(
@@ -482,6 +482,30 @@ fun BrainstormSheet(note: Note, onDismiss: () -> Unit, onAppend: (String) -> Uni
                     }
                     FilledTonalButton(onClick = { onAppend(answer); onDismiss() }) { Text("Add to this note") }
                 }
+            }
+        }
+    }
+}
+
+/** The page layouts as a list you can read before choosing. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun LayoutSheet(current: String, onClose: () -> Unit, onPick: (String) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    androidx.compose.material3.ModalBottomSheet(onClose) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text("Page layout", style = flexStyle(26.sp, wght = 720, rond = 40f), modifier = Modifier.padding(bottom = 10.dp))
+            for (l in LAYOUTS) Row(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(20.dp))
+                    .background(if (current == l.id) cs.tertiaryContainer else cs.surfaceContainerHigh)
+                    .clickable { onPick(l.id); onClose() }.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(l.name, style = MaterialTheme.typography.titleMedium, color = if (current == l.id) cs.onTertiaryContainer else cs.onSurface)
+                    Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = if (current == l.id) cs.onTertiaryContainer.copy(alpha = .8f) else cs.onSurfaceVariant)
+                }
+                if (current == l.id) Icon(Icons.Rounded.Check, null, tint = cs.onTertiaryContainer)
             }
         }
     }

@@ -183,8 +183,9 @@ fun NotePage(
             val hasText = note.blocks.any { it.kind == Kind.Text }
             val hasList = note.blocks.any { it.kind == Kind.Checklist }
             val fieldTitle = (explicit.isEmpty() && title.isEmpty()) || editTitle
-            val coverMode = note.layout == "cover" && photos.isNotEmpty() && title.isNotEmpty() && !fieldTitle
-            val besideMode = note.layout == "beside" && photos.isNotEmpty() && textBlocksOf(note).isNotEmpty()
+            val headerMode = note.layout in HEADER_LAYOUTS && title.isNotEmpty() && !fieldTitle && (photos.isNotEmpty() || note.layout != "cover")
+            val coverMode = headerMode
+            val besideMode = false
             if (fieldTitle) item(key = "title-field") {
                 InlineTitle(
                     explicit, if (title.isNotEmpty()) title else "Title", pal, focus = editTitle,
@@ -199,7 +200,17 @@ fun NotePage(
                     flex = { flex.value },
                 )
             }
-            if (coverMode) item(key = "cover") { CoverBlock(title, photos[0], pal, note.id, tint, onTitle = { editTitle = true }, onView = { viewer = 0 }) }
+            if (headerMode) item(key = "header") {
+                val edit = { editTitle = true }
+                val view: (Int) -> Unit = { viewer = it }
+                when (note.layout) {
+                    "cover" -> CoverBlock(title, photos[0], pal, note.id, tint, onTitle = edit, onView = { viewer = 0 })
+                    "wordmark" -> WordmarkHeader(title, photos, note.tags, pal, tint, edit, view)
+                    "glow" -> GlowHeader(title, photos, pal, tint, edit, view)
+                    "poster" -> PosterHeader(title, photos, pal, tint, edit, view)
+                    else -> BleedHeader(title, photos, pal, edit, view)
+                }
+            }
             if (photos.isNotEmpty() && !coverMode && !besideMode) item {
                 if (hero != null) {
                     // The shape's frame is sized from the subject; the area is trimmed to the frame and the subject's head
@@ -303,10 +314,7 @@ fun NotePage(
                         serif = note.layout == "script" || note.layout == "ledger", numbered = note.layout == "ledger",
                     ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
                 }
-                if (besideMode && ti == 0) androidx.compose.foundation.layout.Row {
-                    BesidePhoto(photos[0], pal, tint, { viewer = 0 }, Modifier.weight(.4f))
-                    Box(Modifier.weight(.6f)) { body() }
-                } else body()
+                body()
             }
             // a note with no words yet (a photo, a record) still takes some
             if (!hasText && !hasList && note.blocks.none { it.kind == Kind.Poster }) item(key = "t-in_${note.id}") {
@@ -366,7 +374,7 @@ fun NotePage(
         var setupAi by remember { mutableStateOf(false) }
         val smartOn = note.blocks.any { it.kind == Kind.Poster }
         // reminder and details on the sides, the primary action in the middle as a split button
-        HorizontalFloatingToolbar(
+        if (rich == null) HorizontalFloatingToolbar(
             expanded = barOpen,
             colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(
                 toolbarContainerColor = MaterialTheme.colorScheme.tertiary,

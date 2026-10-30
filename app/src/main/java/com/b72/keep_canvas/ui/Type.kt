@@ -35,6 +35,9 @@ fun flex(wght: Int = 400, wdth: Float = 100f, rond: Float = 0f, slnt: Float = 0f
     }
 }
 
+/** Handwriting: Caveat, shipped with the app (the phone's own 'cursive' font is missing on many devices). */
+val Script = FontFamily(Font(R.font.caveat, FontWeight.Normal))
+
 val Serif = FontFamily(
     Font(R.font.instrumentserif_regular, FontWeight.Normal),
     Font(R.font.instrumentserif_italic, FontWeight.Normal, FontStyle.Italic),

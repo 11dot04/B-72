@@ -3,6 +3,8 @@ package com.b72.keep_canvas.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -100,7 +102,7 @@ fun styleOf(code: String, base: Float = 18f): SpanStyle? = when (code) {
     "s" -> SpanStyle(textDecoration = TextDecoration.LineThrough)
     "hl" -> SpanStyle(background = Color(0x66FFC928))
     "h1" -> SpanStyle(fontSize = (base * 1.45f).sp, fontWeight = FontWeight.Bold)
-    "cur" -> SpanStyle(fontFamily = FontFamily.Cursive, fontSize = (base * 1.35f).sp)
+    "cur" -> SpanStyle(fontFamily = Script, fontSize = (base * 1.45f).sp)
     else -> null
 }
 
@@ -154,29 +156,34 @@ fun richTransformation(spans: List<Span>, base: Float) = VisualTransformation { 
 @Composable
 fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    @Composable fun btn(icon: ImageVector?, label: String, on: Boolean, f: () -> Unit) {
+    @Composable fun btn(icon: ImageVector?, label: String, on: Boolean, script: Boolean = false, f: () -> Unit) {
         Box(
             Modifier.size(42.dp).clip(CircleShape).background(if (on) cs.onTertiary else Color.Transparent).clickable(onClickLabel = label, onClick = f),
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) Icon(icon, label, tint = if (on) cs.tertiary else cs.onTertiary)
-            else Text(label, color = if (on) cs.tertiary else cs.onTertiary, style = MaterialTheme.typography.titleMedium)
+            else Text(label, color = if (on) cs.tertiary else cs.onTertiary, style = if (script) androidx.compose.ui.text.TextStyle(fontFamily = Script, fontSize = 26.sp) else MaterialTheme.typography.titleMedium)
         }
     }
     Row(
-        modifier.clip(RoundedCornerShape(28.dp)).background(cs.tertiary).padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiary).padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        btn(Icons.Rounded.FormatBold, "Bold", st.has("b")) { st.toggle("b") }
-        btn(Icons.Rounded.FormatItalic, "Italic", st.has("i")) { st.toggle("i") }
-        btn(Icons.Rounded.FormatUnderlined, "Underline", st.has("u")) { st.toggle("u") }
-        btn(Icons.Rounded.FormatStrikethrough, "Strike", st.has("s")) { st.toggle("s") }
-        btn(Icons.Rounded.Highlight, "Highlight", st.has("hl")) { st.toggle("hl") }
-        btn(null, "H", st.has("h1")) { st.toggle("h1") }
-        btn(null, "𝒜", st.has("cur")) { st.toggle("cur") }
-        btn(Icons.Rounded.FormatListBulleted, "Bullet", false) { st.bullet() }
-        btn(Icons.Rounded.FormatIndentIncrease, "Indent first lines", st.indentOn) { st.indentOn = !st.indentOn }
-        Spacer(Modifier.width(4.dp))
+        Row(
+            Modifier.weight(1f).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            btn(Icons.Rounded.FormatBold, "Bold", st.has("b")) { st.toggle("b") }
+            btn(Icons.Rounded.FormatItalic, "Italic", st.has("i")) { st.toggle("i") }
+            btn(Icons.Rounded.FormatUnderlined, "Underline", st.has("u")) { st.toggle("u") }
+            btn(Icons.Rounded.FormatStrikethrough, "Strike", st.has("s")) { st.toggle("s") }
+            btn(Icons.Rounded.Highlight, "Highlight", st.has("hl")) { st.toggle("hl") }
+            btn(null, "H", st.has("h1")) { st.toggle("h1") }
+            btn(null, "A", st.has("cur"), script = true) { st.toggle("cur") }
+            btn(Icons.Rounded.FormatListBulleted, "Bullet", false) { st.bullet() }
+            btn(Icons.Rounded.FormatIndentIncrease, "Indent first lines", st.indentOn) { st.indentOn = !st.indentOn }
+        }
+        Spacer(Modifier.width(6.dp))
         Box(Modifier.size(42.dp).clip(CircleShape).background(cs.onTertiary).clickable(onClickLabel = "Done", onClick = onDone), contentAlignment = Alignment.Center) {
             Icon(Icons.Rounded.Check, "Done", tint = cs.tertiary)
         }
