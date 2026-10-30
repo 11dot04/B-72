@@ -177,6 +177,72 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         return id
     }
 
+    // ---- adding things to a note, and notes from shares
+
+    fun appendBlock(noteId: String, b: Block) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks + b))
+    }
+
+    fun removeBlock(noteId: String, blockId: String) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks.filterNot { it.id == blockId }))
+    }
+
+    /** A film, book or track picked from a search becomes a record on the note. */
+    suspend fun appendCand(noteId: String, kind: Kind, c: Cand) {
+        val path = saveImage(c.image, imageDir(ctx))
+        val data = c.data.filterValues { it.isNotEmpty() }.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) as kotlinx.serialization.json.JsonElement }
+        appendBlock(noteId, newBlock(kind, "r${System.nanoTime()}", title = c.title, path = path).copy(data = data))
+    }
+
+    /** A link card; the preview (title, picture, numbers for an activity) is filled in as soon as it arrives. */
+    fun appendLink(noteId: String, url: String) {
+        val id = "l${System.nanoTime()}"
+        appendBlock(noteId, newBlock(Kind.Link, id, body = url.trim()))
+        scope.launch { fillLink(noteId, id) }
+    }
+
+    suspend fun fillLink(noteId: String, blockId: String) {
+        val b = note(noteId)?.blocks?.firstOrNull { it.id == blockId } ?: return
+        val p = linkPreview(b.body.trim())
+        if (p.isEmpty()) return
+        val path = saveImage(p["image"], imageDir(ctx))
+        val extra = listOf("desc", "site", "src", "stats").mapNotNull { k -> p[k]?.takeIf { it.isNotEmpty() }?.let { k to (JsonPrimitive(it) as kotlinx.serialization.json.JsonElement) } }.toMap()
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(title = b.title.ifEmpty { p["title"] ?: "" }, path = path ?: it.path, data = it.data + extra) else it }))
+    }
+
+    /** A recipe read from a web page. Returns false when the page has none. */
+    suspend fun appendRecipe(noteId: String, url: String): Boolean {
+        val r = importRecipe(url.trim())
+        if (r.isEmpty()) return false
+        val path = saveImage(r["image"], imageDir(ctx))
+        val data = listOf("ingredients", "steps", "time", "servings", "url").mapNotNull { k -> r[k]?.takeIf { it.isNotEmpty() }?.let { k to (JsonPrimitive(it) as kotlinx.serialization.json.JsonElement) } }.toMap()
+        appendBlock(noteId, newBlock(Kind.Recipe, "r${System.nanoTime()}", title = r["title"].orEmpty(), path = path).copy(data = data))
+        return true
+    }
+
+    suspend fun appendPhotos(noteId: String, uris: List<Uri>) {
+        for (u in uris) importPhoto(u, "p${System.nanoTime()}")?.let { appendBlock(noteId, it) }
+    }
+
+    /** Something shared from another app becomes a note straight away: links as link cards, pictures imported, the rest as words. */
+    suspend fun addShare(sh: Share, tag: String? = null): String {
+        val id = (System.currentTimeMillis() * 1000).toString()
+        val urls = Regex("https?://[^\\s]+").findAll(sh.text).map { it.value.trimEnd('.', ',', ')') }.distinct().take(2).toList()
+        val words = urls.fold(sh.text) { acc, u -> acc.replace(u, "") }.trim()
+        val blocks = buildList {
+            if (sh.title.isNotBlank() && urls.isEmpty()) add(newBlock(Kind.Bare, "t$id", title = sh.title.trim()))
+            if (words.isNotBlank()) add(newBlock(Kind.Text, "in_$id", body = words))
+            for ((i, u) in urls.withIndex()) add(newBlock(Kind.Link, "l$id$i", title = sh.title.trim().takeIf { urls.size == 1 && it.isNotBlank() } ?: "", body = u))
+        }
+        upsert(Note(id = id, blocks = blocks, tags = listOfNotNull(tag)))
+        for ((i, _) in urls.withIndex()) scope.launch { fillLink(id, "l$id$i") }
+        scope.launch { for (u in sh.uris) importPhoto(u, "p${System.nanoTime()}")?.let { appendBlock(id, it) } }
+        return id
+    }
+
     // ---- inline editing: the note page edits in place, so each field saves on its own
 
     /** A new note with one empty block of [kind] (text or checklist), ready to type into. Returns its id. */
@@ -221,6 +287,16 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         val blocks = if (n.blocks.any { it.id == blockId }) n.blocks.map { if (it.id == blockId) it.copy(body = text, data = it.data - "aiH") else it }
         else if (text.isBlank()) n.blocks
         else n.blocks + newBlock(Kind.Text, blockId, body = text)
+        upsert(n.copy(blocks = blocks))
+    }
+
+    /** Words with their formatting: spans are kept in the block's data, [indent] turns on first-line indents. */
+    fun setRich(noteId: String, blockId: String, text: String, spans: String, indent: Boolean) {
+        val n = note(noteId) ?: return
+        val blocks = if (n.blocks.any { it.id == blockId }) n.blocks.map {
+            if (it.id == blockId) it.copy(body = text, data = (it.data - "aiH") + ("spans" to JsonPrimitive(spans)) + ("indent" to JsonPrimitive(if (indent) 1 else 0))) else it
+        } else if (text.isBlank()) n.blocks
+        else n.blocks + newBlock(Kind.Text, blockId, body = text).copy(data = mapOf("spans" to JsonPrimitive(spans), "indent" to JsonPrimitive(if (indent) 1 else 0)))
         upsert(n.copy(blocks = blocks))
     }
 

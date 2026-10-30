@@ -16,10 +16,12 @@ object Sources {
         "YouTube" to listOf("youtube.com", "youtu.be", "music.youtube.com"),
         "Goodreads" to listOf("goodreads.com"),
         "Letterboxd" to listOf("letterboxd.com", "boxd.it"),
+        "Wikipedia" to listOf("wikipedia.org"),
     ).map { (n, h) -> (if (n == "strava") "Strava" else n) to h }
 
     fun of(url: String): String? {
         val u = url.lowercase()
+        if (Regex("""//[a-z-]+\.(m\.)?wikipedia\.org""").containsMatchIn(u)) return "Wikipedia"
         return HOSTS.firstOrNull { (_, hs) -> hs.any { h -> u.contains("//$h") || u.contains("//www.$h") || u.contains("//m.$h") || (h.contains('/') && u.contains(h)) } }?.first
     }
 

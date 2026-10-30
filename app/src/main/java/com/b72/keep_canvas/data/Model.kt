@@ -42,6 +42,8 @@ data class Note(
     @SerialName("m") val edited: Long = 0,
     /** Starred notes can be pinned to the home screen widget and filtered to. */
     @SerialName("st") val starred: Boolean = false,
+    /** How the note's words and photo are laid out on its page (see Layouts); empty is the plain page. */
+    @SerialName("ly") val layout: String = "",
 ) {
     /**
      * The title the person gave the note; failing that, the one the assistant suggested (when it is installed).
@@ -80,7 +82,7 @@ data class Library(
 
 /** One hand-placed item on a canvas. [k] is "m:<Mark>" for a drawn mark or "s:<path>" for a sticker; x, y and w are fractions of the canvas width. */
 @Serializable
-data class Stuck(val id: String, val k: String, val x: Float, val y: Float, val w: Float, val r: Float = 0f, val c: Int = 0)
+data class Stuck(val id: String, val k: String, val x: Float, val y: Float, val w: Float, val r: Float = 0f, val c: Int = 0, val h: Float = 0f)
 
 // ---- helpers for the loose `data` map the Flutter app used (cut-outs, ratings, record fields) ----
 fun Block.str(key: String): String? = (data[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
@@ -109,6 +111,7 @@ fun recAspect(k: Kind) = when (k) { Kind.Film, Kind.Book -> 1.5; Kind.Track -> 1
 val CUT_KEYS = setOf(
     "cut", "cutV", "cutBox", "cutAspect", "cutFrac", "cutOk", "cutWhy", "pop",
     // what the readers and the assistant worked out; never shown as a field
+    "spans", "indent", "stats", "src",
     "trip", "tripH", "aiH", "aiSum", "aiTags", "aiFacts", "aiTitle",
 )
 

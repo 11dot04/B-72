@@ -16,12 +16,12 @@ import java.net.URLEncoder
 private const val UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
 
 /** GET with redirects followed by hand (HttpURLConnection will not follow http -> https). */
-private fun get(url: String): ByteArray? = runCatching {
+private fun get(url: String, ua: String = UA): ByteArray? = runCatching {
     var cur = URL(url)
     repeat(6) {
         val c = (cur.openConnection() as HttpURLConnection).apply {
             connectTimeout = 14000; readTimeout = 14000; instanceFollowRedirects = false
-            setRequestProperty("User-Agent", UA); setRequestProperty("Accept-Language", "en")
+            setRequestProperty("User-Agent", ua); setRequestProperty("Accept-Language", "en")
         }
         val code = c.responseCode
         if (code in setOf(301, 302, 303, 307, 308)) {
@@ -36,7 +36,10 @@ private fun get(url: String): ByteArray? = runCatching {
     null
 }.getOrNull()
 
-suspend fun fetchText(url: String): String? = withContext(Dispatchers.IO) { get(url)?.toString(Charsets.UTF_8) }
+suspend fun fetchText(url: String, ua: String = UA): String? = withContext(Dispatchers.IO) { get(url, ua)?.toString(Charsets.UTF_8) }
+
+/** Sites hand their preview tags to link-preview crawlers even when they will not to a phone browser. */
+private const val CRAWLER = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
 
 /** Downloads an image into [dir] and returns its path. */
 suspend fun saveImage(url: String?, dir: File): String? {
@@ -157,29 +160,64 @@ suspend fun searchBooks(query: String): List<Cand> {
     return out
 }
 
-/** Open Graph preview of a web page: title, desc, site, image. */
+/** Open Graph preview of a web page: title, desc, site, image. Special services get their own, more reliable source first. */
 suspend fun linkPreview(url: String): Map<String, String> {
-    val html = fetchText(url) ?: return emptyMap()
-    fun meta(p: String): String? {
+    val special = specialPreview(url)
+    val og = if (special.isNotEmpty() && special["image"] != null && special["title"]?.isNotEmpty() == true) emptyMap() else ogPreview(url)
+    val merged = og + special.filterValues { it.isNotEmpty() }
+    if (merged.isEmpty()) return emptyMap()
+    return merged + Sources.enrich(url, merged)
+}
+
+private suspend fun specialPreview(url: String): Map<String, String> {
+    val host = runCatching { URL(url).host.removePrefix("www.").removePrefix("m.") }.getOrDefault("")
+    return when {
+        host == "open.spotify.com" -> {
+            val j = json("https://open.spotify.com/oembed?url=${q(url)}") as? JSONObject
+            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "Spotify", "desc" to "")
+        }
+        host.endsWith("youtube.com") || host == "youtu.be" -> {
+            val j = json("https://www.youtube.com/oembed?format=json&url=${q(url)}") as? JSONObject
+            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "YouTube", "desc" to j.s("author_name"))
+        }
+        host.endsWith("wikipedia.org") -> {
+            val lang = host.substringBefore('.').takeIf { it.length in 2..3 } ?: "en"
+            val title = url.substringAfter("/wiki/", "").substringBefore('#').substringBefore('?')
+            if (title.isEmpty()) emptyMap() else {
+                val j = json("https://$lang.wikipedia.org/api/rest_v1/page/summary/$title") as? JSONObject
+                if (j == null) emptyMap() else mapOf(
+                    "title" to j.s("title"), "desc" to j.s("extract"), "site" to "Wikipedia",
+                    "image" to (j.optJSONObject("thumbnail")?.s("source") ?: j.optJSONObject("originalimage")?.s("source") ?: ""),
+                )
+            }
+        }
+        else -> emptyMap()
+    }
+}
+
+private suspend fun ogPreview(url: String): Map<String, String> {
+    var html = fetchText(url)
+    fun meta(h: String, p: String): String? {
         for (re in listOf(
             Regex("<meta[^>]+(?:property|name)=[\"']$p[\"'][^>]*content=[\"']([^\"']*)[\"']", RegexOption.IGNORE_CASE),
             Regex("<meta[^>]+content=[\"']([^\"']*)[\"'][^>]*(?:property|name)=[\"']$p[\"']", RegexOption.IGNORE_CASE),
         )) {
-            val m = re.find(html)
+            val m = re.find(h)
             if (m != null && m.groupValues[1].isNotBlank()) return clean(m.groupValues[1])
         }
         return null
     }
+    if (html == null || meta(html, "og:title") == null) fetchText(url, CRAWLER)?.let { c -> if (html == null || meta(c, "og:title") != null) html = c }
+    val h = html ?: return emptyMap()
     val host = runCatching { URL(url).host.removePrefix("www.") }.getOrDefault("")
-    val title = meta("og:title") ?: meta("twitter:title") ?: Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
-    val img = meta("og:image") ?: meta("twitter:image")
-    val base = buildMap {
+    val title = meta(h, "og:title") ?: meta(h, "twitter:title") ?: Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(h)?.groupValues?.get(1)
+    val img = meta(h, "og:image") ?: meta(h, "twitter:image")
+    return buildMap {
         put("title", title?.let { clean(it) } ?: "")
-        put("desc", meta("og:description") ?: meta("description") ?: "")
-        put("site", meta("og:site_name") ?: host)
+        put("desc", meta(h, "og:description") ?: meta(h, "description") ?: "")
+        put("site", meta(h, "og:site_name") ?: host)
         if (img != null) runCatching { put("image", URL(URL(url), img).toString()) }
     }
-    return base + Sources.enrich(runCatching { URL(url).let { u -> u.toString() } }.getOrDefault(url), base)
 }
 
 /** Reads a recipe page's schema.org data (most recipe sites publish it). */
