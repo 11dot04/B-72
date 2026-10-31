@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -120,7 +122,7 @@ fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
             state = ls, modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = pad, bottom = pad),
         ) {
-            androidx.compose.foundation.lazy.itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
+            itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
                 val on = i == focus
                 val a by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .24f, label = "tagfocus")
                 Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) }.padding(vertical = 8.dp)) {
