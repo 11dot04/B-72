@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /** Same order as the Flutter app's enum: kinds were stored by index, so only ever append. */
-enum class Kind { Photo, Text, Checklist, Bare, Quote, Stat, Info, Link, Poster, Film, Track, Recipe, Book }
+enum class Kind { Photo, Text, Checklist, Bare, Quote, Stat, Info, Link, Poster, Film, Track, Recipe, Book, Audio }
 
 /** On-disk format is identical to the Flutter app's notes.json so the two stay interchangeable. */
 @Serializable
@@ -60,6 +60,7 @@ data class Note(
             ?: blocks.firstOrNull { it.kind == Kind.Poster && it.body.isNotBlank() }?.body
             ?: blocks.firstOrNull { it.kind == Kind.Quote && it.body.isNotBlank() }?.body
             ?: blocks.firstOrNull { it.kind == Kind.Checklist }?.checkItems?.take(3)?.joinToString(", ") { it.removePrefix("x ") }
+            ?: blocks.firstOrNull { it.kind == Kind.Audio }?.let { "Voice note" }
             ?: ""
         val line = t.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
         return if (line.length > max) line.take(max).trimEnd() + "…" else line
@@ -68,7 +69,7 @@ data class Note(
     val photos: List<Block> get() = blocks.filter { it.kind == Kind.Photo && it.path != null }
 
     /** The block whose picture represents the note: first photo, else a record's poster/cover. */
-    val cover: Block? get() = photos.firstOrNull() ?: blocks.firstOrNull { it.path != null }
+    val cover: Block? get() = photos.firstOrNull() ?: blocks.firstOrNull { it.path != null && it.kind != Kind.Audio }
 }
 
 @Serializable

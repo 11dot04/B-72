@@ -248,3 +248,41 @@ suspend fun makeStickers(src: String, dir: File): List<String>? = withContext(Di
     }
     out
 }
+
+/** A postage-stamp print of a whole photo (paper border, perforated edge): the artifact for a photo with no single subject. */
+suspend fun makeStamp(src: String, dir: File): String? = withContext(Dispatchers.Default) {
+    runCatching {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(src, o)
+        var ss = 1
+        while (max(o.outWidth, o.outHeight) / ss > 1400) ss *= 2
+        val bm = android.graphics.BitmapFactory.decodeFile(src, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss }) ?: return@runCatching null
+        val pw = 640
+        val ph = (pw * bm.height.toFloat() / bm.width).coerceIn(pw * .8f, pw * 1.25f).toInt()
+        val b = 46
+        val w = pw + 2 * b
+        val h = ph + 2 * b
+        val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), android.graphics.Paint().apply { color = 0xFFFBF7EE.toInt() })
+        val sc = max(pw.toFloat() / bm.width, ph.toFloat() / bm.height)
+        val sw = pw / sc
+        val sh = ph / sc
+        c.drawBitmap(
+            bm,
+            android.graphics.Rect(((bm.width - sw) / 2).toInt(), ((bm.height - sh) / 2).toInt(), ((bm.width + sw) / 2).toInt(), ((bm.height + sh) / 2).toInt()),
+            android.graphics.RectF(b.toFloat(), b.toFloat(), (b + pw).toFloat(), (b + ph).toFloat()),
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+        )
+        val hole = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+        val nx = 14
+        val px = w / nx.toFloat()
+        val ny = (h / px).roundToInt().coerceAtLeast(2)
+        val py = h / ny.toFloat()
+        for (i in 0..nx) { c.drawCircle(i * px, 0f, 15f, hole); c.drawCircle(i * px, h.toFloat(), 15f, hole) }
+        for (j in 0..ny) { c.drawCircle(0f, j * py, 15f, hole); c.drawCircle(w.toFloat(), j * py, 15f, hole) }
+        val f = File(dir, "st_${System.nanoTime()}.png")
+        f.outputStream().use { out.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        f.absolutePath
+    }.getOrNull()
+}
