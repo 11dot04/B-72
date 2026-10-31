@@ -60,7 +60,7 @@ private class Dest(val label: String, val icon: ImageVector)
 private val DESTS = listOf(
     Dest("Notes", Icons.Rounded.StickyNote2),
     Dest("Canvas", Icons.Rounded.Dashboard),
-    Dest("Stickers", Icons.Rounded.EmojiEmotions),
+    Dest("Artifacts", Icons.Rounded.EmojiEmotions),
 )
 
 /** The three top-level places as one centred tertiary pill. Depth comes from a surface-coloured halo and tone, not a shadow. */
@@ -102,34 +102,56 @@ fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
         loaded?.library?.notes.orEmpty().flatMap { n -> n.tags.map { it to n } }
             .groupBy({ it.first }, { it.second }).entries.sortedByDescending { it.value.size }
     }
-    val tones = listOf(cs.primaryContainer to cs.onPrimaryContainer, cs.secondaryContainer to cs.onSecondaryContainer, cs.tertiaryContainer to cs.onTertiaryContainer)
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item(span = { GridItemSpan(2) }) {
-            Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp)) {
-                Box(Modifier.align(Alignment.TopEnd).size(120.dp).rotate(14f).clip(MaterialShapes.Clover4Leaf.toShape()).background(cs.tertiaryContainer.copy(alpha = .8f)))
-                Column {
-                    Text("Canvas", style = flexStyle(48.sp, wght = 700, wdth = 112f, rond = 40f), color = cs.onSurface)
+    val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+    val ls = androidx.compose.foundation.lazy.rememberLazyListState()
+    val focus by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val info = ls.layoutInfo
+            val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }?.index ?: 0
+        }
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+        val pad = (maxHeight / 2 - 48.dp).coerceAtLeast(80.dp)
+        if (groups.isEmpty()) Text(
+            "Give a note a tag and its canvas appears here, with all the notes that share it laid out as a collage.",
+            style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.align(Alignment.Center).padding(32.dp),
+        ) else androidx.compose.foundation.lazy.LazyColumn(
+            state = ls, modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = pad, bottom = pad),
+        ) {
+            androidx.compose.foundation.lazy.itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
+                val on = i == focus
+                val a by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .24f, label = "tagfocus")
+                Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) }.padding(vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.width(if (on) 52.dp else 0.dp)) { if (on) Text("\u2192", style = flexStyle(44.sp, wght = 400, lh = 1f), color = cs.onSurface) }
+                        FitLine(g.key.lowercase(), flexStyle(54.sp, wght = if (on) 620 else 480, wdth = 96f, lh = 1f), cs.onSurface.copy(alpha = a), Modifier.weight(1f), min = 26f)
+                    }
                     Text(
-                        if (groups.isEmpty()) "Nothing here yet" else "${groups.size} canvas${if (groups.size == 1) "" else "es"}, one for every tag",
-                        style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
+                        "NOTES: ${g.value.size}   PHOTOS: ${g.value.sumOf { it.photos.size }}",
+                        style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = cs.onSurface.copy(alpha = a * .7f)),
+                        modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
                     )
                 }
             }
         }
-        if (groups.isEmpty()) item(span = { GridItemSpan(2) }) {
-            Text(
-                "Give a note a tag and its canvas appears here, with all the notes that share it laid out as a collage.",
-                style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp),
-            )
+        val fade = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(cs.surface, cs.surface.copy(alpha = 0f)))
+        Box(Modifier.fillMaxWidth().height(150.dp).background(fade))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(210.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(cs.surface.copy(alpha = 0f), cs.surface))))
+        // the focused tag's pictures peek in at the top corner
+        androidx.compose.animation.Crossfade(focus, Modifier.align(Alignment.TopEnd), label = "tagcovers") { f ->
+            val covers = groups.getOrNull(f)?.value.orEmpty().mapNotNull { it.cover?.path }.take(3)
+            Box(Modifier.size(width = 170.dp, height = 130.dp)) {
+                covers.forEachIndexed { i, p ->
+                    PhotoImage(
+                        p, 400, false, cs.primary,
+                        Modifier.align(Alignment.TopEnd).padding(end = 14.dp + 44.dp * i, top = 18.dp + 8.dp * (i % 2)).size(88.dp).rotate(listOf(6f, -7f, 4f)[i]).clip(RoundedCornerShape(22.dp)),
+                    )
+                }
+            }
         }
-        items(groups, key = { it.key }) { g ->
-            val (bg, fg) = tones[(com.b72.keep_canvas.data.seedOf(g.key) % tones.size)]
-            CanvasCard(g.key, g.value, bg, fg) { onTag(g.key) }
-        }
+        Text("Canvases", style = MaterialTheme.typography.titleMedium, color = cs.onSurface, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 22.dp))
     }
 }
 

@@ -79,16 +79,19 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit) {
             busy = true
             var made = 0
             var unavailable = false
+            var stamps = 0
             for (u in uris) {
                 val tmp = repo.importPhoto(u, "stk${System.nanoTime()}") ?: continue
                 val r = makeStickers(tmp.path!!, imageDir(ctx))
-                if (r == null) unavailable = true else { repo.addStickers(r); made += r.size }
+                if (r == null) unavailable = true
+                else if (r.isEmpty()) com.b72.keep_canvas.data.makeStamp(tmp.path!!, imageDir(ctx))?.let { repo.addStickers(listOf(it)); stamps++ }
+                else { repo.addStickers(r); made += r.size }
                 runCatching { File(tmp.path).delete() }
             }
             busy = false
             snack.showSnackbar(
                 when {
-                    made > 0 -> "Made $made sticker${if (made == 1) "" else "s"}"
+                    made > 0 || stamps > 0 -> listOfNotNull(if (made > 0) "$made sticker${if (made == 1) "" else "s"}" else null, if (stamps > 0) "$stamps stamp${if (stamps == 1) "" else "s"}" else null).joinToString(" and ").let { "Made $it" }
                     unavailable -> "The cut-out model is not ready yet. If this is the first run it may still be downloading: try again in a minute."
                     else -> "No clear subject found."
                 },
@@ -102,16 +105,16 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit) {
                 IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                 }
-                Text("Stickers", style = flexStyle(36.sp, wght = 720, wdth = 108f, rond = 40f), modifier = Modifier.padding(start = 12.dp))
+                Text("Artifacts", style = flexStyle(36.sp, wght = 720, wdth = 108f, rond = 40f), modifier = Modifier.padding(start = 12.dp))
             }
             Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                 if (busy) LoadingIndicator(Modifier.size(28.dp)) else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (busy) "Cutting stickers…" else "Make stickers from photos")
+                Text(if (busy) "Making artifacts…" else "Make artifacts from photos")
             }
             if (paths.isEmpty() && !busy) {
                 Text(
-                    "Pick some photos. Objects, pets and people become die-cut stickers.",
+                    "Pick some photos. A clear subject becomes a die-cut sticker; a photo without one becomes a postage stamp.",
                     style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(32.dp),
                 )
@@ -123,7 +126,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit) {
             ) {
                 items(paths, key = { it }) { p ->
                     val img by produceState<ImageBitmap?>(null, p) { value = Images.load(p, 400) }
-                    Box(Modifier.aspectRatio(1f).clickable(onClickLabel = "View sticker") { view = p }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.aspectRatio(1f).clickable(onClickLabel = "View artifact") { view = p }, contentAlignment = Alignment.Center) {
                         img?.let { Image(it, "Sticker", Modifier.fillMaxSize().rotate(((p.hashCode() % 7) - 3) * 1.7f), contentScale = ContentScale.Fit) }
                     }
                 }

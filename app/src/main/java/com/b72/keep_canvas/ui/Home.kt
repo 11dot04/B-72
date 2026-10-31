@@ -178,6 +178,11 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             item(span = StaggeredGridItemSpan.FullLine) {
                 val cs = MaterialTheme.colorScheme
                 Column(Modifier.padding(bottom = 4.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
+                        Text(if (q.isBlank()) "notes" else "found", style = flexStyle(56.sp, wght = 480, wdth = 96f, lh = .95f), color = cs.onSurface)
+                        Spacer(Modifier.width(10.dp))
+                        Text("(${shown.size})", style = flexStyle(26.sp, wght = 200, lh = 1f), color = cs.onSurface.copy(alpha = .4f), modifier = Modifier.padding(bottom = 6.dp))
+                    }
                     loaded?.error?.let { err -> Text(err, style = MaterialTheme.typography.bodyMedium, color = cs.error, modifier = Modifier.padding(bottom = 8.dp)) }
                     if (repo.prepTotal > 0) Column(Modifier.padding(bottom = 10.dp)) {
                         androidx.compose.material3.LinearWavyProgressIndicator(
@@ -342,7 +347,10 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     .padding(14.dp),
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
-                FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                Column {
+                    Meta(n, Color.White.copy(alpha = .75f))
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                }
             }
             if (hasList || hasTrip) Box(
                 Modifier.align(Alignment.TopEnd).padding(10.dp).size(32.dp).clip(MaterialShapes.Cookie6Sided.toShape()).background(cs.surface.copy(alpha = .88f)),
@@ -357,6 +365,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                 drawSwash(sw, size.width - wd - 14.dp.toPx(), size.height - wd * .45f - 16.dp.toPx(), wd, fg.copy(alpha = .16f))
             }
             Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Meta(n, fg.copy(alpha = .6f), Modifier.padding(bottom = 6.dp))
                 if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
                 Spacer(Modifier.height(10.dp))
                 Preview(n, fg)
@@ -407,6 +416,16 @@ private fun Preview(n: Note, fg: Color) {
         sum, maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         style = TextStyle(fontFamily = Serif, fontSize = 15.sp, lineHeight = 20.sp, fontStyle = FontStyle.Italic), color = fg.copy(alpha = .85f),
     )
+}
+
+/** A line of small monospaced capitals over a tile's title: its first tag and the day it was made. */
+@Composable
+private fun Meta(n: Note, color: Color, modifier: Modifier = Modifier) {
+    val day = n.id.toLongOrNull()?.div(1000)?.takeIf { it > 1_000_000_000_000L }?.let {
+        java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)).uppercase()
+    }
+    val line = listOfNotNull(n.tags.firstOrNull()?.uppercase()?.take(14), day).joinToString(" \u00b7 ")
+    if (line.isNotEmpty()) Text(line, maxLines = 1, modifier = modifier, style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp, color = color))
 }
 
 private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % n

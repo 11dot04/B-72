@@ -194,7 +194,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             hs.scrollTo(hs.maxValue / 2)
         }
 
-        val ordered = liftTick.let { cards }.sortedWith(compareBy<Card>({ if (it.low) 0 else 1 }, { it.lift }, { it.order }))
+        val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
         val bottom by remember(cards) { androidx.compose.runtime.derivedStateOf { (bottomOf(cards) * 20f).roundToInt() / 20f } }
         val contentH = max(shPx, (bottom + .35f) * cw + topInset)
         Box(Modifier.fillMaxSize().verticalScroll(vs).horizontalScroll(hs)) {
@@ -276,7 +276,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 content = {
                     IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw a shape") }
                     IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Marks and stickers") }
-                    IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Stickers") }
+                    IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Artifacts") }
                     IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") }
                 },
             )

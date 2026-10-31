@@ -173,7 +173,7 @@ fun PlacedTray(stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (
                 }
             }
             if (stickers.isNotEmpty()) {
-                Text("STICKERS", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+                Text("ARTIFACTS", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(stickers.size) { i ->
                         val p = stickers[i]

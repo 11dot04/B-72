@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LocalDining
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Movie
@@ -78,6 +79,7 @@ private val OPTS = listOf(
     Opt("link", "Link", Icons.Rounded.Link), Opt("quote", "Quote", Icons.Rounded.FormatQuote),
     Opt("film", "Film", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
     Opt("track", "Track", Icons.Rounded.MusicNote), Opt("recipe", "Recipe", Icons.Rounded.LocalDining),
+    Opt("audio", "Audio", Icons.Rounded.Mic),
 )
 
 /** The plus menu of the note page: everything that can be added to a note, without leaving it. */
@@ -110,7 +112,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp).height(210.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp).height(300.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(OPTS) { o ->
                         Column(
                             Modifier.clip(RoundedCornerShape(22.dp)).background(cs.secondaryContainer).clickable(onClickLabel = o.label) { go(o.id) }.padding(vertical = 16.dp).fillMaxWidth(),
@@ -128,6 +130,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                     Text(OPTS.first { it.id == m }.label, style = MaterialTheme.typography.titleLarge)
                 }
                 when (m) {
+                    "audio" -> RecordPane(repo, noteId, onClose)
                     "quote" -> {
                         OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("The quote") }, minLines = 2)
                         OutlinedTextField(text2, { text2 = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Who said it") }, singleLine = true)
