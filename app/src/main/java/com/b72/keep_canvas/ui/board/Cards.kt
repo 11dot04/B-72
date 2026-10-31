@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
@@ -96,6 +97,7 @@ fun cardWidth(b: Block, big: Boolean): Float = K_WIDE * when (b.kind) {
     Kind.Film, Kind.Book -> .34f
     Kind.Track -> .38f
     Kind.Poster -> .56f
+    Kind.Audio -> .40f
     else -> .36f
 }
 
@@ -105,6 +107,7 @@ fun lay(b: Block, wFrac: Float, s: Scale): Lay {
     val u = s.u
     val wpx = wFrac * s.cw
     if (b.kind == Kind.Photo) return Lay(wpx * b.aspect.toFloat())
+    if (b.kind == Kind.Audio) return Lay(wpx * .5f)
     if (b.kind in RECORD_KINDS) return Lay(wpx * recAspect(b.kind).toFloat())
     val o = u * .012f
     when (b.kind) {
@@ -204,6 +207,7 @@ fun CardFace(b: Block, l: Lay, s: Scale, t: Tones) {
     val u = s.u
     when {
         b.kind == Kind.Photo -> if (b.path != null) PhotoImage(b.path, 800, false, t.primary, Modifier.fillMaxSize()) else Box(Modifier.fillMaxSize().background(t.pc))
+        b.kind == Kind.Audio -> AudioFace(b, s, t)
         b.kind in RECORD_KINDS -> RecFace(b, s, t)
         b.kind == Kind.Quote || b.kind == Kind.Stat || b.kind == Kind.Info || b.kind == Kind.Poster -> TplFace(b, l, s, t)
         else -> NoteFace(b, l, s, t)
@@ -239,6 +243,20 @@ private fun NoteFace(b: Block, l: Lay, s: Scale, t: Tones) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AudioFace(b: Block, s: Scale, t: Tones) {
+    val u = s.u
+    Column(Modifier.fillMaxSize().background(t.pc).padding(s.dp(u * .04f)), verticalArrangement = Arrangement.SpaceBetween) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(androidx.compose.material.icons.Icons.Rounded.Mic, null, Modifier.size(s.dp(u * .05f)), tint = t.onPc)
+            Spacer(Modifier.width(s.dp(u * .015f)))
+            Text(com.b72.keep_canvas.ui.clock((b.dbl("dur") ?: 0.0).toLong()), style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = s.sp(u * .035f), color = t.onPc))
+        }
+        com.b72.keep_canvas.ui.Wave(com.b72.keep_canvas.ui.waveOf(b), 1f, t.onPc, t.onPc.copy(alpha = .3f), Modifier.fillMaxWidth().height(s.dp(u * .16f)))
+        Text(b.title.ifEmpty { "Voice note" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = flexStyle(s.sp(u * .05f), wght = 700, lh = 1.05f).copy(color = t.onPc))
     }
 }
 

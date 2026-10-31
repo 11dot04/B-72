@@ -25,7 +25,7 @@ private const val BAND_L = .05f
 private const val BAND_R = .95f
 
 /** One block of one note, placed on a tag's canvas. */
-class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "", val starred: Boolean = false) {
+class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "", val starred: Boolean = false, val behind: Boolean = false) {
     val id: String get() = b.id
     // plain fields: the packer reads and writes these millions of times; the UI watches [rev] instead
     var x: Float = x0
@@ -69,7 +69,8 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     val hasCut: Boolean get() = subjectIn(b, w, h) != null
 }
 
-private fun zKey(c: Card) = (if (c.low) 0 else 1_000_000) + c.lift * 1000 + c.order
+/** Stacking order, lowest first: a few text cards tuck behind their own photo, then photos, then the rest. */
+fun zKey(c: Card) = (if (c.behind) -1_000_000 else if (c.low) 0 else 1_000_000) + c.lift * 1000 + c.order
 private fun Rect.area() = max(0f, width) * max(0f, height)
 
 /** Does the upper card's rectangle touch what the lower card needs to keep visible? Photos only protect their subject (an ellipse). */
@@ -200,8 +201,8 @@ private fun tuckOf(m: Card, placed: List<Card>): Float {
 private class Cluster(val cards: List<Card>, val w: Float, val h: Float)
 
 private val STAGGER = floatArrayOf(-.3f, -.15f, 0f, .15f, .3f, .5f)
-private val EDGE_OVERLAPS = floatArrayOf(0f, .1f, .2f)
-private val CORNER = floatArrayOf(.12f, .22f)
+private val EDGE_OVERLAPS = floatArrayOf(0f, .1f, .2f, .32f, .44f)
+private val CORNER = floatArrayOf(.12f, .22f, .34f)
 
 /**
  * A note's cards as a small collage: the photo (or the biggest card) is the anchor, and every other card is tried against the
@@ -232,7 +233,13 @@ private fun buildCluster(cs: List<Card>): Cluster {
             val mr = m.rect
             for (q in placed) if (abs(q.x - mr.left) < .006f || abs(q.x + q.w - mr.right) < .006f) c += .012f
             c += ((seedOf(m.id) + (x * 997).toInt() + (y * 463).toInt()).mod(100)) / 100f * .004f
-            if (!m.isPhoto && anchor.isPhoto) c += .25f * hypot(mr.center.x - anchor.rect.center.x, mr.center.y - anchor.rect.center.y)
+            if (!m.isPhoto && anchor.isPhoto) {
+                c += .25f * hypot(mr.center.x - anchor.rect.center.x, mr.center.y - anchor.rect.center.y)
+                // a note's words ride over a fifth or so of its photo by default
+                val ar = anchor.rect
+                val ov = Rect(max(mr.left, ar.left), max(mr.top, ar.top), min(mr.right, ar.right), min(mr.bottom, ar.bottom)).let { if (it.width > 0 && it.height > 0) it.area() / mr.area() else 0f }
+                c -= .45f * (1f - min(abs(ov - .22f), .22f) / .22f)
+            }
             if (c < bc) { bc = c; bx = x; by = y }
         }
         for (o in placed) {
@@ -416,24 +423,52 @@ fun bottomOf(cards: List<Card>) = cards.maxOfOrNull { it.rect.bottom } ?: 0f
 fun placeKey(tag: String, b: Block) = "$tag|${b.id}"
 
 /** Bumped whenever the layout rules change: positions stored by an older version are laid out again once. */
-const val LAYOUT_VERSION = 4.0
+const val LAYOUT_VERSION = 5.0
 fun versionKey(tag: String) = "$tag|#v"
 
-/** One card per block of every note with this tag. [size] returns (w, h) in canvas widths for a block. */
+private fun shortWords(t: String) = t.length <= 100 && t.count { it == '\n' } < 3
+
+/**
+ * The cards of every note with this tag. Blank text makes no card. A note's title rides on its text card (photos go bare, and so
+ * do data cards, which carry their own); a short, untitled line of words goes straight onto the canvas without a card.
+ */
 fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Float, Float>): List<Card> {
     val out = mutableListOf<Card>()
     for (n in notes) {
         if (tag !in n.tags) continue
+        val hasPhoto = n.blocks.any { it.kind == Kind.Photo }
+        val title = n.title
+        val host = n.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }
+            ?: n.blocks.firstOrNull { it.kind == Kind.Checklist && it.checkItems.any { s -> s.isNotBlank() } }
+        val onlyText = n.blocks.count { it.kind == Kind.Text && it.body.isNotBlank() } == 1
         var cover = true
-        n.blocks.forEachIndexed { i, b ->
+        n.blocks.forEachIndexed { i, b0 ->
+            var b = b0
+            when (b.kind) {
+                Kind.Bare -> if (host != null || hasPhoto || b.title.isBlank()) return@forEachIndexed
+                Kind.Text -> {
+                    if (b.body.isBlank()) return@forEachIndexed
+                    if (b === host) b = when {
+                        title.isNotBlank() -> b.copy(title = title)
+                        onlyText && shortWords(b.body.trim()) -> b.copy(k = Kind.Bare.ordinal, title = b.body.trim(), body = "")
+                        else -> b
+                    }
+                }
+                Kind.Checklist -> {
+                    if (b.checkItems.none { it.isNotBlank() }) return@forEachIndexed
+                    if (b === host && title.isNotBlank()) b = b.copy(title = title)
+                }
+                else -> {}
+            }
             val p = n.places[placeKey(tag, b)]
             val big = b.kind == Kind.Photo && cover
             if (b.kind == Kind.Photo) cover = false
             val (w, h) = size(b, big)
-            val what = when (b.kind) { Kind.Photo -> "Photo"; Kind.Checklist -> "Checklist"; Kind.Quote -> "Quote"; Kind.Film -> "Film"; Kind.Track -> "Track"; Kind.Book -> "Book"; Kind.Recipe -> "Recipe"; Kind.Link -> "Link"; else -> "Note" }
+            val what = when (b.kind) { Kind.Photo -> "Photo"; Kind.Checklist -> "Checklist"; Kind.Quote -> "Quote"; Kind.Film -> "Film"; Kind.Track -> "Track"; Kind.Book -> "Book"; Kind.Recipe -> "Recipe"; Kind.Link -> "Link"; Kind.Audio -> "Voice note"; else -> "Note" }
             val label = "$what: ${b.title.ifBlank { b.body.take(50) }.ifBlank { n.title }}. Opens the note."
             val current = n.places[versionKey(tag)]?.getOrNull(0) == LAYOUT_VERSION
-            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label, n.starred))
+            val behind = hasPhoto && b.kind in setOf(Kind.Text, Kind.Checklist, Kind.Quote, Kind.Stat, Kind.Info) && seedOf(b.id) % 4 == 0
+            out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label, n.starred, behind))
         }
     }
     return out
