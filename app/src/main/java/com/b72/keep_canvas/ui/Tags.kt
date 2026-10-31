@@ -53,6 +53,7 @@ fun TagEditor(
 ) {
     var open by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
+    var had by remember { mutableStateOf(false) }
     val fr = remember { FocusRequester() }
     val bring = remember { BringIntoViewRequester() }
     val freq = remember(allNotes) { allNotes.flatMap { it.tags }.groupingBy { it }.eachCount() }
@@ -90,7 +91,8 @@ fun TagEditor(
                         q, { v -> if (v.endsWith(",") || v.endsWith("\n")) commit(v.dropLast(1)) else q = v },
                         Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged { f ->
                             onEditing(f.isFocused)
-                            if (!f.isFocused && q.isBlank()) open = false
+                            if (f.isFocused) had = true
+                            else if (had) { had = false; if (q.isBlank()) open = false }
                         },
                         singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = pal.fg), cursorBrush = SolidColor(pal.primary),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Done),

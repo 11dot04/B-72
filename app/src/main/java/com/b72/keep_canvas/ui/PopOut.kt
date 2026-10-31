@@ -72,6 +72,10 @@ private val PopShapes by lazy {
         PopShape(MaterialShapes.Clover4Leaf, false),
         PopShape(MaterialShapes.Cookie6Sided, false),
         PopShape(MaterialShapes.Oval, true),
+        PopShape(MaterialShapes.Gem, false),
+        PopShape(MaterialShapes.Bun, false),
+        PopShape(MaterialShapes.Cookie12Sided, false),
+        PopShape(MaterialShapes.Pentagon, false),
     )
 }
 

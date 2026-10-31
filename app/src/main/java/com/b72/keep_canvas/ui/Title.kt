@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
@@ -185,7 +186,15 @@ fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modi
         Column {
             for (i in lay.lines.indices) {
                 val p = lay.piece(i, color, f)
-                Text(p.text, style = p.style, maxLines = 1, softWrap = false)
+                // each line gets a box of its own height, centred on the glyphs, whatever the font's metrics say
+                Text(
+                    p.text, style = p.style, maxLines = 1, softWrap = false,
+                    modifier = Modifier.layout { m, c ->
+                        val pl = m.measure(c)
+                        val h = (lay.sizes[i] * .8f).toInt()
+                        layout(pl.width, h) { pl.place(0, (h - pl.height) / 2) }
+                    },
+                )
             }
         }
     }
