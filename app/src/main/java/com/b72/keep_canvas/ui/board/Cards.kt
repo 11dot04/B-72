@@ -189,7 +189,11 @@ class Tones(
     val sc: Color, val onSc: Color,
     val tc: Color, val onTc: Color,
     val error: Color,
-)
+    val swatches: List<Pair<Color, Color>> = emptyList(),
+) {
+    /** One of the canvas's several card colours (fill, ink), stable for a given card. */
+    fun pick(id: String): Pair<Color, Color> = if (swatches.isEmpty()) tc to onTc else swatches[seedOf(id) % swatches.size]
+}
 
 private fun kindIcon(k: Kind): ImageVector = when (k) {
     Kind.Film -> Icons.Rounded.Movie
@@ -219,8 +223,9 @@ private fun NoteFace(b: Block, l: Lay, s: Scale, t: Tones) {
     val u = s.u
     val bare = b.kind == Kind.Bare
     val isNote = b.kind == Kind.Text
-    val bg = if (bare) Color.Transparent else if (isNote) t.tc else t.sc
-    val fg = if (bare) t.onBg else if (isNote) t.onTc else t.onSc
+    val (sbg, sfg) = t.pick(b.id)
+    val bg = if (bare) Color.Transparent else sbg
+    val fg = if (bare) t.onBg else sfg
     Box(Modifier.fillMaxSize().background(bg).padding(s.dp(u * .03f))) {
         Column(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true)) {
             if (b.title.isNotBlank()) Text(b.title, style = s.title(if (bare) .07f else .05f, fg), maxLines = if (bare) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis)
@@ -249,14 +254,15 @@ private fun NoteFace(b: Block, l: Lay, s: Scale, t: Tones) {
 @Composable
 private fun AudioFace(b: Block, s: Scale, t: Tones) {
     val u = s.u
-    Column(Modifier.fillMaxSize().background(t.pc).padding(s.dp(u * .04f)), verticalArrangement = Arrangement.SpaceBetween) {
+    val (abg, afg) = t.pick(b.id)
+    Column(Modifier.fillMaxSize().background(abg).padding(s.dp(u * .04f)), verticalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(androidx.compose.material.icons.Icons.Rounded.Mic, null, Modifier.size(s.dp(u * .05f)), tint = t.onPc)
+            Icon(androidx.compose.material.icons.Icons.Rounded.Mic, null, Modifier.size(s.dp(u * .05f)), tint = afg)
             Spacer(Modifier.width(s.dp(u * .015f)))
-            Text(com.b72.keep_canvas.ui.clock((b.dbl("dur") ?: 0.0).toLong()), style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = s.sp(u * .035f), color = t.onPc))
+            Text(com.b72.keep_canvas.ui.clock((b.dbl("dur") ?: 0.0).toLong()), style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = s.sp(u * .035f), color = afg))
         }
-        com.b72.keep_canvas.ui.Wave(com.b72.keep_canvas.ui.waveOf(b), 1f, t.onPc, t.onPc.copy(alpha = .3f), Modifier.fillMaxWidth().height(s.dp(u * .16f)))
-        Text(b.title.ifEmpty { "Voice note" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = flexStyle(s.sp(u * .05f), wght = 700, lh = 1.05f).copy(color = t.onPc))
+        com.b72.keep_canvas.ui.Wave(com.b72.keep_canvas.ui.waveOf(b), 1f, afg, afg.copy(alpha = .3f), Modifier.fillMaxWidth().height(s.dp(u * .16f)))
+        Text(b.title.ifEmpty { "Voice note" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = flexStyle(s.sp(u * .05f), wght = 700, lh = 1.05f).copy(color = afg))
     }
 }
 
@@ -288,8 +294,7 @@ private fun TplFace(b: Block, l: Lay, s: Scale, t: Tones) {
     val u = s.u
     val (bg, fg) = when (b.kind) {
         Kind.Quote -> t.primary to t.onPrimary
-        Kind.Stat -> t.tc to t.onTc
-        Kind.Info -> t.sc to t.onSc
+        Kind.Stat, Kind.Info -> t.pick(b.id)
         else -> t.onPc to t.pc
     }
     Box(Modifier.fillMaxSize().background(bg).padding(s.dp(u * .035f))) {
