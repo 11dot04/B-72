@@ -114,21 +114,39 @@ import kotlin.math.roundToInt
 
 private fun hsl(h: Float, s: Float, l: Float) = Color(ColorUtils.HSLToColor(floatArrayOf(((h % 360f) + 360f) % 360f, s, l)))
 
-private fun tonesFor(hue: Float, dark: Boolean, error: Color) =
+private fun hueGap(a: Float, b: Float): Float { val d = kotlin.math.abs(((a - b) % 360f + 360f) % 360f); return min(d, 360f - d) }
+
+/** Card colours for one canvas: the hues of its photos first, then spread-out hues so even one photo gives a lively board. */
+private fun swatchesFor(hues: List<Float>, dark: Boolean): List<Pair<Color, Color>> {
+    val all = ArrayList<Float>()
+    for (h in hues) if (all.none { hueGap(it, h) < 28f }) all.add(h)
+    for (d in listOf(150f, 40f, 210f, 90f, 300f, 330f)) {
+        if (all.size >= 7) break
+        val h = hues[0] + d
+        if (all.none { hueGap(it, h) < 35f }) all.add(h)
+    }
+    return all.mapIndexed { i, h ->
+        val vivid = i % 3 == 1
+        if (!dark) (if (vivid) hsl(h, .78f, .72f) else hsl(h, .62f, .84f)) to hsl(h, .6f, .13f)
+        else (if (vivid) hsl(h, .7f, .66f) else hsl(h, .5f, .76f)) to hsl(h, .65f, .11f)
+    }
+}
+
+private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Color, Color>>) =
     if (!dark) Tones(
         bg = hsl(hue, .45f, .95f), onBg = hsl(hue, .3f, .12f),
         primary = hsl(hue, .55f, .38f), onPrimary = hsl(hue, .4f, .97f),
         pc = hsl(hue, .5f, .86f), onPc = hsl(hue, .4f, .14f),
         sc = hsl(hue + 25f, .38f, .86f), onSc = hsl(hue + 25f, .4f, .14f),
         tc = hsl(hue + 60f, .5f, .84f), onTc = hsl(hue + 60f, .5f, .13f),
-        error = error,
+        error = error, swatches = sw,
     ) else Tones(
         bg = hsl(hue, .25f, .09f), onBg = hsl(hue, .2f, .92f),
         primary = hsl(hue, .6f, .74f), onPrimary = hsl(hue, .5f, .14f),
         pc = hsl(hue, .3f, .26f), onPc = hsl(hue, .4f, .9f),
         sc = hsl(hue + 25f, .25f, .24f), onSc = hsl(hue + 25f, .35f, .9f),
         tc = hsl(hue + 60f, .3f, .28f), onTc = hsl(hue + 60f, .4f, .9f),
-        error = error,
+        error = error, swatches = sw,
     )
 
 /** The canvas takes its colours from the photos on it. */
@@ -137,20 +155,23 @@ private fun rememberTones(paths: List<String>): Tones {
     val dark = isSystemInDarkTheme()
     val err = MaterialTheme.colorScheme.error
     val fallback = remember { FloatArray(3) }.also { ColorUtils.colorToHSL(MaterialTheme.colorScheme.primary.toArgb(), it) }[0]
-    val hue by produceState(fallback, paths) {
-        for (p in paths) {
+    val hues by produceState(listOf(fallback), paths) {
+        val found = ArrayList<Float>()
+        for (p in paths.take(4)) {
             val bmp = Images.load(p, 160) ?: continue
-            val rgb = withContext(Dispatchers.Default) {
+            val rgbs = withContext(Dispatchers.Default) {
                 val pal = Palette.from(bmp.asAndroidBitmap()).generate()
-                (pal.vibrantSwatch ?: pal.dominantSwatch)?.rgb
-            } ?: continue
-            val hh = FloatArray(3)
-            ColorUtils.colorToHSL(rgb, hh)
-            value = hh[0]
-            return@produceState
+                listOfNotNull(pal.vibrantSwatch, pal.lightVibrantSwatch, pal.dominantSwatch, pal.darkVibrantSwatch).map { it.rgb }
+            }
+            for (rgb in rgbs) {
+                val hh = FloatArray(3)
+                ColorUtils.colorToHSL(rgb, hh)
+                if (hh[1] > .18f) found.add(hh[0])
+            }
+            if (found.isNotEmpty()) value = found.toList()
         }
     }
-    return remember(hue, dark, err) { tonesFor(hue, dark, err) }
+    return remember(hues, dark, err) { tonesFor(hues[0], dark, err, swatchesFor(hues, dark)) }
 }
 
 /** A tag's canvas: every block of every note with the tag, laid out like a collage. Long-press a card to move it. */

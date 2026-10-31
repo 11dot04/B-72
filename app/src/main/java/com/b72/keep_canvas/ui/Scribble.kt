@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -30,29 +31,39 @@ private fun jitter(seed: Int, k: Int): Float {
 }
 
 /**
- * A bold dark Z-scribble through a line of text, drawn left to right up to [p] (0..1): a pen zigzagging back and
- * forth across the line height, a little uneven, like a hand crossing the item out. Sits over the words.
+ * A heavy marker scribble through a line of text, drawn left to right up to [p] (0..1): one pen at a steady thickness that wanders
+ * up and down the line at random, sometimes twice on the same side, never a regular zigzag, and runs a little past both ends.
  */
 private fun DrawScope.marker(left: Float, right: Float, top: Float, bottom: Float, p: Float, color: Color, seed: Int) {
     if (p <= 0f || right - left < 4f) return
     val lh = bottom - top
-    val x0 = left - lh * .2f
-    val x1 = right + lh * .25f
+    val x0 = left - lh * .15f
+    val x1 = right + lh * .3f
     val hi = top + lh * .2f
-    val lo = bottom - lh * .16f
-    val legs = (((x1 - x0) / (lh * 2.2f)).toInt()).coerceIn(2, 9) * 2
-    val path = Path()
-    path.moveTo(x0, lo + lh * .08f * (jitter(seed, 1) - .5f))
-    for (k in 1..legs) {
-        val f = k / legs.toFloat()
-        val y = if (k % 2 == 1) hi else lo
-        path.lineTo(x0 + (x1 - x0) * f + lh * .12f * (jitter(seed, k + 3) - .5f), y + lh * .1f * (jitter(seed, k + 30) - .5f))
+    val lo = bottom - lh * .2f
+    val mid = (hi + lo) / 2
+    val n = (((x1 - x0) / (lh * 1.05f)).toInt()).coerceIn(3, 20)
+    val pts = ArrayList<Offset>()
+    var up = jitter(seed, 0) > .5f
+    pts.add(Offset(x0, if (up) hi else lo))
+    for (k in 1..n) {
+        if (jitter(seed, k + 50) > .3f) up = !up
+        val reach = .4f + .6f * jitter(seed, k + 90)
+        val y = mid + (if (up) hi - mid else lo - mid) * reach
+        pts.add(Offset(x0 + (x1 - x0) * k / n + lh * .22f * (jitter(seed, k + 10) - .5f), y))
     }
-    val m = PathMeasure()
-    m.setPath(path, false)
+    val path = Path()
+    path.moveTo(pts[0].x, pts[0].y)
+    for (i in 1 until pts.size) {
+        val m = (pts[i - 1] + pts[i]) / 2f
+        path.quadTo(pts[i - 1].x, pts[i - 1].y, m.x, m.y)
+    }
+    path.lineTo(pts.last().x, pts.last().y)
+    val pm = PathMeasure()
+    pm.setPath(path, false)
     val part = Path()
-    m.getSegment(0f, m.length * p, part, true)
-    drawPath(part, color, style = Stroke(width = lh * .17f, cap = StrokeCap.Round, join = StrokeJoin.Round), alpha = .9f)
+    pm.getSegment(0f, pm.length * p, part, true)
+    drawPath(part, color, style = Stroke(width = lh * .2f, cap = StrokeCap.Round, join = StrokeJoin.Round), alpha = .92f)
 }
 
 /**
