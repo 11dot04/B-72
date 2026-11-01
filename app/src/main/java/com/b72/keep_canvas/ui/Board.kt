@@ -2,6 +2,7 @@
 
 package com.b72.keep_canvas.ui
 
+import com.b72.keep_canvas.ui.board.swatchOf
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateOffsetAsState
