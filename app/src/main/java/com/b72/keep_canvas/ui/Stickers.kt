@@ -105,7 +105,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit) {
                 IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                 }
-                Text("Artifacts", style = flexStyle(36.sp, wght = 720, wdth = 108f, rond = 40f), modifier = Modifier.padding(start = 12.dp))
+                TabTitle("Artifacts", null, Modifier.padding(start = 12.dp))
             }
             Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                 if (busy) LoadingIndicator(Modifier.size(28.dp)) else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))

@@ -57,6 +57,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -117,8 +119,9 @@ fun Modifier.bottomBlur(radius: androidx.compose.ui.unit.Dp = 5.dp, from: Float 
 
 @Composable
 fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
     val cs = MaterialTheme.colorScheme
-    LightStatusBar()
+    LightStatusBar(!dark)
     val groups = remember(loaded?.library) {
         loaded?.library?.notes.orEmpty().flatMap { n -> n.tags.map { it to n } }
             .groupBy({ it.first }, { it.second }).entries.sortedByDescending { it.value.size }
@@ -128,118 +131,129 @@ fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
         val out = HashMap<String, Float>()
         for (g in groups) {
             val p = g.value.firstNotNullOfOrNull { it.cover?.path } ?: continue
-            val bmp = Images.load(p, 160) ?: continue
-            val rgb = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                val pal = androidx.palette.graphics.Palette.from(bmp.asAndroidBitmap()).generate()
-                (pal.vibrantSwatch ?: pal.dominantSwatch)?.rgb
-            } ?: continue
-            val hh = FloatArray(3)
-            androidx.core.graphics.ColorUtils.colorToHSL(rgb, hh)
-            if (hh[1] > .15f) { out[g.key] = hh[0]; value = HashMap(out) }
+            hueOfPhoto(p)?.let { out[g.key] = it; value = HashMap(out) }
         }
     }
     fun hueOf(key: String) = hues[key] ?: (com.b72.keep_canvas.data.seedOf(key) % 360).toFloat()
-    val ink = Color(0xFF1B1A1F)
     val mono = androidx.compose.ui.text.font.FontFamily.Monospace
     val ls = androidx.compose.foundation.lazy.rememberLazyListState()
-    // the tag nearest the middle of the screen is the focused one; measured at its first line, so opening its photos cannot flip it
-    val anchor = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
     val focus by remember {
         androidx.compose.runtime.derivedStateOf {
             val info = ls.layoutInfo
             val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2
-            info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + anchor - mid) }?.index ?: 0
+            info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }?.index ?: 0
         }
     }
-    // the focused tag's colour drains in: it spreads from the focused tag's row across the old colour each time the focus moves
-    val target = groups.getOrNull(focus)?.let { Color.hsl(hueOf(it.key), .55f, .86f) } ?: cs.surface
+    val focusHue = groups.getOrNull(focus)?.let { hueOf(it.key) } ?: 220f
+    fun bgOf(h: Float) = if (dark) Color.hsl(h, .36f, .13f) else Color.hsl(h, .55f, .86f)
+    val ink = if (dark) Color.hsl(focusHue, .35f, .93f) else Color(0xFF1B1A1F)
+    // the focused tag's colour drains in as a soft gradient edge with a grain along it, rising from the bottom when moving on, falling from the top when going back
+    val target = bgOf(focusHue)
     var from by remember { androidx.compose.runtime.mutableStateOf(target) }
     var to by remember { androidx.compose.runtime.mutableStateOf(target) }
+    var rising by remember { androidx.compose.runtime.mutableStateOf(true) }
+    var lastFocus by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val prog = remember { androidx.compose.animation.core.Animatable(1f) }
     androidx.compose.runtime.LaunchedEffect(target) {
         if (target != to) {
-            from = androidx.compose.ui.graphics.lerp(from, to, prog.value)
+            from = if (prog.value >= 1f) to else androidx.compose.ui.graphics.lerp(from, to, prog.value)
             to = target
+            rising = focus >= lastFocus
             prog.snapTo(0f)
-            prog.animateTo(1f, androidx.compose.animation.core.tween(720, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            prog.animateTo(1f, androidx.compose.animation.core.tween(1100, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)))
         }
+        lastFocus = focus
     }
-    val bgNow = androidx.compose.ui.graphics.lerp(from, to, prog.value)
+    val dots = remember { val r = kotlin.random.Random(72); List(1500) { Triple(r.nextFloat(), r.nextFloat(), r.nextFloat()) } }
     Box(Modifier.fillMaxSize()) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             drawRect(from)
-            val r = kotlin.math.hypot(size.width, size.height) * prog.value
-            drawCircle(to, r, Offset(size.width * .15f, size.height * .5f))
+            val p = prog.value
+            if (p >= 1f) { drawRect(to); return@Canvas }
+            val band = size.height * .55f
+            // the edge's position: the distance the wash has travelled
+            val edge = if (rising) size.height - p * (size.height + band) else -band + p * (size.height + band)
+            val top = if (rising) edge else edge
+            val brush = if (rising) androidx.compose.ui.graphics.Brush.verticalGradient(0f to to.copy(alpha = 0f), 1f to to, startY = top, endY = top + band)
+            else androidx.compose.ui.graphics.Brush.verticalGradient(0f to to, 1f to to.copy(alpha = 0f), startY = top, endY = top + band)
+            drawRect(brush)
+            // grain: specks of the new colour ahead of the edge and of the old one behind it
+            val px = 2.2.dp.toPx()
+            for ((rx, ry, rr) in dots) {
+                val y = top - band * .25f + ry * band * 1.5f
+                val t = ((y - top) / band).coerceIn(0f, 1f)
+                val coverage = if (rising) t else 1f - t
+                val smooth = coverage * coverage * (3 - 2 * coverage)
+                drawRect(if (rr < smooth) to else from, Offset(rx * size.width, y), androidx.compose.ui.geometry.Size(px, px), alpha = (1f - kotlin.math.abs(smooth - .5f) * 1.6f).coerceIn(0f, .9f))
+            }
         }
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
-            val pad = (maxHeight / 2 - 48.dp).coerceAtLeast(80.dp)
+            val page = 330.dp
+            val pad = ((maxHeight - page) / 2).coerceAtLeast(60.dp)
             if (groups.isEmpty()) Text(
                 "Give a note a tag and its canvas appears here, with all the notes that share it laid out as a collage.",
                 style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = .7f), modifier = Modifier.align(Alignment.Center).padding(32.dp),
             ) else androidx.compose.foundation.lazy.LazyColumn(
                 state = ls,
-                // sharp at the top, melting into blur toward the bottom edge (Android 13 and up; older phones just show it sharp)
-                modifier = Modifier.fillMaxSize().blur(
-                    blurRadiusSpec = BlurRadiusSpec.verticalGradient(stops = listOf(BlurStop(0f, 0.dp), BlurStop(.6f, 0.dp), BlurStop(1f, 14.dp))),
-                    edgeTreatment = BlurredEdgeTreatment.Rectangle,
-                ),
+                flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(ls, androidx.compose.foundation.gestures.snapping.SnapPosition.Center),
+                // sharp in the middle, melting into blur toward the bottom edge (Android 13 and up), and faded out at both ends
+                modifier = Modifier.fillMaxSize().bottomBlur(12.dp, .62f)
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(0f to Color.Transparent, .16f to Color.Black, .86f to Color.Black, 1f to Color.Transparent),
+                            blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                        )
+                    },
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = pad, bottom = pad),
             ) {
                 itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
-                    val on = i == focus
-                    val a by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .28f, label = "tagfocus")
                     val hue = hueOf(g.key)
-                    val accent = Color.hsl(hue, .8f, .38f)
+                    val accent = if (dark) Color.hsl(hue, .75f, .72f) else Color.hsl(hue, .8f, .38f)
                     val flip = Color.hsl((hue + 180f) % 360f, .9f, .82f)
-                    val sub = g.value.lastOrNull { it.title.isNotBlank() }?.title.orEmpty()
                     val covers = g.value.mapNotNull { it.cover?.path }.take(3)
-                    Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) }.padding(vertical = 8.dp)) {
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(Modifier.width(if (on) 52.dp else 0.dp)) { if (on) Text("\u2192", style = flexStyle(44.sp, wght = 400, lh = 1f), color = ink) }
-                            Text(g.key.lowercase(), style = flexStyle(54.sp, wght = if (on) 620 else 480, wdth = 96f, lh = 1f), color = ink.copy(alpha = a), modifier = Modifier.weight(1f))
-                        }
+                    Column(
+                        Modifier.fillMaxWidth().height(page)
+                            .graphicsLayer {
+                                // every page eases in and out continuously with its distance from the middle, so scrolling never jumps
+                                val info = ls.layoutInfo
+                                val me = info.visibleItemsInfo.firstOrNull { it.index == i }
+                                val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2f
+                                val d = if (me == null) 1f else (kotlin.math.abs(me.offset + me.size / 2f - mid) / me.size).coerceIn(0f, 1f)
+                                val f = 1f - d
+                                alpha = .3f + .7f * f
+                                val s = .9f + .1f * f
+                                scaleX = s; scaleY = s
+                                translationY = (me?.let { (it.offset + it.size / 2f - mid) } ?: 0f) * -.06f
+                            }
+                            .clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) },
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(g.key.lowercase(), style = flexStyle(54.sp, wght = 620, wdth = 96f, lh = 1f), color = ink, maxLines = 1)
                         Text(
                             "NOTES: ${g.value.size}   PHOTOS: ${g.value.sumOf { it.photos.size }}",
-                            style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = ink.copy(alpha = a * .7f)),
-                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                            style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = ink.copy(alpha = .7f)),
+                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp, bottom = 6.dp),
                         )
-                        androidx.compose.animation.AnimatedVisibility(on && covers.isNotEmpty()) { TagPhotos(covers, sub, accent, flip) }
+                        if (covers.isNotEmpty()) TagPhotos(covers, accent)
                     }
                 }
             }
-            val fade = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bgNow, bgNow.copy(alpha = 0f)))
-            Box(Modifier.fillMaxWidth().height(150.dp).background(fade))
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(130.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bgNow.copy(alpha = 0f), bgNow.copy(alpha = .9f)))))
-            Text("Canvases", style = MaterialTheme.typography.titleMedium, color = ink, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 22.dp))
+            TabTitle("Canvases", null, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp), ink)
         }
     }
 }
 
-/**
- * The focused tag's photos, set between it and the next tag. A line of the newest note's title runs in the tag's accent colour over
- * the first photo, and the part that crosses the photo flips to the opposite colour.
- */
+/** A tag's photos, fanned out under its name. */
 @Composable
-private fun TagPhotos(covers: List<String>, sub: String, accent: Color, flip: Color) {
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(262.dp)) {
+private fun TagPhotos(covers: List<String>, accent: Color) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(200.dp)) {
         val w = maxWidth
-        val pw = w * .46f
-        val ph = pw * 1.05f
-        val px = w * .40f
-        val py = 30.dp
         val shape = RoundedCornerShape(28.dp)
-        covers.getOrNull(1)?.let { PhotoImage(it, 400, false, accent, Modifier.offset(w * .04f, 82.dp).size(w * .32f).rotate(-6f).clip(shape)) }
-        covers.getOrNull(2)?.let { PhotoImage(it, 400, false, accent, Modifier.offset(w * .66f, 140.dp).size(w * .3f).rotate(5f).clip(shape)) }
-        covers.getOrNull(0)?.let { PhotoImage(it, 500, false, accent, Modifier.offset(px, py).size(pw, ph).clip(shape)) }
-        if (sub.isNotEmpty()) {
-            val tx = w * .12f
-            val tw = w * .84f
-            val st = flexStyle(40.sp, wght = 600, wdth = 96f, lh = 1f)
-            Text(sub.lowercase(), style = st, color = accent, maxLines = 2, modifier = Modifier.offset(tx, 0.dp).width(tw))
-            Box(Modifier.offset(px, py).size(pw, ph).clip(shape)) {
-                Text(sub.lowercase(), style = st, color = flip, maxLines = 2, modifier = Modifier.offset(tx - px, -py).requiredWidth(tw))
-            }
-        }
+        covers.getOrNull(1)?.let { PhotoImage(it, 400, false, accent, Modifier.offset(w * .02f, 40.dp).size(w * .3f).rotate(-6f).clip(shape)) }
+        covers.getOrNull(2)?.let { PhotoImage(it, 400, false, accent, Modifier.offset(w * .68f, 80.dp).size(w * .28f).rotate(5f).clip(shape)) }
+        covers.getOrNull(0)?.let { PhotoImage(it, 500, false, accent, Modifier.offset(w * .26f, 0.dp).size(w * .46f, w * .48f).clip(shape)) }
     }
 }
 

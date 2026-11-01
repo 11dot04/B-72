@@ -186,11 +186,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             item(span = StaggeredGridItemSpan.FullLine) {
                 val cs = MaterialTheme.colorScheme
                 Column(Modifier.padding(bottom = 4.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
-                        Text(if (q.isBlank()) "notes" else "found", style = flexStyle(56.sp, wght = 480, wdth = 96f, lh = .95f), color = cs.onSurface)
-                        Spacer(Modifier.width(10.dp))
-                        Text("(${shown.size})", style = flexStyle(26.sp, wght = 200, lh = 1f), color = cs.onSurface.copy(alpha = .4f), modifier = Modifier.padding(bottom = 6.dp))
-                    }
+                    TabTitle(if (q.isBlank()) "Notes" else "Found", shown.size, Modifier.padding(bottom = 14.dp))
                     loaded?.error?.let { err -> Text(err, style = MaterialTheme.typography.bodyMedium, color = cs.error, modifier = Modifier.padding(bottom = 8.dp)) }
                     if (repo.prepTotal > 0) Column(Modifier.padding(bottom = 10.dp)) {
                         androidx.compose.material3.LinearWavyProgressIndicator(
@@ -245,7 +241,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 }, onSkip = { com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId })
             } else if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
-                items(shown, key = { it.id }) { n -> if (cols == 1) FeatureTile(n, shared) { onOpen(n.id) } else Tile(n, shared) { onOpen(n.id) } }
+                items(shown, key = { it.id }) { n -> Box(Modifier.animateItem()) { if (cols == 1) FeatureTile(n, shared) { onOpen(n.id) } else Tile(n, shared) { onOpen(n.id) } } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
                     Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
                 }

@@ -4,6 +4,9 @@ package com.b72.keep_canvas.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -79,6 +82,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     val grid = rememberLazyStaggeredGridState()
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val scaleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     BackHandler(tab != 0 && open == null && board == null) { tab = 0 }
     BackHandler((open != null || board != null)) { if (open != null) leave() else board = null }
 
@@ -87,7 +92,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = open to board,
-                transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
+                transitionSpec = { (fadeIn(fx) + scaleIn(scaleSpec, initialScale = .94f)) togetherWith fadeOut(fx) },
                 label = "screen",
             ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
@@ -132,13 +137,20 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     onAdd = { begin(Kind.Text, tag) },
                     onStickers = { board = null; tab = 3 },
                 )
-                else when (tab) {
+                else AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        val dir = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally(spatial) { dir * it / 5 } + fadeIn(fx)) togetherWith (slideOutHorizontally(spatial) { -dir * it / 5 } + fadeOut(fx))
+                    },
+                    label = "tabs",
+                ) { t -> when (t) {
                     1 -> CanvasHub(loaded) { board = it }
                     2 -> LibraryScreen(loaded) { open = it }
                     3 -> StickersScreen(repo, loaded) { tab = 0 }
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
-                }
+                } }
             }
         }
         // the nav floats over a soft darkening so it reads against anything scrolling under it

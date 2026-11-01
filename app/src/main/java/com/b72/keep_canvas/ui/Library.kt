@@ -80,20 +80,13 @@ private val SQUARE_SHAPES by lazy {
     listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Cookie12Sided, MaterialShapes.Clover4Leaf, MaterialShapes.Gem, MaterialShapes.Bun, MaterialShapes.Flower, MaterialShapes.Cookie6Sided, MaterialShapes.Pentagon)
 }
 
-/** Each saved thing gets its own frame from the expressive set; the same one every time. Tall posters and covers keep to the tall shapes. */
+/** Only recipes get the expressive frames, one each in turn; everything else keeps its plain cover. */
 @Composable
-private fun coverShape(k: Kind, n: Int): Shape {
-    return when (k) {
-        Kind.Track -> CircleShape
-        Kind.Film, Kind.Book -> when (n % 4) {
-            0 -> MaterialShapes.Arch.toShape()
-            1 -> MaterialShapes.Oval.toShape()
-            2 -> RoundedCornerShape(topStart = 110.dp, topEnd = 110.dp, bottomStart = 28.dp, bottomEnd = 28.dp)
-            else -> RoundedCornerShape(36.dp)
-        }
-        Kind.Link -> if (n % 2 == 0) RoundedCornerShape(32.dp) else MaterialShapes.Bun.toShape()
-        else -> SQUARE_SHAPES[n % SQUARE_SHAPES.size].toShape()
-    }
+private fun coverShape(k: Kind, n: Int): Shape = when (k) {
+    Kind.Track -> CircleShape
+    Kind.Recipe -> SQUARE_SHAPES[n % SQUARE_SHAPES.size].toShape()
+    Kind.Link -> RoundedCornerShape(32.dp)
+    else -> RoundedCornerShape(28.dp)
 }
 
 /** Where to look in a photo so its subject sits in the middle of a square frame (the subject box is read from the cut-out). */
@@ -105,23 +98,39 @@ private fun subjectAlign(b: Block): Alignment {
     return if (ar >= 1f) BiasAlignment(2 * f(cx, ar) - 1f, 0f) else BiasAlignment(0f, 2 * f(cy, 1f / ar) - 1f)
 }
 
-/** A record: dark grooves, the cover as the label, a spindle hole. */
+/** A picture turned into two tones: its darks become [ink], its lights [paper]. */
+private fun duotone(ink: androidx.compose.ui.graphics.Color, paper: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.ColorFilter {
+    val lr = .2126f; val lg = .7152f; val lb = .0722f
+    fun row(i: Float, p: Float) = floatArrayOf((p - i) * lr, (p - i) * lg, (p - i) * lb, 0f, i * 255f)
+    val r = row(ink.red, paper.red); val g = row(ink.green, paper.green); val b = row(ink.blue, paper.blue)
+    return androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(r + g + b + floatArrayOf(0f, 0f, 0f, 1f, 0f)))
+}
+
+/** A record in the colours of its cover: a flat disc, the cover as a duotone label, a spindle hole. [bold] flips which tone is the disc. */
 @Composable
-private fun Vinyl(b: Block, tint: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+private fun Vinyl(b: Block, bold: Boolean, modifier: Modifier) {
+    val art = b.path
+    val hue by androidx.compose.runtime.produceState(seedOf(b.id) % 360f, art) { art?.let { p -> hueOfPhoto(p)?.let { value = it } } }
+    fun c(s: Float, l: Float) = androidx.compose.ui.graphics.Color.hsl(((hue % 360f) + 360f) % 360f, s, l)
+    val disc = if (bold) c(.78f, .56f) else c(.3f, .15f)
+    val paper = if (bold) c(.75f, .95f) else c(.8f, .62f)
+    val deep = if (bold) c(.85f, .32f) else c(.5f, .1f)
+    val line = if (bold) androidx.compose.ui.graphics.Color.Black.copy(alpha = .10f) else androidx.compose.ui.graphics.Color.White.copy(alpha = .10f)
     Box(modifier, contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-            val c = center; val r = size.minDimension / 2
-            drawCircle(tint, r, c)
-            var rr = r * .96f
-            while (rr > r * .46f) { drawCircle(androidx.compose.ui.graphics.Color.White.copy(alpha = .06f), rr, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx())); rr -= 5.dp.toPx() }
-            // a glint across the grooves
-            drawArc(androidx.compose.ui.graphics.Color.White.copy(alpha = .12f), -50f, 28f, true, androidx.compose.ui.geometry.Offset(c.x - r * .94f, c.y - r * .94f), androidx.compose.ui.geometry.Size(r * 1.88f, r * 1.88f))
-            drawArc(androidx.compose.ui.graphics.Color.White.copy(alpha = .12f), 130f, 28f, true, androidx.compose.ui.geometry.Offset(c.x - r * .94f, c.y - r * .94f), androidx.compose.ui.geometry.Size(r * 1.88f, r * 1.88f))
+            val ct = center; val r = size.minDimension / 2
+            drawCircle(disc, r, ct)
+            // quiet hairline grooves, and a few specks like a pressing mark
+            for (k in 0..3) drawCircle(line, r * (.9f - k * .09f), ct, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+            for ((dx, dy) in listOf(-.52f to -.5f, -.44f to -.56f, -.46f to -.44f, -.36f to -.6f)) drawCircle(deep, 2.6.dp.toPx(), androidx.compose.ui.geometry.Offset(ct.x + dx * r, ct.y + dy * r))
         }
-        Box(Modifier.fillMaxSize(.4f).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
-            if (b.path != null) PhotoImage(b.path, 400, false, tint, Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize(.42f).clip(CircleShape).background(paper), contentAlignment = Alignment.Center) {
+            if (art != null) {
+                val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, art) { value = com.b72.keep_canvas.data.Images.load(art, 400) }
+                img?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, colorFilter = duotone(deep, paper)) }
+            }
         }
-        Box(Modifier.size(12.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF0E0D11)))
+        Box(Modifier.size(10.dp).clip(CircleShape).background(disc))
     }
 }
 
@@ -144,11 +153,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
         }
     }
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().padding(top = 16.dp)) {
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
-            Text("library", style = flexStyle(56.sp, wght = 480, wdth = 96f, lh = .95f), color = cs.onSurface)
-            Spacer(Modifier.width(10.dp))
-            Text("(${counts.sum()})", style = flexStyle(26.sp, wght = 200, lh = 1f), color = cs.onSurface.copy(alpha = .4f), modifier = Modifier.padding(bottom = 6.dp))
-        }
+        TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))
         Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             SHELVES.forEachIndexed { i, s ->
@@ -182,9 +187,9 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
                         val b = p.second
                         val h = when (b.kind) { Kind.Film, Kind.Book -> 320.dp; else -> 220.dp }
                         val slot = items.size - 1 - i // stable as newer items are added in front, and neighbours always differ
-                        val look = if (b.kind == Kind.Track) slot % 3 else -1 // 0 CD, 1 black vinyl, 2 maroon vinyl
-                        if (look != 0 && look != -1) Vinyl(
-                            b, if (look == 1) androidx.compose.ui.graphics.Color(0xFF15141A) else androidx.compose.ui.graphics.Color(0xFF3A1F2B),
+                        val look = if (b.kind == Kind.Track) slot % 3 else -1 // 0 CD, 1 and 2 records in the cover's two tones
+                        if (look == 1 || look == 2) Vinyl(
+                            b, look == 1,
                             Modifier.width(220.dp).height(h).scale(sc).clickable(onClickLabel = "Open") { onOpen(p.first.id) },
                         ) else Box(
                             Modifier.width(220.dp).height(h).scale(sc).clip(coverShape(b.kind, slot)).background(cs.primaryContainer)

@@ -1,5 +1,6 @@
 package com.b72.keep_canvas.ui
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -66,4 +67,16 @@ fun b72Typography(): Typography {
         labelMedium = base.labelMedium.copy(fontFamily = flex(550, 100f, 0f)),
         labelSmall = base.labelSmall.copy(fontFamily = flex(550, 100f, 0f)),
     )
+}
+
+/** The one heading every top-level tab uses: Material 3 display type with the count as a small label beside it. */
+@androidx.compose.runtime.Composable
+fun TabTitle(text: String, count: Int? = null, modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier, color: androidx.compose.ui.graphics.Color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface) {
+    androidx.compose.foundation.layout.Row(modifier, verticalAlignment = androidx.compose.ui.Alignment.Bottom) {
+        androidx.compose.material3.Text(text, style = androidx.compose.material3.MaterialTheme.typography.displaySmall, color = color)
+        if (count != null) androidx.compose.material3.Text(
+            "$count", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = color.copy(alpha = .55f),
+            modifier = androidx.compose.ui.Modifier.padding(start = 10.dp, bottom = 6.dp),
+        )
+    }
 }

@@ -129,8 +129,15 @@ private fun swatchesFor(hues: List<Float>): List<Pair<Color, Color>> {
     return all.mapIndexed { i, h -> swatchOf(h, i % 3 == 1) }
 }
 
-/** The canvas is always light and pastel, in dark mode too: it is one screen, and the colour is the point. */
-private fun tonesFor(hue: Float, error: Color, sw: List<Pair<Color, Color>>, blockHue: Map<String, Float>) = Tones(
+/** The canvas takes its colour from its photos: a pastel wash in light mode, a deep tint of the same hue in dark mode. Cards stay bright either way. */
+private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Color, Color>>, blockHue: Map<String, Float>) = if (dark) Tones(
+    bg = hsl(hue, .36f, .13f), onBg = hsl(hue, .3f, .93f),
+    primary = hsl(hue, .75f, .72f), onPrimary = hsl(hue, .6f, .1f),
+    pc = hsl(hue, .45f, .3f), onPc = hsl(hue, .6f, .92f),
+    sc = hsl(hue + 25f, .4f, .26f), onSc = hsl(hue + 25f, .5f, .92f),
+    tc = hsl(hue + 60f, .42f, .27f), onTc = hsl(hue + 60f, .5f, .92f),
+    error = error, swatches = sw, blockHue = blockHue,
+) else Tones(
     bg = hsl(hue, .55f, .86f), onBg = hsl(hue, .45f, .1f),
     primary = hsl(hue, .55f, .38f), onPrimary = hsl(hue, .4f, .97f),
     pc = hsl(hue, .6f, .72f), onPc = hsl(hue, .5f, .12f),
@@ -139,7 +146,7 @@ private fun tonesFor(hue: Float, error: Color, sw: List<Pair<Color, Color>>, blo
     error = error, swatches = sw, blockHue = blockHue,
 )
 
-private suspend fun hueOfPhoto(path: String): Float? {
+suspend fun hueOfPhoto(path: String): Float? {
     val bmp = Images.load(path, 160) ?: return null
     val rgbs = withContext(Dispatchers.Default) {
         val pal = Palette.from(bmp.asAndroidBitmap()).generate()
@@ -170,18 +177,19 @@ private fun rememberTones(paths: List<String>, blockPhoto: Map<String, String>):
         value = out
     }
     val blockHue = remember(byPhoto, blockPhoto) { blockPhoto.mapNotNull { (id, p) -> byPhoto[p]?.let { id to it } }.toMap() }
-    return remember(hues, err, blockHue) { tonesFor(hues[0], err, swatchesFor(hues), blockHue) }
+    val dark = isSystemInDarkTheme()
+    return remember(hues, err, blockHue, dark) { tonesFor(hues[0], dark, err, swatchesFor(hues), blockHue) }
 }
 
 /** Dark system-bar icons while a bright pastel screen is up, put back when it leaves. */
 @Composable
-fun LightStatusBar() {
+fun LightStatusBar(light: Boolean = true) {
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.DisposableEffect(Unit) {
         val w = (view.context as? android.app.Activity)?.window
         val c = w?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
         val was = c?.isAppearanceLightStatusBars
-        c?.isAppearanceLightStatusBars = true
+        c?.isAppearanceLightStatusBars = light
         onDispose { if (was != null) c.isAppearanceLightStatusBars = was }
     }
 }
@@ -204,7 +212,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     }
     val t = rememberTones(photos, blockPhoto)
     val density = LocalDensity.current
-    LightStatusBar()
+    LightStatusBar(!isSystemInDarkTheme())
     val tm = rememberTextMeasurer()
     var retidy by remember { mutableIntStateOf(0) }
     var cards by remember { mutableStateOf<List<Card>>(emptyList()) }
