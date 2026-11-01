@@ -101,6 +101,7 @@ import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Block
 import com.b72.keep_canvas.data.Images
 import com.b72.keep_canvas.data.Kind
+import com.b72.keep_canvas.data.ideas
 import com.b72.keep_canvas.data.Note
 import com.b72.keep_canvas.data.dbl
 import com.b72.keep_canvas.data.seedOf
@@ -285,6 +286,10 @@ fun NotePage(
                 )
             }
             item(key = "ai") { AiStrip(note, pal.fg, pal.primary, onAddTag, Modifier.padding(bottom = 18.dp)) }
+            if (repo != null) item(key = "ideas") {
+                val ideas = remember(note.blocks, note.tags) { note.ideas() }
+                IdeasStrip(ideas, pal.fg, { repo.addIdea(note.id, it) }, { repo.dismissIdea(note.id, it) }, Modifier.padding(bottom = 18.dp))
+            }
             if (note.remind > System.currentTimeMillis()) item {
                 val whenText = Instant.ofEpochMilli(note.remind).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
                 androidx.compose.material3.AssistChip(
