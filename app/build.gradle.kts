@@ -65,6 +65,7 @@ dependencies {
     implementation("androidx.graphics:graphics-shapes:1.1.0")
     implementation("androidx.palette:palette:1.0.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:image-labeling:17.0.9")
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     // the optional on-device sentence encoder behind "Related" (the model file is added to assets by the build)
     implementation("com.google.mediapipe:tasks-text:latest.release")
