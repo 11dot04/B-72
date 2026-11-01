@@ -56,7 +56,7 @@ private fun DrawScope.marker(left: Float, right: Float, top: Float, bottom: Floa
     path.moveTo(pts[0].x, pts[0].y)
     for (i in 1 until pts.size) {
         val m = (pts[i - 1] + pts[i]) / 2f
-        path.quadTo(pts[i - 1].x, pts[i - 1].y, m.x, m.y)
+        path.quadraticTo(pts[i - 1].x, pts[i - 1].y, m.x, m.y)
     }
     path.lineTo(pts.last().x, pts.last().y)
     val pm = PathMeasure()
