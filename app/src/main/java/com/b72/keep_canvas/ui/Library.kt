@@ -182,10 +182,18 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
                         val sc by animateFloatAsState(if (i == focus) 1f else .84f, label = "shelf")
                         val b = p.second
                         val h = when (b.kind) { Kind.Film, Kind.Book -> 320.dp; else -> 220.dp }
-                        val vinyl = b.kind == Kind.Track && seedOf(b.id) % 3 != 0
-                        if (vinyl) Vinyl(
-                            b, if (seedOf(b.id) % 3 == 1) androidx.compose.ui.graphics.Color(0xFF15141A) else androidx.compose.ui.graphics.Color(0xFF3A1F2B),
+                        val look = if (b.kind == Kind.Track) seedOf(b.id) % 4 else -1 // 0 CD, 1 and 3 vinyl, 2 record in its sleeve
+                        if (look == 1 || look == 3) Vinyl(
+                            b, if (look == 1) androidx.compose.ui.graphics.Color(0xFF15141A) else androidx.compose.ui.graphics.Color(0xFF3A1F2B),
                             Modifier.width(220.dp).height(h).scale(sc).clickable(onClickLabel = "Open") { onOpen(p.first.id) },
+                        ) else if (look == 2) Box(
+                            Modifier.width(220.dp).height(h).scale(sc).clickable(onClickLabel = "Open") { onOpen(p.first.id) },
+                        ) {
+                            Vinyl(b, androidx.compose.ui.graphics.Color(0xFF15141A), Modifier.size(190.dp).align(Alignment.CenterEnd))
+                            Box(Modifier.size(180.dp).align(Alignment.CenterStart).clip(RoundedCornerShape(10.dp)).background(cs.primaryContainer)) {
+                                if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize())
+                                else Icon(SHELVES[shelf].icon, null, Modifier.size(56.dp).align(Alignment.Center), tint = cs.onPrimaryContainer)
+                            }
                         ) else Box(
                             Modifier.width(220.dp).height(h).scale(sc).clip(coverShape(b.kind, b.id)).background(cs.primaryContainer)
                                 .clickable(onClickLabel = "Open") { onOpen(p.first.id) },
