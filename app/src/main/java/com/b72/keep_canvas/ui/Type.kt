@@ -12,6 +12,7 @@ import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.padding
 import com.b72.keep_canvas.R
 
 private val families = HashMap<String, FontFamily>()
