@@ -60,7 +60,65 @@ fun TplCard(b: Block, noteTitle: String, pal: NotePalette, modifier: Modifier = 
                 Text(v, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = fg)
             }
         }
-        else -> Zine(b, noteTitle, pal, modifier)
+        else -> {
+            val p = posterFor(if (b.title == noteTitle) "" else b.title, b)
+            when {
+                p.rows.size >= 2 -> Receipt(p, noteTitle, modifier)
+                p.facts.size + (if (p.big != null) 1 else 0) >= 3 -> Rail(p, noteTitle, pal, modifier)
+                else -> Zine(b, noteTitle, pal, modifier)
+            }
+        }
+    }
+}
+
+/** A till receipt: the title across the top, small facts, priced lines with dashed rules, a total. */
+@Composable
+private fun Receipt(p: com.b72.keep_canvas.data.Poster, noteTitle: String, modifier: Modifier) {
+    val paper = Color(0xFFFBF7EE)
+    val ink = Color(0xFF1B1713)
+    val mono = FontFamily.Monospace
+    @Composable fun rule() = androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(1.dp).padding(vertical = 0.dp)) {
+        drawLine(ink.copy(alpha = .55f), androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+    }
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(paper).padding(horizontal = 22.dp, vertical = 24.dp)) {
+        Text(p.head.ifEmpty { noteTitle }.uppercase(), style = TextStyle(fontFamily = mono, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ink), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        for (f in p.facts.take(3)) Text("${f.label}: ${f.value}", style = TextStyle(fontFamily = mono, fontSize = 12.sp, color = ink.copy(alpha = .7f)), modifier = Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(14.dp)); rule(); Spacer(Modifier.height(10.dp))
+        for ((l, v) in p.rows) Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+            Text(l, style = TextStyle(fontFamily = mono, fontSize = 14.sp, color = ink), modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(v, style = TextStyle(fontFamily = mono, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ink))
+        }
+        Spacer(Modifier.height(8.dp)); rule()
+        p.big?.let { Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Text("TOTAL", style = TextStyle(fontFamily = mono, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ink), modifier = Modifier.weight(1f))
+            Text(it.value, style = TextStyle(fontFamily = mono, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ink))
+        } }
+        Spacer(Modifier.height(14.dp)); rule()
+        Text("THANK YOU", style = TextStyle(fontFamily = mono, fontSize = 12.sp, letterSpacing = 2.sp, color = ink.copy(alpha = .7f)), modifier = Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+/** Labels ride the left edge in small type; the values stand off-centre in large type beside them. */
+@Composable
+private fun Rail(p: com.b72.keep_canvas.data.Poster, noteTitle: String, pal: NotePalette, modifier: Modifier) {
+    val ink = pal.fg
+    Column(modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
+            Text("Details", style = flexStyle(22.sp, wght = 300, lh = 1f), color = ink.copy(alpha = .6f), modifier = Modifier.weight(.32f))
+            Text(p.head.ifEmpty { noteTitle }, style = flexStyle(34.sp, wght = 700, wdth = 100f, lh = 1f), color = ink, modifier = Modifier.weight(.68f))
+        }
+        p.big?.let { Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.Bottom) {
+            Text(it.label, style = TextStyle(fontSize = 13.sp, color = ink.copy(alpha = .6f)), modifier = Modifier.weight(.32f))
+            Text(it.value, style = flexStyle(48.sp, wght = 800, wdth = 108f, lh = 1f), color = pal.primary, modifier = Modifier.weight(.68f))
+        } }
+        for (f in p.facts) Row(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+            Text(f.label, style = TextStyle(fontSize = 13.sp, color = ink.copy(alpha = .6f)), modifier = Modifier.weight(.32f))
+            Text(f.value, style = TextStyle(fontSize = 21.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp, color = ink), modifier = Modifier.weight(.68f))
+        }
+        if (p.rest.isNotBlank()) Row(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+            Text("About", style = TextStyle(fontSize = 13.sp, color = ink.copy(alpha = .6f)), modifier = Modifier.weight(.32f))
+            Text(p.rest, style = serif(17, ink.copy(alpha = .88f), true, 1.3f), modifier = Modifier.weight(.68f))
+        }
     }
 }
 

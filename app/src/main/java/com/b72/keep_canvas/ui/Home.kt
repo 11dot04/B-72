@@ -4,6 +4,12 @@ package com.b72.keep_canvas.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.graphics.blur.BlurRadiusSpec
+import androidx.compose.ui.graphics.blur.BlurStop
+import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.rounded.Apps
@@ -150,7 +156,8 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var cols by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(2) }
   var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
   val shown = remember(loaded?.library, q, filter, sort) {
-    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) }
+    // notes that are only a song, book, film, recipe or link live in the Library tab (a search still finds them)
+    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() && !it.isLibrary || q.isNotBlank() && matchesQuery(texts[it.id].orEmpty(), q)) }
     when (sort) {
       1 -> l
       2 -> l.sortedByDescending { it.edited }
@@ -230,7 +237,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 }, onSkip = { com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId })
             } else if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
-                items(shown, key = { it.id }) { n -> Tile(n, shared) { onOpen(n.id) } }
+                items(shown, key = { it.id }) { n -> if (cols == 1) FeatureTile(n, shared) { onOpen(n.id) } else Tile(n, shared) { onOpen(n.id) } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
                     Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
                 }
@@ -303,6 +310,57 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
             Text(n.title.ifBlank { n.snippet(60) }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = if (n.title.isBlank()) TextStyle(fontFamily = Serif, fontSize = 17.sp, lineHeight = 22.sp, fontStyle = FontStyle.Italic) else flexStyle(22.sp, wght = 680, rond = 40f), color = cs.onTertiaryContainer)
         }
         Icon(Icons.Rounded.History, null, tint = cs.onTertiaryContainer)
+    }
+}
+
+/**
+ * The one-column tile: a big rounded card. With a photo, the picture runs full bleed and melts into progressive blur toward the
+ * bottom, where the title sits large; without one, a colour card with the title big and a few lines beneath.
+ */
+@Composable
+private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val tones = remember(cs) {
+        listOf(cs.primaryContainer to cs.onPrimaryContainer, cs.tertiaryContainer to cs.onTertiaryContainer, cs.secondaryContainer to cs.onSecondaryContainer, cs.primary to cs.onPrimary)
+    }
+    val (bg, fg) = tones[seedMod(n.id, tones.size)]
+    val path = n.cover?.path
+    val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 900) }, n.id) { value = path?.let { Images.load(it, 900) } }
+    val shape = RoundedCornerShape(36.dp)
+    val t = n.title
+    Box(Modifier.fillMaxWidth().clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = onClick)) {
+        if (img != null) {
+            Box(Modifier.fillMaxWidth().aspectRatio(.92f)) {
+                Image(
+                    img!!, null,
+                    Modifier.fillMaxSize().shared(shared, "img-${n.id}").blur(
+                        blurRadiusSpec = BlurRadiusSpec.verticalGradient(stops = listOf(BlurStop(0f, 0.dp), BlurStop(.5f, 0.dp), BlurStop(1f, 22.dp))),
+                        edgeTreatment = BlurredEdgeTreatment.Rectangle,
+                    ),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(.45f to Color.Transparent, 1f to Color(0x99000000))))
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 18.dp, top = 18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Meta(n, Color.White.copy(alpha = .85f))
+                    Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = Color.White)
+                }
+                if (t.isNotEmpty()) Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().heightIn(min = 240.dp).padding(20.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Meta(n, fg.copy(alpha = .65f))
+                    Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = fg)
+                }
+                Column(Modifier.padding(top = 28.dp)) {
+                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                    Spacer(Modifier.height(12.dp))
+                    Preview(n, fg)
+                }
+            }
+        }
     }
 }
 

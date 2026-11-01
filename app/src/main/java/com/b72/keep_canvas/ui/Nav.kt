@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -68,6 +69,7 @@ private class Dest(val label: String, val icon: ImageVector)
 private val DESTS = listOf(
     Dest("Notes", Icons.Rounded.StickyNote2),
     Dest("Canvas", Icons.Rounded.Dashboard),
+    Dest("Library", Icons.Rounded.CollectionsBookmark),
     Dest("Artifacts", Icons.Rounded.EmojiEmotions),
 )
 

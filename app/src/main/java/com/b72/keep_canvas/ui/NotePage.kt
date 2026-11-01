@@ -162,6 +162,8 @@ fun NotePage(
 
     val title = note.title
     val photos = note.photos
+    val structured = remember(note.blocks) { if (note.blocks.any { it.kind == Kind.Poster }) null else note.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.let { com.b72.keep_canvas.data.looksStructured(it.body) } }
+    val layoutId = if (note.layout.isEmpty()) autoLayout(note) else if (note.layout == "plain") "" else note.layout
     val hero = if (photos.size == 1 && canPopOut(photos[0])) photos[0] else null
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
     val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
@@ -184,8 +186,8 @@ fun NotePage(
             val hasText = note.blocks.any { it.kind == Kind.Text }
             val hasList = note.blocks.any { it.kind == Kind.Checklist }
             val fieldTitle = (explicit.isEmpty() && title.isEmpty()) || editTitle
-            val headerMode = note.layout in HEADER_LAYOUTS && title.isNotEmpty() && !fieldTitle && (photos.isNotEmpty() || note.layout !in NEEDS_PHOTO)
-            val embed = headerMode && note.layout == "poster"
+            val headerMode = layoutId in HEADER_LAYOUTS && title.isNotEmpty() && !fieldTitle && (photos.isNotEmpty() || layoutId !in NEEDS_PHOTO)
+            val embed = headerMode && layoutId == "poster"
             val coverMode = headerMode
             val besideMode = false
             val bodies: @Composable (Boolean) -> Unit = { compact ->
@@ -193,9 +195,9 @@ fun NotePage(
                 for ((ti, b) in tbs.withIndex()) {
                     val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
                     InlineBody(
-                        b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || note.layout == "script", if (ti == 0) "Note" else "", pal, linked,
+                        b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || layoutId == "script", if (ti == 0) "Note" else "", pal, linked,
                         focus = autoFocus && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
-                        serif = note.layout == "script" || note.layout == "ledger", numbered = note.layout == "ledger", compact = compact,
+                        serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact,
                     ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
                 }
                 if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
@@ -206,7 +208,7 @@ fun NotePage(
                     onDone = { editTitle = false }, onChange = onTitle,
                 )
             } else if (lay != null && !coverMode) item(key = "title-big") {
-                if (note.layout == "script") ScriptTitle(title, pal, Modifier.clickable { editTitle = true })
+                if (layoutId == "script") ScriptTitle(title, pal, Modifier.clickable { editTitle = true })
                 else FitTitle(
                     title, pal.fg, note.id,
                     modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
@@ -217,7 +219,7 @@ fun NotePage(
             if (headerMode) item(key = "header") {
                 val edit = { editTitle = true }
                 val view: (Int) -> Unit = { viewer = it }
-                when (note.layout) {
+                when (layoutId) {
                     "cover" -> CoverBlock(title, photos[0], pal, note.id, tint, onTitle = edit, onView = { viewer = 0 })
                     "wordmark" -> WordmarkHeader(title, photos, note.tags, pal, tint, edit, view)
                     "poster" -> PosterHeader(title, photos[0], note.tags, pal, note.id, tint, edit, { viewer = 0 }, { bodies(true) })
@@ -275,6 +277,12 @@ fun NotePage(
             item { Spacer(Modifier.height(24.dp)) }
             for (b in note.blocks) b.trip()?.let { tr ->
                 item(key = "trip-${b.id}") { TripCard(tr, pal.fg, pal.bg, pal.primary, Modifier.padding(bottom = 18.dp)) }
+            }
+            if (structured != null) item(key = "structured") {
+                androidx.compose.material3.AssistChip(
+                    onClick = { onSmart(true) }, label = { Text(if (structured == "receipt") "Show as a receipt" else "Show as a details sheet") },
+                    leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp)) }, modifier = Modifier.padding(bottom = 14.dp),
+                )
             }
             item(key = "ai") { AiStrip(note, pal.fg, pal.primary, onAddTag, Modifier.padding(bottom = 18.dp)) }
             if (note.remind > System.currentTimeMillis()) item {

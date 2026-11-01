@@ -55,7 +55,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     // the tag whose canvas is showing; a note opened from it returns here
     var board by rememberSaveable { mutableStateOf<String?>(null) }
-    // 0 notes, 1 canvas, 2 stickers: the three top-level places in the floating bar
+    // 0 notes, 1 canvas, 2 library, 3 artifacts: the top-level places in the floating bar
     var tab by rememberSaveable { mutableIntStateOf(0) }
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
@@ -130,11 +130,12 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     repo, loaded, tag,
                     onBack = { board = null }, onOpen = { open = it },
                     onAdd = { begin(Kind.Text, tag) },
-                    onStickers = { board = null; tab = 2 },
+                    onStickers = { board = null; tab = 3 },
                 )
                 else when (tab) {
                     1 -> CanvasHub(loaded) { board = it }
-                    2 -> StickersScreen(repo, loaded) { tab = 0 }
+                    2 -> LibraryScreen(loaded) { open = it }
+                    3 -> StickersScreen(repo, loaded) { tab = 0 }
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 }

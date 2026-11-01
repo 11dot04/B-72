@@ -59,7 +59,8 @@ import com.b72.keep_canvas.data.seedOf
 class PageLayout(val id: String, val name: String, val blurb: String)
 
 val LAYOUTS = listOf(
-    PageLayout("", "Plain", "Title, photo, words"),
+    PageLayout("", "Auto", "Picks the layout that suits the photos and the words"),
+    PageLayout("plain", "Plain", "Title, photo, words"),
     PageLayout("cover", "Cover", "The title set in the empty space of your photo; words in a box below"),
     PageLayout("poster", "Poster", "A high-contrast photo bleeding off one edge, title beneath, a tall column of words"),
     PageLayout("wordmark", "Wordmark", "A giant title, small captions, photos on a loose grid"),
@@ -67,6 +68,21 @@ val LAYOUTS = listOf(
     PageLayout("script", "Script", "A bold italic serif heading, serif text, first-line indents"),
     PageLayout("ledger", "Ledger", "Serif text with line numbers in the margin, every fifth"),
 )
+
+/** What the page does with no choice made: the layout that suits this note's photos and words. */
+fun autoLayout(n: com.b72.keep_canvas.data.Note): String {
+    if (n.title.isBlank() || n.blocks.any { it.kind == com.b72.keep_canvas.data.Kind.Checklist }) return ""
+    val photos = n.photos
+    val words = n.blocks.filter { it.kind == com.b72.keep_canvas.data.Kind.Text }.sumOf { b -> b.body.trim().split(Regex("\\s+")).count { it.isNotEmpty() } }
+    if (photos.isNotEmpty()) return when {
+        photos.size >= 3 -> "wordmark"
+        photos.size == 2 -> "column"
+        canPopOut(photos[0]) -> "cover"
+        words >= 30 -> "poster"
+        else -> "cover"
+    }
+    return when { words > 250 -> "ledger"; words in 1..60 && n.title.length <= 40 -> "script"; else -> "" }
+}
 
 /** Layouts that replace the title and photo area with their own header. */
 val HEADER_LAYOUTS = setOf("cover", "wordmark", "poster", "column")
