@@ -177,6 +177,27 @@ Note:
         try { s.ask(prompt)?.trim()?.takeIf { it.isNotEmpty() } } finally { s.close() }
     }
 
+    private const val IDEAS = """Someone saved a photo to their notes. Suggest up to 3 useful next steps and reply with ONLY a JSON array, nothing else.
+Each item: {"t": a title of 3 to 6 words, "d": one short sentence, "q": a web search phrase that would help}.
+Good ideas: where to find similar things, how to pair or style it, how to care for it, how to cook it, related things worth looking up.
+Never suggest anything about a person's body, face, health, age or identity. If nothing useful comes to mind, reply [].
+"""
+
+    /** Free-form ideas for a photo from what is in it (labels) and what the person wrote. Titles, details and search phrases only. */
+    fun ideas(session: Session, labels: List<String>, noteTitle: String, ocr: String): List<Triple<String, String, String>> {
+        val prompt = IDEAS + "Photo shows: ${labels.take(8).joinToString(", ")}\nNote title: ${noteTitle.take(80)}\nText in the photo: ${ocr.take(300)}\n"
+        val reply = session.ask(prompt) ?: return emptyList()
+        val a = reply.indexOf('['); val z = reply.lastIndexOf(']')
+        if (a < 0 || z <= a) return emptyList()
+        val arr = runCatching { AppJson.parseToJsonElement(reply.substring(a, z + 1)) as? JsonArray }.getOrNull() ?: return emptyList()
+        return arr.mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+            val t = s("t"); val q = s("q")
+            if (t.length !in 3..60 || q.length !in 3..90) null else Triple(t, s("d").take(120), q)
+        }.take(3)
+    }
+
     fun analyse(session: Session, text: String): Analysis? = session.ask(PROMPT + "\"\"\"\n" + text.take(3000) + "\n\"\"\"")?.let { parse(it) }
 }
 

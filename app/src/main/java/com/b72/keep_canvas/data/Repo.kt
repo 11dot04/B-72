@@ -84,7 +84,8 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             val path = b.path
             var d = b.data
             if (path != null) {
-                if (b.kind == Kind.Photo && "ocr" !in d) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) }
+                if (b.kind == Kind.Photo && ("ocr" !in d || b.dbl("ocrV") != OCR_V)) Ocr.read(ctx, path)?.let { d = d + ("ocr" to JsonPrimitive(it)) + ("ocrV" to JsonPrimitive(OCR_V)) }
+                if (b.kind == Kind.Photo && "lbl" !in d) Vision.labels(ctx, path)?.let { d = d + ("lbl" to JsonPrimitive(it)) }
                 if (b.kind in CUT_KINDS && cutStale(b)) {
                     makeCut(path, imageDir(ctx)).onSuccess { c ->
                         b.cutPath()?.let { old -> runCatching { File(old).delete() } }
@@ -107,6 +108,15 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                     ai = withContext(Dispatchers.Default) { Assistant.analyse(s, text) }
                 }
                 ai?.let { d = d + it.toData(cur); cur = cur.copy(data = d) }
+            }
+            // free-form ideas from the local model, only for photos the guard allows
+            cur = cur.copy(data = d)
+            if (ideasStale(cur)) {
+                if (!tried) { tried = true; session = withContext(Dispatchers.Default) { Assistant.open(ctx) } }
+                session?.let { sn ->
+                    val found = withContext(Dispatchers.Default) { Assistant.ideas(sn, cur.labels().map { it.first }, note(nid)?.title.orEmpty(), cur.field("ocr")) }
+                    d = d + ("aiIdeas" to ideasToData(found)) + ("ideasV" to JsonPrimitive(1))
+                }
             }
             var trip: Trip? = cur.trip()
             var tripChanged = false
@@ -226,6 +236,20 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     /** Fire-and-forget versions that outlive the sheet that asked for them. */
     fun addCand(noteId: String, kind: Kind, c: Cand) { scope.launch { appendCand(noteId, kind, c) } }
     fun addPhotos(noteId: String, uris: List<Uri>) { scope.launch { appendPhotos(noteId, uris) } }
+
+    /** Takes up a suggestion: a link card for a search, or a tag. */
+    fun addIdea(noteId: String, i: Idea) {
+        val n = note(noteId) ?: return
+        if (i.kind == "tag") { upsert(n.copy(tags = (n.tags + i.tag).distinct())); return }
+        val id = "l${System.nanoTime()}"
+        upsert(n.copy(blocks = n.blocks + newBlock(Kind.Link, id, title = i.title, body = i.url)))
+    }
+
+    /** Hides a suggestion for good (kept on the photo it came from). */
+    fun dismissIdea(noteId: String, i: Idea) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks.map { if (it.id == i.blockId) it.copy(data = it.data + ("ideaOff" to JsonPrimitive((it.field("ideaOff").split('|').filter { s -> s.isNotEmpty() } + i.id).joinToString("|")))) else it }))
+    }
 
     suspend fun appendPhotos(noteId: String, uris: List<Uri>) {
         for (u in uris) importPhoto(u, "p${System.nanoTime()}")?.let { appendBlock(noteId, it) }
@@ -413,7 +437,9 @@ fun imageDir(ctx: Context) = File(ctx.filesDir, "b72/photos").apply { mkdirs() }
 private val CUT_KINDS = setOf(Kind.Photo, Kind.Recipe)
 
 /** True when a picture still has its text read or its subject cut. */
-fun needsWork(b: Block) = (b.path != null && ((b.kind == Kind.Photo && "ocr" !in b.data) || (b.kind in CUT_KINDS && cutStale(b)))) || tripStale(b) || aiStale(b)
+const val OCR_V = 2.0
+
+fun needsWork(b: Block) = ideasStale(b) || (b.path != null && ((b.kind == Kind.Photo && ("ocr" !in b.data || b.dbl("ocrV") != OCR_V || "lbl" !in b.data)) || (b.kind in CUT_KINDS && cutStale(b)))) || tripStale(b) || aiStale(b)
 
 /** True until the photo has been cut with the current recipe. */
 fun cutStale(b: Block) = (b.dbl("cutV") ?: 0.0) < CUT_VERSION
