@@ -190,10 +190,23 @@ class Tones(
     val tc: Color, val onTc: Color,
     val error: Color,
     val swatches: List<Pair<Color, Color>> = emptyList(),
+    /** Block id -> the hue of the photo of the block's own note. */
+    val blockHue: Map<String, Float> = emptyMap(),
 ) {
-    /** One of the canvas's several card colours (fill, ink), stable for a given card. */
-    fun pick(id: String): Pair<Color, Color> = if (swatches.isEmpty()) tc to onTc else swatches[seedOf(id) % swatches.size]
+    /** A card's colour (fill, ink): from its own note's photo when it has one, else one of the canvas's spread of colours. */
+    fun pick(id: String): Pair<Color, Color> {
+        val h = blockHue[id]
+        val k = seedOf(id) % 3
+        return if (h != null) swatchOf(if (k == 2) h + 28f else h, k == 1)
+        else if (swatches.isEmpty()) tc to onTc else swatches[seedOf(id) % swatches.size]
+    }
 }
+
+private fun hslc(h: Float, s: Float, l: Float) = Color.hsl(((h % 360f) + 360f) % 360f, s, l)
+
+/** A pastel card colour and its dark ink for a hue; [vivid] steps up to a stronger, more saturated tone. */
+fun swatchOf(h: Float, vivid: Boolean): Pair<Color, Color> =
+    (if (vivid) hslc(h, .8f, .7f) else hslc(h, .72f, .91f)) to hslc(h, .6f, .12f)
 
 private fun kindIcon(k: Kind): ImageVector = when (k) {
     Kind.Film -> Icons.Rounded.Movie
