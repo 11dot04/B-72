@@ -95,6 +95,42 @@ private suspend fun tmdbFilms(query: String): List<Cand> {
     return out
 }
 
+/** TMDB series: creator, genre and seasons. */
+private suspend fun tmdbShows(query: String): List<Cand> {
+    val key = BuildConfig.TMDB_KEY
+    if (key.isEmpty()) return emptyList()
+    val j = json("https://api.themoviedb.org/3/search/tv?api_key=$key&include_adult=false&query=${q(query)}") as? JSONObject ?: return emptyList()
+    val top = j.optJSONArray("results")?.objs()?.take(6) ?: return emptyList()
+    val details = coroutineScope { top.map { r -> async { json("https://api.themoviedb.org/3/tv/${r.optLong("id")}?api_key=$key") as? JSONObject } }.awaitAll() }
+    val out = ArrayList<Cand>()
+    for ((i, r) in top.withIndex()) {
+        val d = details[i]
+        val title = r.s("name"); if (title.isEmpty()) continue
+        val creator = d?.optJSONArray("created_by")?.objs()?.firstOrNull()?.s("name") ?: ""
+        val genre = d?.optJSONArray("genres")?.objs()?.firstOrNull()?.s("name") ?: ""
+        val seasons = d?.optInt("number_of_seasons")?.takeIf { it > 0 }?.toString() ?: ""
+        val y = year(r.s("first_air_date")); val poster = r.s("poster_path")
+        out += Cand(title, "Series · $y" + (if (seasons.isNotEmpty()) " · $seasons seasons" else ""), poster.takeIf { it.isNotEmpty() }?.let { "https://image.tmdb.org/t/p/w500$it" },
+            mapOf("year" to y, "director" to creator, "genre" to genre, "runtime" to "", "seasons" to seasons, "series" to "1", "overview" to r.s("overview")))
+    }
+    return out
+}
+
+private suspend fun itunesShows(query: String): List<Cand> =
+    itunes(query, "tvShow", "tvSeason").filter { it.s("collectionName").isNotEmpty() }.map { r ->
+        Cand(r.s("collectionName"), "Series · ${year(r.s("releaseDate"))}", art(r.s("artworkUrl100").ifEmpty { null }, 600),
+            mapOf("year" to year(r.s("releaseDate")), "director" to "", "genre" to r.s("primaryGenreName"), "runtime" to "", "series" to "1",
+                "overview" to r.s("longDescription").ifEmpty { r.s("shortDescription") }))
+    }
+
+/** Films and series together, interleaved. */
+suspend fun searchFilmsAndShows(query: String): List<Cand> {
+    val (f, sh) = coroutineScope { val a = async { searchFilms(query) }; val b = async { tmdbShows(query).ifEmpty { itunesShows(query) } }; a.await() to b.await() }
+    val out = ArrayList<Cand>()
+    for (i in 0 until maxOf(f.size, sh.size)) { f.getOrNull(i)?.let { out += it }; sh.getOrNull(i)?.let { out += it } }
+    return out.take(12)
+}
+
 /** Films: TMDB if a key is set, else iTunes, else Wikipedia (no key; posters need pilicense=any). */
 suspend fun searchFilms(query: String): List<Cand> {
     tmdbFilms(query).let { if (it.isNotEmpty()) return it }
@@ -270,4 +306,15 @@ suspend fun importRecipe(url: String): Map<String, String> {
         put("servings", Regex("\\d+").find(y?.toString() ?: "")?.value ?: "")
         put("url", url)
     }
+}
+
+/** The lines of a song from LRCLIB (free, no key). The app only keeps the few the person picks. */
+suspend fun fetchLyrics(artist: String, title: String): List<String> {
+    if (title.isBlank()) return emptyList()
+    var text = (json("https://lrclib.net/api/get?track_name=${q(title)}&artist_name=${q(artist)}") as? JSONObject)?.s("plainLyrics").orEmpty()
+    if (text.isBlank()) {
+        val arr = json("https://lrclib.net/api/search?q=${q("$title $artist".trim())}") as? JSONArray
+        text = arr?.objs()?.firstOrNull { it.s("plainLyrics").isNotBlank() }?.s("plainLyrics").orEmpty()
+    }
+    return text.lines().map { it.trim() }.filter { it.isNotEmpty() }
 }

@@ -223,6 +223,10 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         return true
     }
 
+    /** Fire-and-forget versions that outlive the sheet that asked for them. */
+    fun addCand(noteId: String, kind: Kind, c: Cand) { scope.launch { appendCand(noteId, kind, c) } }
+    fun addPhotos(noteId: String, uris: List<Uri>) { scope.launch { appendPhotos(noteId, uris) } }
+
     suspend fun appendPhotos(noteId: String, uris: List<Uri>) {
         for (u in uris) importPhoto(u, "p${System.nanoTime()}")?.let { appendBlock(noteId, it) }
     }
