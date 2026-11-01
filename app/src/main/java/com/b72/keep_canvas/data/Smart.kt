@@ -122,6 +122,17 @@ fun parsePoster(title: String, text: String): Poster {
     return Poster(head, big, facts.take(6), lines.joinToString("\n"), rows.take(8))
 }
 
+/** "receipt" when words hold several priced lines, "details" when they hold several labelled facts, else null. */
+fun looksStructured(body: String): String? {
+    if (body.length < 20) return null
+    val p = parsePoster("", body)
+    return when {
+        p.rows.size >= 2 -> "receipt"
+        p.facts.size + (if (p.big != null) 1 else 0) >= 3 -> "details"
+        else -> null
+    }
+}
+
 /**
  * The poster for a block: the plain readers' result, upgraded with what the assistant found (any labels at all,
  * not only the ones the readers know). The fact it marked as the point of the note becomes the big figure.

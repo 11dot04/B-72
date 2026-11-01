@@ -68,6 +68,10 @@ data class Note(
 
     val photos: List<Block> get() = blocks.filter { it.kind == Kind.Photo && it.path != null }
 
+    /** A note that is only structured data (a song, a book, a film, a recipe, a link): it lives in the Library, not the Notes tab. */
+    val isLibrary: Boolean get() = blocks.any { it.kind in RECORD_KINDS } &&
+        blocks.none { it.kind in setOf(Kind.Photo, Kind.Checklist, Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Audio) || (it.kind == Kind.Text && it.body.isNotBlank()) }
+
     /** The block whose picture represents the note: first photo, else a record's poster/cover. */
     val cover: Block? get() = photos.firstOrNull() ?: blocks.firstOrNull { it.path != null && it.kind != Kind.Audio }
 }
