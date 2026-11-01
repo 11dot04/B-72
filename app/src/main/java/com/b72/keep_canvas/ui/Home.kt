@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -173,7 +174,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         LazyVerticalStaggeredGrid(
             state = grid,
             columns = StaggeredGridCells.Fixed(cols),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().bottomBlur(5.dp, .78f),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = inner.calculateTopPadding() + 80.dp,
@@ -202,24 +203,31 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
-                    // narrow by what a note contains; chips wrap onto the next line instead of being cut off
+                    // one quiet row: the kinds of note first (icon only until chosen), then the busiest tags, scrolling sideways
                     val have = remember(loaded?.library) { FILTERS.filter { f -> f.name == "All" || loaded?.library?.notes.orEmpty().any(f.test) } }
-                    if (have.size > 1) androidx.compose.foundation.layout.FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        for (f in have) FilterChip(
-                            selected = filter == f.name, onClick = { filter = f.name }, label = { Text(f.name) },
-                            leadingIcon = { Icon(f.icon, null, Modifier.size(18.dp)) },
-                            shape = RoundedCornerShape(50),
-                        )
-                    }
                     val topTags = remember(loaded?.library) {
-                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().filter { it.value >= 2 }.entries.sortedByDescending { it.value }.take(8).map { it.key }
+                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().filter { it.value >= 2 }.entries.sortedByDescending { it.value }.take(5).map { it.key }
                     }
-                    if (topTags.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
-                        Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                    if (have.size > 1 || topTags.isNotEmpty()) Row(
+                        Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        for (t in topTags) FilterChip(selected = filter == "#$t", onClick = { filter = if (filter == "#$t") "All" else "#$t" }, label = { Text("#$t") }, shape = RoundedCornerShape(50))
+                        if (have.size > 1) for (f in have) {
+                            val on = filter == f.name
+                            FilterChip(
+                                selected = on, onClick = { filter = f.name },
+                                label = { if (on || f.name == "All") Text(f.name) else Icon(f.icon, f.name, Modifier.size(18.dp)) },
+                                leadingIcon = if (on && f.name != "All") ({ Icon(f.icon, null, Modifier.size(18.dp)) }) else null,
+                                shape = RoundedCornerShape(50),
+                                border = null,
+                                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                            )
+                        }
+                        for (t in topTags) FilterChip(
+                            selected = filter == "#$t", onClick = { filter = if (filter == "#$t") "All" else "#$t" }, label = { Text("#$t") },
+                            shape = RoundedCornerShape(50), border = null,
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        )
                     }
                 }
             }
@@ -415,13 +423,6 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
-            // a swash of the pen
-            // one bold, restrained swash in the corner of some tiles
-            val sw = seedMod(n.id, 8)
-            if (sw < 4 && !hasList) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                val wd = size.width * .46f
-                drawSwash(sw, size.width - wd - 14.dp.toPx(), size.height - wd * .45f - 16.dp.toPx(), wd, fg.copy(alpha = .16f))
-            }
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 Meta(n, fg.copy(alpha = .6f), Modifier.padding(bottom = 6.dp))
                 if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)

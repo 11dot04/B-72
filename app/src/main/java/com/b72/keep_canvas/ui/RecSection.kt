@@ -32,6 +32,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,7 +86,8 @@ private fun Notes(l: String, text: String, fg: androidx.compose.ui.graphics.Colo
 
 /** A film, book, track, recipe or link on the note page. [w] is the content width. */
 @Composable
-fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier) {
+fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null) {
+    var lyricSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val fg = pal.fg
     val showTitle = b.title != noteTitle
     val has = b.path != null
@@ -95,8 +98,8 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
             Kind.Film, Kind.Book -> {
                 val book = b.kind == Kind.Book
                 val meta = if (book) listOf(v("year"), v("pages").takeIf { it.isNotEmpty() && it != "0" }?.let { "$it pages" } ?: "", v("genre"))
-                else listOf(v("year"), v("runtime").takeIf { it.isNotEmpty() }?.let { "$it min" } ?: "", v("genre"))
-                val by = if (book) v("author").takeIf { it.isNotEmpty() }?.let { "By $it" } ?: "" else v("director").takeIf { it.isNotEmpty() }?.let { "Directed by $it" } ?: ""
+                else listOf(if (v("series").isNotEmpty()) "Series" else "", v("year"), v("seasons").takeIf { it.isNotEmpty() }?.let { "$it seasons" } ?: v("runtime").takeIf { it.isNotEmpty() }?.let { "$it min" } ?: "", v("genre"))
+                val by = if (book) v("author").takeIf { it.isNotEmpty() }?.let { "By $it" } ?: "" else v("director").takeIf { it.isNotEmpty() }?.let { (if (v("series").isNotEmpty()) "Created by " else "Directed by ") + it } ?: ""
                 Row {
                     if (has) {
                         PhotoImage(b.path!!, 700, false, pal.primary, Modifier.width(w * .38f).aspectRatio(2f / 3f).clip(RoundedCornerShape(22.dp)))
@@ -128,6 +131,9 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("OPEN IN ${v("src").ifEmpty { "APP" }.uppercase()}")
                     }
                 }
+                if (v("lyric").isNotBlank()) LyricsCard(v("lyric"), b.title, v("artist"), b.id, Modifier.padding(top = 18.dp), onEdit = onLyric?.let { { lyricSheet = true } })
+                else if (onLyric != null) androidx.compose.material3.TextButton({ lyricSheet = true }, Modifier.padding(top = 6.dp)) { Text("Add a lyrics card") }
+                if (lyricSheet && onLyric != null) LyricsSheet(b.title, v("artist"), v("lyric"), onLyric) { lyricSheet = false }
                 Notes("WHY YOU LOVE IT", b.body, fg)
             }
             Kind.Recipe -> {

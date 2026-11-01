@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import com.b72.keep_canvas.data.Images
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.blur.BlurStop
@@ -105,14 +108,37 @@ fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** Every tag is a canvas; this is the page that lists them, each as a card with a little spread of its photos. */
+/** The soft fade at the bottom edge shared by every tab: sharp above, melting into blur toward the bottom (Android 13+; older phones show it sharp). */
+fun Modifier.bottomBlur(radius: androidx.compose.ui.unit.Dp = 5.dp, from: Float = .72f): Modifier = this.blur(
+    blurRadiusSpec = BlurRadiusSpec.verticalGradient(stops = listOf(BlurStop(0f, 0.dp), BlurStop(from, 0.dp), BlurStop(1f, radius))),
+    edgeTreatment = BlurredEdgeTreatment.Rectangle,
+)
+
 @Composable
 fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    LightStatusBar()
     val groups = remember(loaded?.library) {
         loaded?.library?.notes.orEmpty().flatMap { n -> n.tags.map { it to n } }
             .groupBy({ it.first }, { it.second }).entries.sortedByDescending { it.value.size }
     }
+    // each tag's colour is the main hue of its first photo (the tag's own name picks one until that is read)
+    val hues by androidx.compose.runtime.produceState<Map<String, Float>>(emptyMap(), groups.map { it.key }) {
+        val out = HashMap<String, Float>()
+        for (g in groups) {
+            val p = g.value.firstNotNullOfOrNull { it.cover?.path } ?: continue
+            val bmp = Images.load(p, 160) ?: continue
+            val rgb = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val pal = androidx.palette.graphics.Palette.from(bmp.asAndroidBitmap()).generate()
+                (pal.vibrantSwatch ?: pal.dominantSwatch)?.rgb
+            } ?: continue
+            val hh = FloatArray(3)
+            androidx.core.graphics.ColorUtils.colorToHSL(rgb, hh)
+            if (hh[1] > .15f) { out[g.key] = hh[0]; value = HashMap(out) }
+        }
+    }
+    fun hueOf(key: String) = hues[key] ?: (com.b72.keep_canvas.data.seedOf(key) % 360).toFloat()
+    val ink = Color(0xFF1B1A1F)
     val mono = androidx.compose.ui.text.font.FontFamily.Monospace
     val ls = androidx.compose.foundation.lazy.rememberLazyListState()
     // the tag nearest the middle of the screen is the focused one; measured at its first line, so opening its photos cannot flip it
@@ -124,46 +150,67 @@ fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
             info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + anchor - mid) }?.index ?: 0
         }
     }
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
-        val pad = (maxHeight / 2 - 48.dp).coerceAtLeast(80.dp)
-        if (groups.isEmpty()) Text(
-            "Give a note a tag and its canvas appears here, with all the notes that share it laid out as a collage.",
-            style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.align(Alignment.Center).padding(32.dp),
-        ) else androidx.compose.foundation.lazy.LazyColumn(
-            state = ls,
-            // sharp at the top, melting into blur toward the bottom edge (Android 13 and up; older phones just show it sharp)
-            modifier = Modifier.fillMaxSize().blur(
-                blurRadiusSpec = BlurRadiusSpec.verticalGradient(stops = listOf(BlurStop(0f, 0.dp), BlurStop(.6f, 0.dp), BlurStop(1f, 14.dp))),
-                edgeTreatment = BlurredEdgeTreatment.Rectangle,
-            ),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = pad, bottom = pad),
-        ) {
-            itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
-                val on = i == focus
-                val a by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .24f, label = "tagfocus")
-                val hue = (com.b72.keep_canvas.data.seedOf(g.key) % 360).toFloat()
-                val accent = Color.hsl(hue, .78f, if (dark) .68f else .42f)
-                val flip = Color.hsl(hue + 180f, .85f, if (dark) .3f else .8f)
-                val sub = g.value.lastOrNull { it.title.isNotBlank() }?.title.orEmpty()
-                val covers = g.value.mapNotNull { it.cover?.path }.take(3)
-                Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) }.padding(vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Box(Modifier.width(if (on) 52.dp else 0.dp)) { if (on) Text("\u2192", style = flexStyle(44.sp, wght = 400, lh = 1f), color = cs.onSurface) }
-                        Text(g.key.lowercase(), style = flexStyle(54.sp, wght = if (on) 620 else 480, wdth = 96f, lh = 1f), color = cs.onSurface.copy(alpha = a), modifier = Modifier.weight(1f))
+    // the focused tag's colour drains in: it spreads from the focused tag's row across the old colour each time the focus moves
+    val target = groups.getOrNull(focus)?.let { Color.hsl(hueOf(it.key), .55f, .86f) } ?: cs.surface
+    var from by remember { androidx.compose.runtime.mutableStateOf(target) }
+    var to by remember { androidx.compose.runtime.mutableStateOf(target) }
+    val prog = remember { androidx.compose.animation.core.Animatable(1f) }
+    androidx.compose.runtime.LaunchedEffect(target) {
+        if (target != to) {
+            from = androidx.compose.ui.graphics.lerp(from, to, prog.value)
+            to = target
+            prog.snapTo(0f)
+            prog.animateTo(1f, androidx.compose.animation.core.tween(720, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        }
+    }
+    val bgNow = androidx.compose.ui.graphics.lerp(from, to, prog.value)
+    Box(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            drawRect(from)
+            val r = kotlin.math.hypot(size.width, size.height) * prog.value
+            drawCircle(to, r, Offset(size.width * .15f, size.height * .5f))
+        }
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+            val pad = (maxHeight / 2 - 48.dp).coerceAtLeast(80.dp)
+            if (groups.isEmpty()) Text(
+                "Give a note a tag and its canvas appears here, with all the notes that share it laid out as a collage.",
+                style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = .7f), modifier = Modifier.align(Alignment.Center).padding(32.dp),
+            ) else androidx.compose.foundation.lazy.LazyColumn(
+                state = ls,
+                // sharp at the top, melting into blur toward the bottom edge (Android 13 and up; older phones just show it sharp)
+                modifier = Modifier.fillMaxSize().blur(
+                    blurRadiusSpec = BlurRadiusSpec.verticalGradient(stops = listOf(BlurStop(0f, 0.dp), BlurStop(.6f, 0.dp), BlurStop(1f, 14.dp))),
+                    edgeTreatment = BlurredEdgeTreatment.Rectangle,
+                ),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = pad, bottom = pad),
+            ) {
+                itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
+                    val on = i == focus
+                    val a by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .28f, label = "tagfocus")
+                    val hue = hueOf(g.key)
+                    val accent = Color.hsl(hue, .8f, .38f)
+                    val flip = Color.hsl((hue + 180f) % 360f, .9f, .82f)
+                    val sub = g.value.lastOrNull { it.title.isNotBlank() }?.title.orEmpty()
+                    val covers = g.value.mapNotNull { it.cover?.path }.take(3)
+                    Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) }.padding(vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(Modifier.width(if (on) 52.dp else 0.dp)) { if (on) Text("\u2192", style = flexStyle(44.sp, wght = 400, lh = 1f), color = ink) }
+                            Text(g.key.lowercase(), style = flexStyle(54.sp, wght = if (on) 620 else 480, wdth = 96f, lh = 1f), color = ink.copy(alpha = a), modifier = Modifier.weight(1f))
+                        }
+                        Text(
+                            "NOTES: ${g.value.size}   PHOTOS: ${g.value.sumOf { it.photos.size }}",
+                            style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = ink.copy(alpha = a * .7f)),
+                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                        )
+                        androidx.compose.animation.AnimatedVisibility(on && covers.isNotEmpty()) { TagPhotos(covers, sub, accent, flip) }
                     }
-                    Text(
-                        "NOTES: ${g.value.size}   PHOTOS: ${g.value.sumOf { it.photos.size }}",
-                        style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = cs.onSurface.copy(alpha = a * .7f)),
-                        modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
-                    )
-                    androidx.compose.animation.AnimatedVisibility(on && covers.isNotEmpty()) { TagPhotos(covers, sub, accent, flip) }
                 }
             }
+            val fade = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bgNow, bgNow.copy(alpha = 0f)))
+            Box(Modifier.fillMaxWidth().height(150.dp).background(fade))
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(130.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bgNow.copy(alpha = 0f), bgNow.copy(alpha = .9f)))))
+            Text("Canvases", style = MaterialTheme.typography.titleMedium, color = ink, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 22.dp))
         }
-        val fade = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(cs.surface, cs.surface.copy(alpha = 0f)))
-        Box(Modifier.fillMaxWidth().height(150.dp).background(fade))
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(130.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(cs.surface.copy(alpha = 0f), cs.surface.copy(alpha = .9f)))))
-        Text("Canvases", style = MaterialTheme.typography.titleMedium, color = cs.onSurface, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 22.dp))
     }
 }
 

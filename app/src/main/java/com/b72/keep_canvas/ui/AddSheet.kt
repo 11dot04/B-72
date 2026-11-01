@@ -77,7 +77,7 @@ private class Opt(val id: String, val label: String, val icon: ImageVector)
 private val OPTS = listOf(
     Opt("photo", "Photos", Icons.Rounded.AddPhotoAlternate), Opt("list", "Checklist", Icons.Rounded.Checklist),
     Opt("link", "Link", Icons.Rounded.Link), Opt("quote", "Quote", Icons.Rounded.FormatQuote),
-    Opt("film", "Film", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
+    Opt("film", "Film & show", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
     Opt("track", "Track", Icons.Rounded.MusicNote), Opt("recipe", "Recipe", Icons.Rounded.LocalDining),
     Opt("audio", "Audio", Icons.Rounded.Mic),
 )
@@ -94,7 +94,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
     var results by remember { mutableStateOf<List<Cand>>(emptyList()) }
     var err by remember { mutableStateOf("") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(20)) { uris ->
-        if (uris.isNotEmpty()) scope.launch { repo.appendPhotos(noteId, uris) }
+        if (uris.isNotEmpty()) repo.addPhotos(noteId, uris)
         onClose()
     }
     fun go(id: String) {
@@ -151,9 +151,9 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                     else -> {
                         OutlinedTextField(
                             text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true,
-                            label = { Text("Search ${OPTS.first { it.id == m }.label.lowercase()}s") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            label = { Text(if (m == "film") "Search films and shows" else "Search ${OPTS.first { it.id == m }.label.lowercase()}s") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = {
-                                scope.launch { busy = true; results = when (m) { "film" -> searchFilms(text); "book" -> searchBooks(text); else -> searchTracks(text) }; busy = false; if (results.isEmpty()) err = "Nothing found" else err = "" }
+                                scope.launch { busy = true; results = when (m) { "film" -> com.b72.keep_canvas.data.searchFilmsAndShows(text); "book" -> searchBooks(text); else -> searchTracks(text) }; busy = false; if (results.isEmpty()) err = "Nothing found" else err = "" }
                             }),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                         )
@@ -165,7 +165,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                                 Row(
                                     Modifier.fillMaxWidth().clickable(onClickLabel = "Add") {
                                         val kind = when (m) { "film" -> Kind.Film; "book" -> Kind.Book; else -> Kind.Track }
-                                        scope.launch { repo.appendCand(noteId, kind, c) }; onClose()
+                                        repo.addCand(noteId, kind, c); onClose()
                                     }.padding(vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {

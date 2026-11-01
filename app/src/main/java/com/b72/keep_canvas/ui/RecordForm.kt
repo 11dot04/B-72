@@ -101,7 +101,7 @@ suspend fun Rec.search(): List<Cand> {
     val q = title.trim()
     if (q.isEmpty()) return emptyList()
     busy = true
-    return try { when (kind) { Kind.Film -> searchFilms(q); Kind.Book -> searchBooks(q); else -> searchTracks(q) } } finally { busy = false }
+    return try { when (kind) { Kind.Film -> com.b72.keep_canvas.data.searchFilmsAndShows(q); Kind.Book -> searchBooks(q); else -> searchTracks(q) } } finally { busy = false }
 }
 
 suspend fun Rec.applyCand(c: Cand, ctx: Context) {

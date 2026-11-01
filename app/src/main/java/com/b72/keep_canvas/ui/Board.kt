@@ -117,7 +117,7 @@ private fun hsl(h: Float, s: Float, l: Float) = Color(ColorUtils.HSLToColor(floa
 private fun hueGap(a: Float, b: Float): Float { val d = kotlin.math.abs(((a - b) % 360f + 360f) % 360f); return min(d, 360f - d) }
 
 /** Card colours for one canvas: the hues of its photos first, then spread-out hues so even one photo gives a lively board. */
-private fun swatchesFor(hues: List<Float>, dark: Boolean): List<Pair<Color, Color>> {
+private fun swatchesFor(hues: List<Float>): List<Pair<Color, Color>> {
     val all = ArrayList<Float>()
     for (h in hues) if (all.none { hueGap(it, h) < 28f }) all.add(h)
     for (d in listOf(150f, 40f, 210f, 90f, 300f, 330f)) {
@@ -125,53 +125,64 @@ private fun swatchesFor(hues: List<Float>, dark: Boolean): List<Pair<Color, Colo
         val h = hues[0] + d
         if (all.none { hueGap(it, h) < 35f }) all.add(h)
     }
-    return all.mapIndexed { i, h ->
-        val vivid = i % 3 == 1
-        if (!dark) (if (vivid) hsl(h, .78f, .72f) else hsl(h, .62f, .84f)) to hsl(h, .6f, .13f)
-        else (if (vivid) hsl(h, .7f, .66f) else hsl(h, .5f, .76f)) to hsl(h, .65f, .11f)
-    }
+    return all.mapIndexed { i, h -> swatchOf(h, i % 3 == 1) }
 }
 
-private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Color, Color>>) =
-    if (!dark) Tones(
-        bg = hsl(hue, .45f, .95f), onBg = hsl(hue, .3f, .12f),
-        primary = hsl(hue, .55f, .38f), onPrimary = hsl(hue, .4f, .97f),
-        pc = hsl(hue, .5f, .86f), onPc = hsl(hue, .4f, .14f),
-        sc = hsl(hue + 25f, .38f, .86f), onSc = hsl(hue + 25f, .4f, .14f),
-        tc = hsl(hue + 60f, .5f, .84f), onTc = hsl(hue + 60f, .5f, .13f),
-        error = error, swatches = sw,
-    ) else Tones(
-        bg = hsl(hue, .25f, .09f), onBg = hsl(hue, .2f, .92f),
-        primary = hsl(hue, .6f, .74f), onPrimary = hsl(hue, .5f, .14f),
-        pc = hsl(hue, .3f, .26f), onPc = hsl(hue, .4f, .9f),
-        sc = hsl(hue + 25f, .25f, .24f), onSc = hsl(hue + 25f, .35f, .9f),
-        tc = hsl(hue + 60f, .3f, .28f), onTc = hsl(hue + 60f, .4f, .9f),
-        error = error, swatches = sw,
-    )
+/** The canvas is always light and pastel, in dark mode too: it is one screen, and the colour is the point. */
+private fun tonesFor(hue: Float, error: Color, sw: List<Pair<Color, Color>>, blockHue: Map<String, Float>) = Tones(
+    bg = hsl(hue, .55f, .86f), onBg = hsl(hue, .45f, .1f),
+    primary = hsl(hue, .55f, .38f), onPrimary = hsl(hue, .4f, .97f),
+    pc = hsl(hue, .6f, .72f), onPc = hsl(hue, .5f, .12f),
+    sc = hsl(hue + 25f, .55f, .8f), onSc = hsl(hue + 25f, .5f, .12f),
+    tc = hsl(hue + 60f, .6f, .8f), onTc = hsl(hue + 60f, .5f, .12f),
+    error = error, swatches = sw, blockHue = blockHue,
+)
 
-/** The canvas takes its colours from the photos on it. */
+private suspend fun hueOfPhoto(path: String): Float? {
+    val bmp = Images.load(path, 160) ?: return null
+    val rgbs = withContext(Dispatchers.Default) {
+        val pal = Palette.from(bmp.asAndroidBitmap()).generate()
+        listOfNotNull(pal.vibrantSwatch, pal.lightVibrantSwatch, pal.dominantSwatch, pal.darkVibrantSwatch).map { it.rgb }
+    }
+    for (rgb in rgbs) {
+        val hh = FloatArray(3)
+        ColorUtils.colorToHSL(rgb, hh)
+        if (hh[1] > .18f) return hh[0]
+    }
+    return null
+}
+
+/** The canvas takes its colours from the photos on it, and each card from the photo of its own note. */
 @Composable
-private fun rememberTones(paths: List<String>): Tones {
-    val dark = isSystemInDarkTheme()
+private fun rememberTones(paths: List<String>, blockPhoto: Map<String, String>): Tones {
     val err = MaterialTheme.colorScheme.error
     val fallback = remember { FloatArray(3) }.also { ColorUtils.colorToHSL(MaterialTheme.colorScheme.primary.toArgb(), it) }[0]
     val hues by produceState(listOf(fallback), paths) {
         val found = ArrayList<Float>()
         for (p in paths.take(4)) {
-            val bmp = Images.load(p, 160) ?: continue
-            val rgbs = withContext(Dispatchers.Default) {
-                val pal = Palette.from(bmp.asAndroidBitmap()).generate()
-                listOfNotNull(pal.vibrantSwatch, pal.lightVibrantSwatch, pal.dominantSwatch, pal.darkVibrantSwatch).map { it.rgb }
-            }
-            for (rgb in rgbs) {
-                val hh = FloatArray(3)
-                ColorUtils.colorToHSL(rgb, hh)
-                if (hh[1] > .18f) found.add(hh[0])
-            }
-            if (found.isNotEmpty()) value = found.toList()
+            hueOfPhoto(p)?.let { found.add(it); value = found.toList() }
         }
     }
-    return remember(hues, dark, err) { tonesFor(hues[0], dark, err, swatchesFor(hues, dark)) }
+    val byPhoto by produceState<Map<String, Float>>(emptyMap(), blockPhoto) {
+        val out = HashMap<String, Float>()
+        for (p in blockPhoto.values.distinct()) hueOfPhoto(p)?.let { out[p] = it }
+        value = out
+    }
+    val blockHue = remember(byPhoto, blockPhoto) { blockPhoto.mapNotNull { (id, p) -> byPhoto[p]?.let { id to it } }.toMap() }
+    return remember(hues, err, blockHue) { tonesFor(hues[0], err, swatchesFor(hues), blockHue) }
+}
+
+/** Dark system-bar icons while a bright pastel screen is up, put back when it leaves. */
+@Composable
+fun LightStatusBar() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val w = (view.context as? android.app.Activity)?.window
+        val c = w?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        val was = c?.isAppearanceLightStatusBars
+        c?.isAppearanceLightStatusBars = true
+        onDispose { if (was != null) c.isAppearanceLightStatusBars = was }
+    }
 }
 
 /** A tag's canvas: every block of every note with the tag, laid out like a collage. Long-press a card to move it. */
@@ -181,8 +192,18 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     val photos = remember(notes, tag) {
         notes.filter { tag in it.tags }.flatMap { n -> n.blocks.mapNotNull { b -> b.path?.takeIf { b.kind == Kind.Photo || b.kind in com.b72.keep_canvas.data.RECORD_KINDS } } }.take(4)
     }
-    val t = rememberTones(photos)
+    val blockPhoto = remember(notes, tag) {
+        buildMap {
+            for (n in notes) {
+                if (tag !in n.tags) continue
+                val p = n.photos.firstOrNull()?.path ?: n.cover?.path ?: continue
+                for (b in n.blocks) put(b.id, p)
+            }
+        }
+    }
+    val t = rememberTones(photos, blockPhoto)
     val density = LocalDensity.current
+    LightStatusBar()
     val tm = rememberTextMeasurer()
     var retidy by remember { mutableIntStateOf(0) }
     var cards by remember { mutableStateOf<List<Card>>(emptyList()) }

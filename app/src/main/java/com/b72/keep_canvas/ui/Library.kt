@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -57,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Block
+import com.b72.keep_canvas.data.dbl
+import com.b72.keep_canvas.data.nums
 import com.b72.keep_canvas.data.Kind
 import com.b72.keep_canvas.data.Loaded
 import com.b72.keep_canvas.data.Note
@@ -73,12 +76,54 @@ private val SHELVES = listOf(
     Shelf("Links", Kind.Link, Icons.Rounded.Link),
 )
 
+private val SQUARE_SHAPES by lazy {
+    listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Cookie12Sided, MaterialShapes.Clover4Leaf, MaterialShapes.Gem, MaterialShapes.Bun, MaterialShapes.Flower, MaterialShapes.Cookie6Sided, MaterialShapes.Pentagon)
+}
+
+/** Each saved thing gets its own frame from the expressive set; the same one every time. Tall posters and covers keep to the tall shapes. */
 @Composable
-private fun coverShape(k: Kind, id: String): Shape = when (k) {
-    Kind.Track -> CircleShape
-    Kind.Recipe -> if (seedOf(id) % 2 == 0) MaterialShapes.Cookie9Sided.toShape() else MaterialShapes.Flower.toShape()
-    Kind.Link -> RoundedCornerShape(32.dp)
-    else -> RoundedCornerShape(28.dp)
+private fun coverShape(k: Kind, id: String): Shape {
+    val n = seedOf(id)
+    return when (k) {
+        Kind.Track -> CircleShape
+        Kind.Film, Kind.Book -> when (n % 4) {
+            0 -> MaterialShapes.Arch.toShape()
+            1 -> MaterialShapes.Oval.toShape()
+            2 -> RoundedCornerShape(topStart = 110.dp, topEnd = 110.dp, bottomStart = 28.dp, bottomEnd = 28.dp)
+            else -> RoundedCornerShape(36.dp)
+        }
+        Kind.Link -> if (n % 2 == 0) RoundedCornerShape(32.dp) else MaterialShapes.Bun.toShape()
+        else -> SQUARE_SHAPES[n % SQUARE_SHAPES.size].toShape()
+    }
+}
+
+/** Where to look in a photo so its subject sits in the middle of a square frame (the subject box is read from the cut-out). */
+private fun subjectAlign(b: Block): Alignment {
+    val box = b.nums("cutBox")?.takeIf { it.size >= 4 } ?: return Alignment.Center
+    val ar = b.dbl("cutAspect")?.toFloat()?.takeIf { it > 0f } ?: return Alignment.Center
+    val cx = ((box[0] + box[2]) / 2).toFloat(); val cy = ((box[1] + box[3]) / 2).toFloat()
+    fun f(c: Float, ratio: Float) = if (ratio == 1f) .5f else ((c * ratio - .5f) / (ratio - 1f)).coerceIn(0f, 1f)
+    return if (ar >= 1f) BiasAlignment(2 * f(cx, ar) - 1f, 0f) else BiasAlignment(0f, 2 * f(cy, 1f / ar) - 1f)
+}
+
+/** A record: dark grooves, the cover as the label, a spindle hole. */
+@Composable
+private fun Vinyl(b: Block, tint: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val c = center; val r = size.minDimension / 2
+            drawCircle(tint, r, c)
+            var rr = r * .96f
+            while (rr > r * .46f) { drawCircle(androidx.compose.ui.graphics.Color.White.copy(alpha = .06f), rr, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx())); rr -= 5.dp.toPx() }
+            // a glint across the grooves
+            drawArc(androidx.compose.ui.graphics.Color.White.copy(alpha = .12f), -50f, 28f, true, androidx.compose.ui.geometry.Offset(c.x - r * .94f, c.y - r * .94f), androidx.compose.ui.geometry.Size(r * 1.88f, r * 1.88f))
+            drawArc(androidx.compose.ui.graphics.Color.White.copy(alpha = .12f), 130f, 28f, true, androidx.compose.ui.geometry.Offset(c.x - r * .94f, c.y - r * .94f), androidx.compose.ui.geometry.Size(r * 1.88f, r * 1.88f))
+        }
+        Box(Modifier.fillMaxSize(.4f).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
+            if (b.path != null) PhotoImage(b.path, 400, false, tint, Modifier.fillMaxSize())
+        }
+        Box(Modifier.size(12.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF0E0D11)))
+    }
 }
 
 /** Everything that holds structured data (songs, books, films, recipes, links) lives here, one shelf per kind. */
@@ -99,7 +144,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
             info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }?.index ?: 0
         }
     }
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(top = 16.dp)) {
+    Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().padding(top = 16.dp)) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
             Text("library", style = flexStyle(56.sp, wght = 480, wdth = 96f, lh = .95f), color = cs.onSurface)
             Spacer(Modifier.width(10.dp))
@@ -137,12 +182,16 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
                         val sc by animateFloatAsState(if (i == focus) 1f else .84f, label = "shelf")
                         val b = p.second
                         val h = when (b.kind) { Kind.Film, Kind.Book -> 320.dp; else -> 220.dp }
-                        Box(
+                        val vinyl = b.kind == Kind.Track && seedOf(b.id) % 3 != 0
+                        if (vinyl) Vinyl(
+                            b, if (seedOf(b.id) % 3 == 1) androidx.compose.ui.graphics.Color(0xFF15141A) else androidx.compose.ui.graphics.Color(0xFF3A1F2B),
+                            Modifier.width(220.dp).height(h).scale(sc).clickable(onClickLabel = "Open") { onOpen(p.first.id) },
+                        ) else Box(
                             Modifier.width(220.dp).height(h).scale(sc).clip(coverShape(b.kind, b.id)).background(cs.primaryContainer)
                                 .clickable(onClickLabel = "Open") { onOpen(p.first.id) },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize())
+                            if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize(), if (b.kind == Kind.Recipe) subjectAlign(b) else Alignment.Center)
                             else Icon(SHELVES[shelf].icon, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
                             if (b.kind == Kind.Track) Box(Modifier.size(34.dp).clip(CircleShape).background(cs.surface))
                         }
