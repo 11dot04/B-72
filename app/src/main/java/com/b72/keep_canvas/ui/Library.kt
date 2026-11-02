@@ -49,6 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Shape
@@ -134,6 +137,98 @@ private fun Vinyl(b: Block, bold: Boolean, modifier: Modifier) {
     }
 }
 
+private fun lerpDp(a: androidx.compose.ui.unit.Dp, b: androidx.compose.ui.unit.Dp, t: Float) = a + (b - a) * t
+
+/** A book on the shelf is its spine until it is the one in the middle, when it turns to show its cover; it turns back as it is set aside. */
+@Composable
+private fun BookItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val hue by androidx.compose.runtime.produceState(seedOf(b.id) % 360f, b.path) { b.path?.let { pa -> hueOfPhoto(pa)?.let { value = it } } }
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val spine = androidx.compose.ui.graphics.Color.hsl(((hue % 360f) + 360f) % 360f, .55f, if (dark) .3f else .42f)
+    val paper = androidx.compose.ui.graphics.Color.hsl(((hue % 360f) + 360f) % 360f, .7f, .93f)
+    Box(
+        Modifier.width(lerpDp(62.dp, 220.dp, p)).height(h).graphicsLayer {
+            cameraDistance = 16f * density
+            // the spine turns edge-on, the cover comes round from the other side
+            rotationY = if (p < .5f) -p * 180f else (1f - p) * 180f
+        }.clickable(onClickLabel = "Open", onClick = onClick),
+    ) {
+        if (p < .5f) Box(Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 12.dp, bottomEnd = 12.dp)).background(spine), contentAlignment = Alignment.Center) {
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 22.dp).width(34.dp).height(3.dp).background(paper.copy(alpha = .8f)))
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 30.dp).width(34.dp).height(1.5.dp).background(paper.copy(alpha = .5f)))
+            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp).size(14.dp).clip(CircleShape).background(paper.copy(alpha = .85f)))
+            Text(
+                b.title.ifBlank { "Untitled" }.uppercase(), maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+                style = flexStyle(19.sp, wght = 640, wdth = 80f, lh = 1f), color = paper,
+                modifier = Modifier.wrapContentSize(unbounded = true).width(h - 110.dp).rotate(90f),
+            )
+        } else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 24.dp, bottomEnd = 24.dp)).background(spine)) {
+            if (b.path != null) PhotoImage(b.path, 700, false, spine, Modifier.fillMaxSize())
+            else Icon(Icons.Rounded.MenuBook, null, Modifier.align(Alignment.Center).size(56.dp), tint = paper)
+        }
+    }
+}
+
+/** A film waits as a frame of film stock, sprocket holes down both edges, and opens out to its whole poster in the middle. */
+@Composable
+private fun FilmItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        Modifier.width(lerpDp(104.dp, 220.dp, p)).height(h).clip(RoundedCornerShape(lerpDp(8.dp, 30.dp, p))).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = onClick),
+    ) {
+        if (b.path != null) PhotoImage(b.path, 700, false, cs.primary, Modifier.fillMaxSize()) else Icon(Icons.Rounded.Movie, null, Modifier.align(Alignment.Center).size(48.dp), tint = cs.onPrimaryContainer)
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val a = (1f - p).coerceIn(0f, 1f)
+            if (a < .02f) return@Canvas
+            val band = 16.dp.toPx()
+            drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = .78f * a), androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Size(band, size.height))
+            drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = .78f * a), androidx.compose.ui.geometry.Offset(size.width - band, 0f), androidx.compose.ui.geometry.Size(band, size.height))
+            var y = 10.dp.toPx()
+            while (y < size.height - 10.dp.toPx()) {
+                val hole = androidx.compose.ui.graphics.Color.White.copy(alpha = .85f * a)
+                drawRoundRect(hole, androidx.compose.ui.geometry.Offset(4.dp.toPx(), y), androidx.compose.ui.geometry.Size(8.dp.toPx(), 11.dp.toPx()), androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+                drawRoundRect(hole, androidx.compose.ui.geometry.Offset(size.width - 12.dp.toPx(), y), androidx.compose.ui.geometry.Size(8.dp.toPx(), 11.dp.toPx()), androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+                y += 24.dp.toPx()
+            }
+        }
+    }
+}
+
+/** A record keeps spinning while it is the one in the middle, and settles to a stop when it is set aside. */
+@Composable
+private fun TrackItem(b: Block, look: Int, focused: Boolean, p: Float, h: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val angle = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(focused) {
+        if (focused) {
+            while (true) { angle.animateTo(angle.value + 360f, androidx.compose.animation.core.tween(7000, easing = androidx.compose.animation.core.LinearEasing)) }
+        } else {
+            val rest = kotlin.math.ceil(angle.value / 360f) * 360f + 360f
+            angle.animateTo(rest, androidx.compose.animation.core.spring(1f, 40f))
+            angle.snapTo(0f)
+        }
+    }
+    val m = Modifier.width(220.dp).height(h).graphicsLayer { val k = .8f + .2f * p; scaleX = k; scaleY = k; rotationZ = angle.value }
+    if (look == 0) Box(m.clip(CircleShape).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = onClick), contentAlignment = Alignment.Center) {
+        if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize()) else Icon(Icons.Rounded.MusicNote, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
+        Box(Modifier.size(34.dp).clip(CircleShape).background(cs.surface))
+    } else Vinyl(b, look == 1, m.clickable(onClickLabel = "Open", onClick = onClick))
+}
+
+/** A dish sits as a plain round plate and, in the middle, morphs into its own expressive shape. */
+@Composable
+private fun RecipeItem(b: Block, slot: Int, p: Float, h: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val morph = androidx.compose.runtime.remember(slot) { androidx.graphics.shapes.Morph(MaterialShapes.Circle, SQUARE_SHAPES[slot % SQUARE_SHAPES.size]) }
+    Box(
+        Modifier.width(220.dp).height(h).graphicsLayer { val k = .78f + .22f * p; scaleX = k; scaleY = k }
+            .clip(morph.toShape(p.coerceIn(0f, 1f))).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize(), subjectAlign(b)) else Icon(Icons.Rounded.Restaurant, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
+    }
+}
+
 /** Everything that holds structured data (songs, books, films, recipes, links) lives here, one shelf per kind. */
 @Composable
 fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
@@ -149,7 +244,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
         derivedStateOf {
             val info = ls.layoutInfo
             val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2
-            info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }?.index ?: 0
+            info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset - info.beforeContentPadding) }?.index ?: 0
         }
     }
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().padding(top = 16.dp)) {
@@ -183,22 +278,26 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
                     contentPadding = PaddingValues(horizontal = side), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
                 ) {
                     itemsIndexed(items, key = { _, p -> p.second.id }) { i, p ->
-                        val sc by animateFloatAsState(if (i == focus) 1f else .84f, label = "shelf")
                         val b = p.second
+                        val focused = i == focus
+                        // 0 when it is set aside, 1 when it is the one in the middle; every shelf plays its own animation off this
+                        val pr by animateFloatAsState(if (focused) 1f else 0f, androidx.compose.animation.core.spring(.7f, 200f), label = "shelf")
                         val h = when (b.kind) { Kind.Film, Kind.Book -> 320.dp; else -> 220.dp }
                         val slot = items.size - 1 - i // stable as newer items are added in front, and neighbours always differ
-                        val look = if (b.kind == Kind.Track) slot % 3 else -1 // 0 CD, 1 and 2 records in the cover's two tones
-                        if (look == 1 || look == 2) Vinyl(
-                            b, look == 1,
-                            Modifier.width(220.dp).height(h).scale(sc).clickable(onClickLabel = "Open") { onOpen(p.first.id) },
-                        ) else Box(
-                            Modifier.width(220.dp).height(h).scale(sc).clip(coverShape(b.kind, slot)).background(cs.primaryContainer)
-                                .clickable(onClickLabel = "Open") { onOpen(p.first.id) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize(), if (b.kind == Kind.Recipe) subjectAlign(b) else Alignment.Center)
-                            else Icon(SHELVES[shelf].icon, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
-                            if (b.kind == Kind.Track) Box(Modifier.size(34.dp).clip(CircleShape).background(cs.surface))
+                        val go = { onOpen(p.first.id) }
+                        when (b.kind) {
+                            Kind.Book -> BookItem(b, pr, h, go)
+                            Kind.Film -> FilmItem(b, pr, h, go)
+                            Kind.Track -> TrackItem(b, slot % 3, focused, pr, h, go)
+                            Kind.Recipe -> RecipeItem(b, slot, pr, h, go)
+                            else -> Box(
+                                Modifier.width(220.dp).height(h).graphicsLayer { val k = .84f + .16f * pr; scaleX = k; scaleY = k; rotationZ = (1f - pr) * (if (i % 2 == 0) -5f else 5f) }
+                                    .clip(RoundedCornerShape(32.dp)).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = go),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize())
+                                else Icon(SHELVES[shelf].icon, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
+                            }
                         }
                     }
                 }

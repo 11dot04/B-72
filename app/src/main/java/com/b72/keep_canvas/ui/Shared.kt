@@ -33,7 +33,13 @@ fun Modifier.shared(ctx: SharedCtx, key: String, text: Boolean = false): Modifie
                 boundsTransform = bounds,
             )
         } else {
-            sharedElement(rememberSharedContentState(key), ctx.av, boundsTransform = bounds)
+            // the picture is re-laid-out at every frame's bounds, so it stays cropped to the frame all the way (no flash of the uncropped image)
+            sharedBounds(
+                rememberSharedContentState(key), ctx.av,
+                enter = fadeIn(), exit = fadeOut(),
+                boundsTransform = bounds,
+                resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+            )
         }
     }
 }

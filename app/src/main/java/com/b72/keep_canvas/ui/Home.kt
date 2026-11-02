@@ -158,7 +158,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
   val shown = remember(loaded?.library, q, filter, sort) {
     // notes that are only a song, book, film, recipe or link live in the Library tab (a search still finds them)
-    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() && !it.isLibrary || q.isNotBlank() && matchesQuery(texts[it.id].orEmpty(), q)) }
+    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) }
     when (sort) {
       1 -> l
       2 -> l.sortedByDescending { it.edited }

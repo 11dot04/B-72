@@ -117,13 +117,36 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 Notes("YOUR THOUGHTS", b.body, fg)
             }
             Kind.Track -> {
-                if (has) PhotoImage(b.path!!, 900, false, pal.primary, Modifier.width(w * .8f).aspectRatio(1f).clip(RoundedCornerShape(28.dp)))
-                if (showTitle && b.title.isNotEmpty()) Text(b.title, style = flexStyle(30.sp, wght = 760, rond = 30f, lh = 1.05f), color = fg, modifier = Modifier.padding(top = 14.dp))
-                if (v("artist").isNotEmpty()) Text(v("artist"), style = flexStyle(20.sp, wght = 500), color = fg.copy(alpha = .86f), modifier = Modifier.padding(top = 4.dp))
-                FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (v("album").isNotEmpty()) InfoChip(Icons.Rounded.Album, v("album"), fg)
-                    if (v("year").isNotEmpty()) InfoChip(Icons.Rounded.CalendarToday, v("year"), fg)
-                    if (v("genre").isNotEmpty()) InfoChip(Icons.Rounded.GraphicEq, v("genre"), fg)
+                // after the early Material "top songs" concept: a colour block from the cover, its picture in two tones, a huge condensed title, small mono labels
+                val hue by androidx.compose.runtime.produceState(seedOf(b.id) % 360f, b.path) { b.path?.let { pa -> hueOfPhoto(pa)?.let { value = it } } }
+                val h0 = ((hue % 360f) + 360f) % 360f
+                val dark = androidx.compose.foundation.isSystemInDarkTheme()
+                val block = androidx.compose.ui.graphics.Color.hsl(h0, if (dark) .4f else .45f, if (dark) .22f else .78f)
+                val ink = androidx.compose.ui.graphics.Color.hsl(h0, .5f, if (dark) .92f else .1f)
+                val deep = androidx.compose.ui.graphics.Color.hsl(h0, .6f, if (dark) .12f else .2f)
+                val light = androidx.compose.ui.graphics.Color.hsl(h0, .6f, if (dark) .75f else .9f)
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(block).padding(18.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("TOP", style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
+                        Text("SONGS", style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
+                    }
+                    if (has) {
+                        val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, b.path) { value = com.b72.keep_canvas.data.Images.load(b.path!!, 800) }
+                        img?.let {
+                            androidx.compose.foundation.Image(
+                                it, null, Modifier.padding(top = 12.dp).fillMaxWidth().aspectRatio(1.15f).clip(RoundedCornerShape(22.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(run {
+                                    val lr = .2126f; val lg = .7152f; val lb = .0722f
+                                    fun row(i: Float, p: Float) = floatArrayOf((p - i) * lr, (p - i) * lg, (p - i) * lb, 0f, i * 255f)
+                                    row(deep.red, light.red) + row(deep.green, light.green) + row(deep.blue, light.blue) + floatArrayOf(0f, 0f, 0f, 1f, 0f)
+                                })),
+                            )
+                        }
+                    }
+                    if (showTitle && b.title.isNotEmpty()) Text(b.title.uppercase(), style = flexStyle(46.sp, wght = 700, wdth = 45f, lh = .95f), color = ink, modifier = Modifier.padding(top = 14.dp))
+                    if (v("artist").isNotEmpty()) Text(v("artist").uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .85f), modifier = Modifier.padding(top = 6.dp))
+                    Text(listOf(v("album"), v("year"), v("genre")).filter { it.isNotEmpty() }.joinToString("  ·  ").uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = ink.copy(alpha = .65f), modifier = Modifier.padding(top = 4.dp))
                 }
                 if (v("url").startsWith("http")) {
                     val uri = LocalUriHandler.current

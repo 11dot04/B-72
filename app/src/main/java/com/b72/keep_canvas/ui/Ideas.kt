@@ -55,6 +55,7 @@ private fun iconFor(kind: String) = when (kind) {
     "care" -> Icons.Rounded.Eco
     "review" -> Icons.Rounded.Search
     "similar" -> Icons.Rounded.Palette
+    "tip" -> Icons.Rounded.AutoAwesome
     "tag" -> Icons.Rounded.Tag
     else -> Icons.Rounded.AutoAwesome
 }
@@ -73,7 +74,7 @@ fun IdeasStrip(ideas: List<Idea>, fg: Color, onAdd: (Idea) -> Unit, onDismiss: (
         Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for ((n, i) in ideas.withIndex()) {
                 val shape = listOf(MaterialShapes.Cookie6Sided, MaterialShapes.Flower, MaterialShapes.Gem, MaterialShapes.Clover4Leaf, MaterialShapes.Bun)[n % 5].toShape()
-                Column(Modifier.width(250.dp).clip(RoundedCornerShape(28.dp)).background(if (n % 2 == 0) cs.secondaryContainer else cs.tertiaryContainer).padding(16.dp)) {
+                Column(Modifier.width(272.dp).clip(RoundedCornerShape(28.dp)).background(if (n % 2 == 0) cs.secondaryContainer else cs.tertiaryContainer).padding(16.dp)) {
                     val ink = if (n % 2 == 0) cs.onSecondaryContainer else cs.onTertiaryContainer
                     Row(verticalAlignment = Alignment.Top) {
                         Box(Modifier.size(40.dp).clip(shape).background(ink.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
@@ -83,13 +84,14 @@ fun IdeasStrip(ideas: List<Idea>, fg: Color, onAdd: (Idea) -> Unit, onDismiss: (
                         IconButton({ onDismiss(i) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, "Not interested", Modifier.size(18.dp), tint = ink.copy(alpha = .7f)) }
                     }
                     Text(i.title, style = MaterialTheme.typography.titleMedium, color = ink, modifier = Modifier.padding(top = 10.dp), maxLines = 2)
-                    if (i.detail.isNotBlank()) Text(i.detail, style = MaterialTheme.typography.bodySmall, color = ink.copy(alpha = .8f), modifier = Modifier.padding(top = 2.dp), maxLines = 2)
+                    val said = i.body.ifBlank { i.detail }
+                    if (said.isNotBlank()) Text(said, style = MaterialTheme.typography.bodyMedium, color = ink.copy(alpha = .86f), modifier = Modifier.padding(top = 4.dp), maxLines = 5)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (i.url.isNotBlank()) FilledTonalButton({ runCatching { uri.openUri(i.url) } }) {
                             Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Open")
                         }
-                        TextButton({ onAdd(i) }) { Text(if (i.kind == "tag") "Add tag" else "Add to note") }
+                        TextButton({ onAdd(i) }) { Text(if (i.kind == "tag") "Add tag" else if (i.url.isBlank()) "Keep in note" else "Add link") }
                     }
                 }
             }

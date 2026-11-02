@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -231,11 +232,13 @@ fun TripCard(t: Trip, bg: Color, ink: Color, accent: Color, modifier: Modifier =
 
 /** The assistant's one-line summary and its suggested tags (tap one to add it). */
 @Composable
-fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, modifier: Modifier = Modifier) {
+fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, modifier: Modifier = Modifier, onTitle: ((String) -> Unit)? = null) {
     val sum = note.summary()
     val tags = note.suggestedTags()
-    if (sum.isEmpty() && tags.isEmpty()) return
+    val name = if (note.title.isBlank() && onTitle != null) note.blocks.firstNotNullOfOrNull { b -> (b.data["aiTitle"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.length >= 3 } }.orEmpty() else ""
+    if (sum.isEmpty() && tags.isEmpty() && name.isEmpty()) return
     Column(modifier.fillMaxWidth()) {
+        if (name.isNotEmpty()) AssistChip(onClick = { onTitle?.invoke(name) }, label = { Text("Title it: $name") }, modifier = Modifier.padding(bottom = 10.dp))
         if (sum.isNotEmpty()) Text(sum, style = TextStyle(fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontStyle = FontStyle.Italic, color = fg.copy(alpha = .85f)), modifier = Modifier.padding(bottom = 10.dp))
         if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (t in tags) AssistChip(onClick = { onAddTag(t) }, label = { Text("+ $t") })
@@ -345,7 +348,7 @@ fun EditSplit(
 
 /** The three-dot menu: when the note was made and last changed, what is in it, and (kept apart, in red) delete. */
 @Composable
-fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit) {
+fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit, onParts: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val now = System.currentTimeMillis()
     val fmt = DateTimeFormatter.ofPattern("EEE d MMM yyyy · HH:mm")
@@ -390,6 +393,7 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
             Spacer(Modifier.height(4.dp))
             val acts = buildList {
                 add(Triple(Icons.Rounded.Share, "Share as text", { onDismiss(); onShare() }))
+                if (onParts != null) add(Triple(Icons.Rounded.Layers, "Remove parts of this note", { onDismiss(); onParts() }))
                 for (t in note.tags) add(Triple(Icons.Rounded.Dashboard, "Open the $t canvas", { onDismiss(); onTag(t) }))
             }
             acts.forEachIndexed { i, (icon, label, go) ->

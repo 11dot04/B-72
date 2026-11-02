@@ -51,6 +51,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.NotificationAdd
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -142,10 +146,6 @@ fun NotePage(
     var adding by remember { mutableStateOf(addFirst != null) }
     var tagging by remember { mutableStateOf(false) }
 
-    // The width axis runs from condensed to the fit. The layout is measured once; only the typeface step changes.
-    val flex = remember { Animatable(0f) }
-    val slow = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
-    LaunchedEffect(note.id) { flex.animateTo(1f, slow) }
 
     val ls = rememberLazyListState()
     // The big title scrolls away like any other content. The bar's own title takes over once the big one has slid under the
@@ -214,7 +214,6 @@ fun NotePage(
                     title, pal.fg, note.id,
                     modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
-                    flex = { flex.value },
                 )
             }
             if (headerMode) item(key = "header") {
@@ -285,11 +284,6 @@ fun NotePage(
                     leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp)) }, modifier = Modifier.padding(bottom = 14.dp),
                 )
             }
-            item(key = "ai") { AiStrip(note, pal.fg, pal.primary, onAddTag, Modifier.padding(bottom = 18.dp)) }
-            if (repo != null) item(key = "ideas") {
-                val ideas = remember(note.blocks, note.tags) { note.ideas() }
-                IdeasStrip(ideas, pal.fg, { repo.addIdea(note.id, it) }, { repo.dismissIdea(note.id, it) }, Modifier.padding(bottom = 18.dp))
-            }
             if (note.remind > System.currentTimeMillis()) item {
                 val whenText = Instant.ofEpochMilli(note.remind).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
                 androidx.compose.material3.AssistChip(
@@ -299,29 +293,46 @@ fun NotePage(
                     modifier = Modifier.padding(bottom = 18.dp),
                 )
             }
-            if (photos.isNotEmpty()) item {
+            if (photos.isNotEmpty()) item(key = "photo-tools") {
                 val pb = photos[0]
                 val cut = photos.size == 1 && pb.cutPath() != null
                 val on = cut && canPopOut(pb)
-                Column(Modifier.padding(bottom = 18.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        androidx.compose.material3.ToggleButton(checked = tint, onCheckedChange = { tint = it }) {
-                            Icon(Icons.Rounded.Contrast, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Duotone")
-                        }
-                        if (cut) androidx.compose.material3.ToggleButton(checked = on, onCheckedChange = { onSetData(pb.id, "pop", if (it) 1 else 0) }) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Pop out")
-                        }
+                var menu by remember { mutableStateOf(false) }
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), horizontalAlignment = Alignment.End) {
+                    androidx.compose.material3.SplitButtonLayout(
+                        leadingButton = {
+                            androidx.compose.material3.SplitButtonDefaults.TonalLeadingButton(onClick = { tint = !tint }) {
+                                Icon(Icons.Rounded.Contrast, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (tint) "Duotone on" else "Duotone")
+                            }
+                        },
+                        trailingButton = {
+                            androidx.compose.material3.SplitButtonDefaults.TonalTrailingButton(checked = menu, onCheckedChange = { menu = it }) {
+                                Icon(Icons.Rounded.KeyboardArrowDown, "More photo options")
+                            }
+                        },
+                    )
+                    androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                        if (cut) androidx.compose.material3.DropdownMenuItem(
+                            { Text(if (on) "Pop out: on" else "Pop out the subject") },
+                            { menu = false; onSetData(pb.id, "pop", if (on) 0 else 1) },
+                            leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) },
+                        )
+                        androidx.compose.material3.DropdownMenuItem({ Text("Duotone " + if (tint) "off" else "on") }, { menu = false; tint = !tint }, leadingIcon = { Icon(Icons.Rounded.Contrast, null) })
+                        if (repo != null) androidx.compose.material3.DropdownMenuItem({ Text("Remove photo") }, { menu = false; repo.removeBlock(note.id, pb.id) }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
                     }
                     val why = if (cut) popWhy(pb) else ""
                     if (cut && !on && why.isNotEmpty() && pb.dbl("pop") == null) Text(
                         "Left flat automatically: $why",
-                        style = MaterialTheme.typography.labelSmall, color = pal.fg.copy(alpha = .6f), modifier = Modifier.padding(top = 6.dp, start = 4.dp),
+                        style = MaterialTheme.typography.labelSmall, color = pal.fg.copy(alpha = .6f), modifier = Modifier.padding(top = 6.dp, end = 4.dp),
                     )
                 }
+            }
+            item(key = "ai") { AiStrip(note, pal.fg, pal.primary, onAddTag, Modifier.padding(bottom = 18.dp), onTitle = onTitle) }
+            if (repo != null) item(key = "ideas") {
+                val ideas = remember(note.blocks, note.tags) { note.ideas() }
+                IdeasStrip(ideas, pal.fg, { repo.addIdea(note.id, it) }, { repo.dismissIdea(note.id, it) }, Modifier.padding(bottom = 18.dp))
             }
             for (b in note.blocks) {
                 if (b.kind == Kind.Audio) item(key = "au-${b.id}") { AudioPlayer(b, pal, { repo?.removeBlock(note.id, b.id) }, Modifier.padding(bottom = 14.dp)) }
@@ -358,6 +369,10 @@ fun NotePage(
             },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             actions = {
+                if (repo != null) {
+                    IconButton(onClick = { repo.undo(note.id) }, enabled = repo.canUndo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo") }
+                    IconButton(onClick = { repo.redo(note.id) }, enabled = repo.canRedo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo") }
+                }
                 note.tags.firstOrNull()?.let { t ->
                     Text(
                         t, style = MaterialTheme.typography.labelLarge,
@@ -375,6 +390,8 @@ fun NotePage(
         // M3 Expressive floating toolbar: the main action is wide and labelled, the rest are icons
         val ctx = LocalContext.current
         var askDelete by remember { mutableStateOf(false) }
+        var parts by remember { mutableStateOf(false) }
+        if (parts && repo != null) PartsSheet(note, { repo.removeBlock(note.id, it.id) }) { parts = false }
         var pickDate by remember { mutableStateOf(false) }
         var pickTime by remember { mutableStateOf<java.time.LocalDate?>(null) }
         val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
@@ -407,7 +424,7 @@ fun NotePage(
             trailingContent = {
                 Box {
                     IconButton(onClick = { details = true }) { Icon(Icons.Rounded.MoreVert, "Details and more") }
-                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag)
+                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag, onParts = if (repo != null) ({ parts = true }) else null)
                 }
             },
             content = {
