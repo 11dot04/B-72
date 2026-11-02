@@ -60,9 +60,37 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     fun note(id: String): Note? = loaded?.library?.notes?.firstOrNull { it.id == id }
 
+    // ---- undo and redo: what each note looked like before its last edits (kept while the app runs)
+    private class Hist { val undo = ArrayList<Note>(); val redo = ArrayList<Note>(); var at = 0L }
+    private val hist = HashMap<String, Hist>()
+    private var histTick by androidx.compose.runtime.mutableIntStateOf(0)
+    private var restoring = false
+    private fun Note.undoSig(): List<Any?> = contentSig() + listOf(layout, title, blocks.map { listOf(it.field("lyric"), it.field("pop"), it.id) })
+    fun canUndo(id: String): Boolean { histTick; return hist[id]?.undo?.isNotEmpty() == true }
+    fun canRedo(id: String): Boolean { histTick; return hist[id]?.redo?.isNotEmpty() == true }
+    fun undo(id: String) {
+        val h = hist[id] ?: return
+        val cur = note(id) ?: return
+        val prev = h.undo.removeLastOrNull() ?: return
+        h.redo.add(cur); restoring = true; upsert(prev); restoring = false; h.at = 0L; histTick++
+    }
+    fun redo(id: String) {
+        val h = hist[id] ?: return
+        val cur = note(id) ?: return
+        val next = h.redo.removeLastOrNull() ?: return
+        h.undo.add(cur); restoring = true; upsert(next); restoring = false; h.at = 0L; histTick++
+    }
+
     fun upsert(n0: Note) {
         val l = loaded?.library ?: return
         val old = l.notes.firstOrNull { it.id == n0.id }
+        if (old != null && !restoring && old.undoSig() != n0.undoSig()) {
+            val h = hist.getOrPut(n0.id) { Hist() }
+            val now = System.currentTimeMillis()
+            // a burst of typing is one step
+            if (h.undo.isEmpty() || now - h.at > 900) { h.undo.add(old); if (h.undo.size > 60) h.undo.removeAt(0) }
+            h.at = now; h.redo.clear(); histTick++
+        }
         val n = if (old != null && old.contentSig() != n0.contentSig()) n0.copy(edited = System.currentTimeMillis()) else n0
         val notes = if (old != null) l.notes.map { if (it.id == n.id) n else it } else l.notes + n
         commit(l.copy(notes = notes))
@@ -115,7 +143,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                 if (!tried) { tried = true; session = withContext(Dispatchers.Default) { Assistant.open(ctx) } }
                 session?.let { sn ->
                     val found = withContext(Dispatchers.Default) { Assistant.ideas(sn, cur.labels().map { it.first }, note(nid)?.title.orEmpty(), cur.field("ocr")) }
-                    d = d + ("aiIdeas" to ideasToData(found)) + ("ideasV" to JsonPrimitive(1))
+                    d = d + ("aiIdeas" to ideasToData(found)) + ("ideasV" to JsonPrimitive(IDEAS_V))
                 }
             }
             var trip: Trip? = cur.trip()
@@ -241,6 +269,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     fun addIdea(noteId: String, i: Idea) {
         val n = note(noteId) ?: return
         if (i.kind == "tag") { upsert(n.copy(tags = (n.tags + i.tag).distinct())); return }
+        if (i.url.isBlank()) { upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "tip${System.nanoTime()}", body = i.title + "\n" + i.body))); return }
         val id = "l${System.nanoTime()}"
         upsert(n.copy(blocks = n.blocks + newBlock(Kind.Link, id, title = i.title, body = i.url)))
     }

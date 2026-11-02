@@ -51,57 +51,61 @@ object Guard {
     }
 }
 
-/** One thing worth doing with what a photo shows. [kind]: shop, style, recipe, care, review, similar (open a search), tag (add a tag) or ai (the local model's own). */
-class Idea(val id: String, val blockId: String, val kind: String, val title: String, val detail: String, val url: String, val tag: String = "")
+/** One thing worth doing with what a photo shows. [kind]: shop, recipe, care (open a search), tag (add a tag), tip (the assistant's own answer, no search) or ai (the assistant's, with a search to open). */
+class Idea(val id: String, val blockId: String, val kind: String, val title: String, val detail: String, val url: String, val tag: String = "", val body: String = "")
 
 private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
 private fun shop(q: String) = "https://www.google.com/search?tbm=shop&q=${enc(q)}"
 private fun web(q: String) = "https://www.google.com/search?q=${enc(q)}"
-private fun pins(q: String) = "https://www.pinterest.com/search/pins/?q=${enc(q)}"
 
-private val HOME = listOf("furniture", "chair", "table", "lamp", "couch", "sofa", "shelf", "bookcase", "desk", "bed", "lighting", "interior design", "curtain", "rug", "vase", "light fixture", "lampshade", "chandelier", "mirror", "armchair", "cabinetry", "stool", "bench", "home decor")
-private val WEAR = listOf("dress", "clothing", "shirt", "t-shirt", "jeans", "jacket", "coat", "footwear", "shoe", "sneaker", "boot", "handbag", "bag", "sunglasses", "hat", "scarf", "fashion", "skirt", "trousers", "suit", "outerwear", "watch", "jewellery", "jewelry", "necklace", "earring", "sweater", "hoodie", "denim")
-private val FOOD = listOf("food", "dish", "cuisine", "meal", "dessert", "cake", "pizza", "salad", "fruit", "vegetable", "drink", "coffee", "baking", "sandwich", "soup", "burger", "bread", "ingredient", "pasta", "cookie", "curry", "breakfast")
-private val PLANT = listOf("plant", "flower", "houseplant", "tree", "succulent", "leaf", "garden", "flowerpot", "petal", "herb")
+private val HOME = listOf("furniture", "chair", "table", "lamp", "couch", "sofa", "shelf", "bookcase", "desk", "bed", "lighting", "curtain", "rug", "vase", "chandelier", "mirror", "armchair", "cabinet", "stool", "bench", "decor", "rack", "stand")
+private val WEAR = listOf("dress", "clothing", "shirt", "jeans", "jacket", "coat", "footwear", "shoe", "sneaker", "boot", "handbag", "bag", "sunglasses", "hat", "scarf", "skirt", "trousers", "suit", "watch", "jewellery", "jewelry", "necklace", "earring", "sweater", "hoodie", "denim")
+private val FOOD = listOf("food", "dish", "cuisine", "meal", "dessert", "cake", "pizza", "salad", "fruit", "vegetable", "drink", "coffee", "baking", "sandwich", "soup", "burger", "bread", "pasta", "cookie", "curry", "breakfast")
+private val PLANT = listOf("plant", "flower", "houseplant", "succulent", "flowerpot", "petal", "herb")
 private val GADGET = listOf("electronics", "gadget", "laptop", "phone", "camera", "headphones", "speaker", "keyboard", "computer", "monitor", "tablet", "smartwatch", "console")
-private val ART = listOf("poster", "art", "illustration", "graphic design", "painting", "typography", "drawing", "pattern", "visual arts")
 
-private fun pick(names: List<Pair<String, Float>>, keys: List<String>): String? =
-    names.firstOrNull { (n, _) -> keys.any { n.lowercase() == it || n.lowercase().contains(it) } }?.first
+private fun has(words: List<String>, keys: List<String>) = words.any { w -> keys.any { w == it || w.startsWith(it) } }
 
-/** The suggestions a photo's labels point to; none at all when [Guard] says the photo should be left alone. */
-fun Block.photoIdeas(): List<Idea> {
+/** The name the person gave the thing: the note's title, else the first short line of text read from the photo. */
+fun subjectOf(noteTitle: String, ocr: String): String {
+    if (noteTitle.isNotBlank()) return noteTitle.trim().take(60)
+    val line = ocr.lines().map { it.trim() }.firstOrNull { l -> l.count { it.isLetter() } >= 4 && l.split(' ').size in 1..6 } ?: return ""
+    return line.take(60)
+}
+
+/**
+ * Search suggestions for something that can only be answered on the web (where to buy it, what it costs, how to cook it when no assistant is
+ * installed). They name the thing the way the person did: the title or the words on the photo come first, the photo's labels only when there is neither.
+ */
+fun Block.photoIdeas(subject: String): List<Idea> {
     if (kind != Kind.Photo || !Guard.ok(this)) return emptyList()
-    val ls = labels().filter { it.second >= .6f }
-    if (ls.isEmpty()) return emptyList()
+    val ls = labels().filter { it.second >= .75f }
+    val words = (if (subject.isNotBlank()) subject.lowercase().split(Regex("[^a-z]+")) else ls.flatMap { it.first.lowercase().split(' ') }).filter { it.length > 2 }
+    if (words.isEmpty()) return emptyList()
+    val name = subject.ifBlank { ls.firstOrNull { (n, _) -> has(listOf(n.lowercase()), HOME + WEAR + FOOD + PLANT + GADGET) }?.first.orEmpty() }.trim()
+    if (name.isBlank()) return emptyList()
     val out = ArrayList<Idea>()
     fun add(kind: String, key: String, title: String, detail: String, url: String, tag: String = "") = out.add(Idea("$kind:$key", id, kind, title, detail, url, tag))
-    pick(ls, HOME)?.let { s -> val l = s.lowercase()
-        add("shop", l, "Find a similar $l", "Search shops for something like this.", shop(l))
-        add("style", l, "Rooms with a $l", "Styling ideas to see it in context.", pins("$l interior ideas")) }
-    pick(ls, WEAR)?.let { s -> val l = s.lowercase()
-        add("style", l, "Outfits with a $l", "Ways to put it together.", pins("outfit ideas with $l"))
-        add("shop", l, "Shop a similar $l", "Search shops for something like this.", shop(l)) }
-    pick(ls, FOOD)?.let { s -> val l = s.lowercase()
-        add("recipe", l, "Find a $l recipe", "How to make something like this.", web("$l recipe"))
-        add("tag", "food", "Tag it #food", "File this with your food notes.", "", "food") }
-    pick(ls, PLANT)?.let { s -> val l = s.lowercase()
-        add("care", l, "Care guide for a $l", "Light, water and soil, in one search.", web("$l plant care guide"))
-        add("tag", "plants", "Tag it #plants", "File this with your plants.", "", "plants") }
-    pick(ls, GADGET)?.let { s -> val l = s.lowercase()
-        add("review", l, "Reviews and prices", "What people say about a $l like this.", web("best $l review")) }
-    pick(ls, ART)?.let { s -> val l = s.lowercase()
-        add("similar", l, "More like this", "Find work in the same spirit.", pins("$l inspiration"))
-        add("tag", "inspiration", "Tag it #inspiration", "Keep it with your references.", "", "inspiration") }
+    val key = name.lowercase()
+    if (has(words, HOME) || has(words, WEAR) || has(words, GADGET)) add("shop", key, "Shop for ${name.take(34)}", "Opens a shopping search for exactly this.", shop(name))
+    // the assistant answers the rest itself; without it these two still need the web
+    if (!Assistant.installed) {
+        if (has(words, FOOD)) { add("recipe", key, "Find a recipe", "How to make ${name.take(34)}.", web("$name recipe")); add("tag", "food", "Tag it #food", "File this with your food notes.", "", "food") }
+        if (has(words, PLANT)) { add("care", key, "Care guide", "Light, water and soil for ${name.take(30)}.", web("$name plant care guide")); add("tag", "plants", "Tag it #plants", "File this with your plants.", "", "plants") }
+    } else {
+        if (has(words, FOOD)) add("tag", "food", "Tag it #food", "File this with your food notes.", "", "food")
+        if (has(words, PLANT)) add("tag", "plants", "Tag it #plants", "File this with your plants.", "", "plants")
+    }
     return out.take(3)
 }
 
-/** The local model's own suggestions for a photo, as stored by the assistant. */
+/** The local model's own ideas for a photo, as stored by the assistant: an answer to read, and sometimes a search to open. */
 fun Block.aiIdeas(): List<Idea> = (data["aiIdeas"] as? JsonArray).orEmpty().mapIndexedNotNull { i, e ->
     val o = e as? JsonObject ?: return@mapIndexedNotNull null
     fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
-    val t = s("t"); val q = s("q")
-    if (t.isEmpty() || q.isEmpty()) null else Idea("ai:$i:${t.hashCode()}", id, "ai", t, s("d"), web(q))
+    val t = s("t"); val q = s("q"); val d = s("d")
+    if (t.isEmpty() || (q.isEmpty() && d.isEmpty())) null
+    else Idea("ai:$i:${t.hashCode()}", id, if (q.isEmpty()) "tip" else "ai", t, "", if (q.isEmpty()) "" else if (Regex("""\b(buy|price|shop|cheap|deal|where to)\b""", RegexOption.IGNORE_CASE).containsMatchIn(q)) shop(q) else web(q), body = d)
 }
 
 fun ideasToData(list: List<Triple<String, String, String>>): JsonArray = JsonArray(list.map { (t, d, q) -> buildJsonObject { put("t", t); put("d", d); put("q", q) } })
@@ -109,9 +113,11 @@ fun ideasToData(list: List<Triple<String, String, String>>): JsonArray = JsonArr
 /** Everything suggested for a note, minus what the person dismissed. */
 fun Note.ideas(): List<Idea> {
     val off = blocks.flatMap { it.field("ideaOff").split('|') }.toSet()
-    return blocks.filter { it.kind == Kind.Photo && Guard.ok(it) }.flatMap { it.photoIdeas() + it.aiIdeas() }
+    return blocks.filter { it.kind == Kind.Photo && Guard.ok(it) }.flatMap { b -> b.aiIdeas() + b.photoIdeas(subjectOf(title, b.field("ocr"))) }
         .filter { it.id !in off && !(it.kind == "tag" && it.tag in tags) }.distinctBy { it.id }.take(5)
 }
 
 /** Photos whose labels are known and which still need the local model's ideas. */
-fun ideasStale(b: Block): Boolean = Assistant.installed && b.kind == Kind.Photo && b.path != null && "lbl" in b.data && b.dbl("ideasV") != 1.0 && Guard.ok(b) && b.labels().isNotEmpty()
+fun ideasStale(b: Block): Boolean = Assistant.installed && b.kind == Kind.Photo && b.path != null && "lbl" in b.data && b.dbl("ideasV") != IDEAS_V && Guard.ok(b)
+
+const val IDEAS_V = 2.0

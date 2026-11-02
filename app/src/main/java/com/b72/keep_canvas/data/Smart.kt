@@ -50,8 +50,33 @@ private fun tidyHead(s: String): String {
     return cap(h.replace(Regex("""[\s,.:;–—-]+$"""), "").trim())
 }
 
+private val LEDGER = Regex("""^\s*(?:(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)\s+)?(?:\((Cr|Dr)\)|\b(Cr|Dr)\b\.?|([+\-−]))?\s*[₹$€£]?\s?(\d[\d,]*(?:\.\d+)?)\s+(.{2,}?)\s*$""", IC)
+
+/** Lines like "26/05 (Dr) 80,000 Cash": a ledger. Returns rows (label to signed amount) and the balance, or null when the text is not one. */
+fun parseLedger(text: String): Pair<List<Pair<String, String>>, String>? {
+    val rows = ArrayList<Pair<String, String>>()
+    var net = 0.0
+    var marked = 0
+    for (raw in text.lines()) {
+        val m = LEDGER.matchEntire(raw.trim().replaceFirst(Regex("""^\s*(?:[-•*>]+|\d+[.)])\s+(?=[(\d])"""), "")) ?: continue
+        val date = m.groupValues[1]; val side = (m.groupValues[2].ifEmpty { m.groupValues[3] }).lowercase(); val sign = m.groupValues[4]
+        val amt = m.groupValues[5].replace(",", "").toDoubleOrNull() ?: continue
+        val credit = side == "cr" || sign == "+"
+        val debit = side == "dr" || sign == "-" || sign == "−"
+        if (credit || debit) marked++
+        val signed = if (debit) -amt else amt
+        net += signed
+        val label = listOf(date, m.groupValues[6].trim()).filter { it.isNotEmpty() }.joinToString(" · ")
+        rows.add(label to (if (debit) "−" else if (credit) "+" else "") + m.groupValues[5])
+    }
+    if (rows.size < 2 || marked < 2) return null
+    fun fmt(d: Double): String { val whole = kotlin.math.abs(d).toLong(); return (if (d < 0) "−" else "") + "%,d".format(java.util.Locale.US, whole) }
+    return rows.take(14) to fmt(net)
+}
+
 /** Reads free text and pulls out what a poster shows: headline, one big figure, labelled facts, ledger rows, leftover text. */
 fun parsePoster(title: String, text: String): Poster {
+    parseLedger(text)?.let { (rows, balance) -> return Poster(tidyHead(title), Fact("Balance", balance), emptyList(), "", rows) }
     val facts = mutableListOf<Fact>()
     val keep = mutableListOf<String>()
     fun add(l: String, v: String) { if (v.isNotBlank() && facts.none { it.label == l }) facts.add(Fact(l, v.trim())) }
@@ -139,7 +164,8 @@ fun looksStructured(body: String): String? {
  */
 fun posterFor(title: String, b: Block): Poster {
     val p = parsePoster(title, b.body)
-    val ai = b.aiFacts().map { Fact(it.label, it.value, it.star) }
+    if (p.rows.size >= 2 && p.big?.label == "Balance") return if (p.head.isBlank()) Poster(b.str("aiTitle").orEmpty(), p.big, p.facts, p.rest, p.rows) else p
+    val ai = cleanFacts(b.aiFacts().map { Fact(it.label, it.value, it.star) })
     if (ai.isEmpty()) return if (p.head.isBlank()) Poster(b.str("aiTitle").orEmpty(), p.big, p.facts, p.rest, p.rows) else p
     val starred = ai.firstOrNull { it.star }
     val others = ai.filter { it !== starred }
@@ -171,3 +197,26 @@ fun tplSummary(k: Kind, title: String, body: String): String = when (k) {
 }
 
 fun tplHead(k: Kind, title: String, body: String): String = if (k == Kind.Poster) parsePoster(title, body).head else title
+
+private val DATEISH = Regex("""^(?:\d{1,2}(?:st|nd|rd|th)?(?:\s?[–&,-]\s?\d{1,2}(?:st|nd|rd|th)?)*|[A-Za-z]{3,9}\.?\s\d{1,2}(?:st|nd|rd|th)?|\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)$""", IC)
+private val PLACEY = setOf("where", "place", "location", "venue", "city", "destination", "stay", "address")
+
+/**
+ * The assistant's facts, tidied: a bare date is never "To" or "From", a repeated label is kept once, places are not listed twice,
+ * and a date is only the headline when it is the only date.
+ */
+fun cleanFacts(raw: List<Fact>): List<Fact> {
+    val seen = HashSet<String>()
+    var placeSeen = false
+    val dates = raw.count { DATEISH.matches(it.value.trim()) }
+    val out = ArrayList<Fact>()
+    for (f in raw) {
+        val key = f.label.lowercase()
+        val v = f.value.trim()
+        if (key in setOf("to", "from") && DATEISH.matches(v)) { out.add(Fact(if (key == "to") "Until" else "From", v, false)); continue }
+        if (!seen.add(key + "|" + v.lowercase()) || (key in setOf("amount", "date", "time") && out.any { it.label.equals(f.label, true) && it.value.equals(v, true) })) continue
+        if (key in PLACEY) { if (placeSeen && v.length < 40) continue; placeSeen = true }
+        out.add(Fact(f.label, v, f.star && !(DATEISH.matches(v) && dates > 1)))
+    }
+    return out
+}

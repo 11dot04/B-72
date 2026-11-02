@@ -142,6 +142,7 @@ Keys:
 "summary": one plain sentence of at most 25 words, or "" when the note is shorter than 60 words
 "tags": up to 4 short lowercase topic words
 "facts": up to 6 objects {"l": label, "v": value, "s": true or false}. Labels are one or two words (Amount, Deadline, Seat, Dose, Score, Address...). Copy values exactly as written in the note. Set "s" to true for the single most important value, and for no other fact.
+Rules for facts: never list the same label twice; one fact per distinct thing; do not use "To" or "From" unless the value is a place; for a trip or event use labels like Destination, Stay, Travel date, Stay dates, Event, Time, Venue; join several dates of one thing into one fact; for money use Total, Balance, Paid, Due only for a single figure, and never repeat Amount or Date for each line (the note's own lines already show them). Do not make a date the starred fact unless it is the only fact that matters.
 "trip": null, or when the note is a travel ticket or booking: {"mode":"train or flight or bus","number":"","name":"","pnr":"","from":"","fromCode":"","to":"","toCode":"","dep":"YYYY-MM-DD HH:mm","arr":"YYYY-MM-DD HH:mm"}
 Note:
 """
@@ -177,15 +178,16 @@ Note:
         try { s.ask(prompt)?.trim()?.takeIf { it.isNotEmpty() } } finally { s.close() }
     }
 
-    private const val IDEAS = """Someone saved a photo to their notes. Suggest up to 3 useful next steps and reply with ONLY a JSON array, nothing else.
-Each item: {"t": a title of 3 to 6 words, "d": one short sentence, "q": a web search phrase that would help}.
-Good ideas: where to find similar things, how to pair or style it, how to care for it, how to cook it, related things worth looking up.
-Never suggest anything about a person's body, face, health, age or identity. If nothing useful comes to mind, reply [].
+    private const val IDEAS = """Someone saved a photo to their notes. Work out what it is, then give up to 3 helpful things. Reply with ONLY a JSON array, nothing else.
+Each item: {"t": a title of 3 to 6 words, "d": the actual answer or tip in one or two plain sentences (max 160 characters), "q": a web search phrase, or "" when you can answer it yourself}.
+Answer things yourself whenever you can: how to care for it, how to cook it, what goes with it, what it is, styling or pairing ideas, a useful fact. Only give a "q" for what needs the web, such as where to buy it or what it costs, and then use the exact name the person gave it.
+The person's own words (title, text on the photo) are the truth. The photo labels are guesses from a small model and are often wrong; if they clash with the words, ignore them. If you are not sure what it is, reply [].
+Never say anything about a person's body, face, health, age or identity.
 """
 
-    /** Free-form ideas for a photo from what is in it (labels) and what the person wrote. Titles, details and search phrases only. */
+    /** Ideas for a photo from the person's words and what the labeller saw. Titles, answers and search phrases only. */
     fun ideas(session: Session, labels: List<String>, noteTitle: String, ocr: String): List<Triple<String, String, String>> {
-        val prompt = IDEAS + "Photo shows: ${labels.take(8).joinToString(", ")}\nNote title: ${noteTitle.take(80)}\nText in the photo: ${ocr.take(300)}\n"
+        val prompt = IDEAS + "Title: ${noteTitle.take(80).ifBlank { "(none)" }}\nText on the photo: ${ocr.take(300).ifBlank { "(none)" }}\nLabels: ${labels.take(6).joinToString(", ")}\n"
         val reply = session.ask(prompt) ?: return emptyList()
         val a = reply.indexOf('['); val z = reply.lastIndexOf(']')
         if (a < 0 || z <= a) return emptyList()
@@ -193,8 +195,8 @@ Never suggest anything about a person's body, face, health, age or identity. If 
         return arr.mapNotNull { e ->
             val o = e as? JsonObject ?: return@mapNotNull null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
-            val t = s("t"); val q = s("q")
-            if (t.length !in 3..60 || q.length !in 3..90) null else Triple(t, s("d").take(120), q)
+            val t = s("t"); val q = s("q"); val d = s("d")
+            if (t.length !in 3..60 || (q.isEmpty() && d.length < 10) || q.length > 90) null else Triple(t, d.take(200), q)
         }.take(3)
     }
 
