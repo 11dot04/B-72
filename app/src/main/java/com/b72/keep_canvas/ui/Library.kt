@@ -49,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asComposePath
+import androidx.graphics.shapes.toPath
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -137,6 +139,19 @@ private fun Vinyl(b: Block, bold: Boolean, modifier: Modifier) {
     }
 }
 
+/** A shape part-way between two polygons, fitted to whatever frame it is clipped to. */
+private class MorphShape(val morph: androidx.graphics.shapes.Morph, val progress: Float) : Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density): androidx.compose.ui.graphics.Outline {
+        val path = morph.toPath(progress, android.graphics.Path())
+        val b = android.graphics.RectF()
+        path.computeBounds(b, true)
+        val m = android.graphics.Matrix()
+        m.setRectToRect(b, android.graphics.RectF(0f, 0f, size.width, size.height), android.graphics.Matrix.ScaleToFit.FILL)
+        path.transform(m)
+        return androidx.compose.ui.graphics.Outline.Generic(path.asComposePath())
+    }
+}
+
 private fun lerpDp(a: androidx.compose.ui.unit.Dp, b: androidx.compose.ui.unit.Dp, t: Float) = a + (b - a) * t
 
 /** A book on the shelf is its spine until it is the one in the middle, when it turns to show its cover; it turns back as it is set aside. */
@@ -222,7 +237,7 @@ private fun RecipeItem(b: Block, slot: Int, p: Float, h: androidx.compose.ui.uni
     val morph = androidx.compose.runtime.remember(slot) { androidx.graphics.shapes.Morph(MaterialShapes.Circle, SQUARE_SHAPES[slot % SQUARE_SHAPES.size]) }
     Box(
         Modifier.width(220.dp).height(h).graphicsLayer { val k = .78f + .22f * p; scaleX = k; scaleY = k }
-            .clip(morph.toShape(p.coerceIn(0f, 1f))).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = onClick),
+            .clip(MorphShape(morph, p.coerceIn(0f, 1f))).background(cs.primaryContainer).clickable(onClickLabel = "Open", onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (b.path != null) PhotoImage(b.path, 600, false, cs.primary, Modifier.fillMaxSize(), subjectAlign(b)) else Icon(Icons.Rounded.Restaurant, null, Modifier.size(56.dp), tint = cs.onPrimaryContainer)
