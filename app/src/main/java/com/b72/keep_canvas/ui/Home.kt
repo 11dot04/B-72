@@ -24,6 +24,8 @@ import androidx.compose.material3.toShape
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.b72.keep_canvas.data.trip
@@ -158,7 +160,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
   val shown = remember(loaded?.library, q, filter, sort) {
     // notes that are only a song, book, film, recipe or link live in the Library tab (a search still finds them)
-    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() || matchesQuery(texts[it.id].orEmpty(), q)) }
+    val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() && !it.isLibrary && !(filter == "All" && it.starred) || q.isNotBlank() && matchesQuery(texts[it.id].orEmpty(), q)) }
     when (sort) {
       1 -> l
       2 -> l.sortedByDescending { it.edited }
@@ -166,6 +168,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
       else -> l.asReversed()
     }
   }
+  val starred = remember(loaded?.library) { loaded?.library?.notes.orEmpty().filter { it.starred && !it.isLibrary }.asReversed() }
   val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
   val trip = remember(loaded?.library) { com.b72.keep_canvas.data.Trips.next(loaded?.library?.notes.orEmpty()) }
   BackHandler(menu) { menu = false }
@@ -227,6 +230,36 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                     }
                 }
             }
+            // starred notes first, as a row you can slide through
+            if (starred.isNotEmpty() && q.isBlank() && filter == "All") item(span = StaggeredGridItemSpan.FullLine, key = "starred") {
+                val cs = MaterialTheme.colorScheme
+                Column(Modifier.padding(bottom = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)) {
+                        Icon(Icons.Rounded.Star, null, Modifier.size(16.dp), tint = cs.tertiary)
+                        Spacer(Modifier.width(6.dp))
+                        Text("STARRED", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = cs.onSurfaceVariant)
+                    }
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(starred, key = { it.id }) { n ->
+                            val cover = n.cover?.path
+                            val i = starred.indexOf(n)
+                            val bg = if (i % 2 == 0) cs.tertiaryContainer else cs.secondaryContainer
+                            val fg = if (i % 2 == 0) cs.onTertiaryContainer else cs.onSecondaryContainer
+                            Box(Modifier.width(168.dp).height(132.dp).clip(RoundedCornerShape(28.dp)).background(bg).clickable(onClickLabel = "Open") { onOpen(n.id) }) {
+                                if (cover != null) {
+                                    PhotoImage(cover, 400, false, cs.primary, Modifier.fillMaxSize())
+                                    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .62f)))))
+                                }
+                                Text(
+                                    n.title.ifBlank { n.snippet(60) }.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium, color = if (cover != null) Color.White else fg,
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             // the next journey, with the right status page for how close it is
             if (trip != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) {
                 val cs = MaterialTheme.colorScheme
@@ -281,7 +314,6 @@ private val ADD_ITEMS = listOf(
     Triple(Kind.Photo, "Photos", Icons.Rounded.AddPhotoAlternate),
     Triple(Kind.Checklist, "Checklist", Icons.Rounded.Checklist),
     Triple(Kind.Quote, "Quote", Icons.Rounded.FormatQuote),
-    Triple(Kind.Link, "Link", Icons.Rounded.Link),
 )
 
 /** A note that is at least a week old, picked by the day so it changes daily; returns it with its age in days. */

@@ -113,7 +113,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp).height(300.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(OPTS) { o ->
+                    items(OPTS.filter { initial != null || it.id in setOf("photo", "list", "quote", "audio") }) { o ->
                         Column(
                             Modifier.clip(RoundedCornerShape(22.dp)).background(cs.secondaryContainer).clickable(onClickLabel = o.label) { go(o.id) }.padding(vertical = 16.dp).fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,

@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Movie
@@ -246,7 +247,7 @@ private fun RecipeItem(b: Block, slot: Int, p: Float, h: androidx.compose.ui.uni
 
 /** Everything that holds structured data (songs, books, films, recipes, links) lives here, one shelf per kind. */
 @Composable
-fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
+fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val notes = loaded?.library?.notes.orEmpty()
     var shelf by rememberSaveable { mutableIntStateOf(0) }
@@ -262,6 +263,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
             info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset - info.beforeContentPadding) }?.index ?: 0
         }
     }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().padding(top = 16.dp)) {
         TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))
         Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
@@ -275,7 +277,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
         }
         if (items.isEmpty()) {
             Text(
-                "Nothing on the ${SHELVES[shelf].name.lowercase()} shelf yet. Add one from the + menu inside a note.",
+                "Nothing on the ${SHELVES[shelf].name.lowercase()} shelf yet. Tap Add to put the first one here.",
                 style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp),
             )
         } else {
@@ -338,5 +340,12 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit) {
                 )
             }
         }
+    }
+    androidx.compose.material3.ExtendedFloatingActionButton(
+        text = { Text("Add " + listOf("song", "book", "film or show", "recipe", "link")[shelf]) },
+        icon = { Icon(Icons.Rounded.Add, null) },
+        onClick = { onAdd(SHELVES[shelf].kind) },
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp),
+    )
     }
 }
