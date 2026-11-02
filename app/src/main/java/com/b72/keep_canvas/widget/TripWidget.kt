@@ -76,12 +76,47 @@ object WidgetPick {
     }
 }
 
+/** The note's picture as a rounded square for the widget. */
+private fun roundedCover(path: String, px: Int): Pair<android.graphics.Bitmap, Int>? = runCatching {
+    val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, o)
+    val sample = maxOf(1, minOf(o.outWidth, o.outHeight) / px)
+    val src = android.graphics.BitmapFactory.decodeFile(path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return@runCatching null
+    val side = minOf(src.width, src.height)
+    val sq = android.graphics.Bitmap.createScaledBitmap(android.graphics.Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side), px, px, true)
+    val out = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { shader = android.graphics.BitmapShader(sq, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP) }
+    android.graphics.Canvas(out).drawRoundRect(android.graphics.RectF(0f, 0f, px.toFloat(), px.toFloat()), px * .28f, px * .28f, paint)
+    val rgb = androidx.palette.graphics.Palette.from(sq).generate().let { (it.vibrantSwatch ?: it.dominantSwatch)?.rgb } ?: 0
+    val hsl = FloatArray(3)
+    androidx.core.graphics.ColorUtils.colorToHSL(rgb, hsl)
+    out to (if (rgb != 0 && hsl[1] > .15f) hsl[0].toInt() else -1)
+}.getOrNull()
+
 internal fun paintWidgets(ctx: Context, mgr: AppWidgetManager, ids: IntArray, layout: Int, small: Boolean) {
     val notes = kotlinx.coroutines.runBlocking { Store.load(ctx).library.notes }
     val p = WidgetPick.pick(notes, System.currentTimeMillis())
     val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    val coverPath = notes.firstOrNull { it.id == p.noteId }?.cover?.path
+    val cover = if (!small && coverPath != null) roundedCover(coverPath, 320) else null
+    val night = (ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
     for (id in ids) {
         val v = RemoteViews(ctx.packageName, layout)
+        if (!small) {
+            if (cover != null) { v.setImageViewBitmap(R.id.photo, cover.first); v.setViewVisibility(R.id.photo, View.VISIBLE) } else v.setViewVisibility(R.id.photo, View.GONE)
+            // the card takes the hue of its picture (Android 12 and up); text colours follow for contrast
+            if (cover != null && cover.second >= 0 && android.os.Build.VERSION.SDK_INT >= 31) {
+                val h = cover.second.toFloat()
+                val bg = androidx.core.graphics.ColorUtils.HSLToColor(floatArrayOf(h, if (night) .35f else .6f, if (night) .18f else .86f))
+                val ink = androidx.core.graphics.ColorUtils.HSLToColor(floatArrayOf(h, .4f, if (night) .92f else .1f))
+                val acc = androidx.core.graphics.ColorUtils.HSLToColor(floatArrayOf(h, .7f, if (night) .72f else .32f))
+                v.setColorStateList(R.id.root, "setBackgroundTintList", android.content.res.ColorStateList.valueOf(bg))
+                for (t in intArrayOf(R.id.route, R.id.status, R.id.at)) v.setTextColor(t, ink)
+                v.setTextColor(R.id.kicker, acc)
+                v.setColorStateList(R.id.action, "setBackgroundTintList", android.content.res.ColorStateList.valueOf(acc))
+                v.setTextColor(R.id.action, bg)
+            }
+        }
         v.setTextViewText(R.id.kicker, p.kicker)
         v.setTextViewText(R.id.route, p.head)
         v.setTextViewText(R.id.status, p.line)
