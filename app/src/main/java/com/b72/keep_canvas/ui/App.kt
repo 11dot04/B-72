@@ -65,7 +65,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }
     fun begin(kind: Kind, tag: String?) {
         if (kind == Kind.Text || kind == Kind.Checklist) { val id = repo.newDraft(kind, tag); draft = id; open = id }
-        else { val id = repo.newDraft(Kind.Text, tag); draft = id; open = id; addFirst = when (kind) { Kind.Photo -> "photo"; Kind.Quote -> "quote"; Kind.Link -> "link"; Kind.Film -> "film"; Kind.Book -> "book"; Kind.Track -> "track"; Kind.Recipe -> "recipe"; else -> null } }
+        else { val id = repo.newDraft(Kind.Text, tag); draft = id; open = id; addFirst = when (kind) { Kind.Photo -> "photo"; Kind.Quote -> "quote"; Kind.Link -> "link"; Kind.Film -> "film"; Kind.Book -> "book"; Kind.Track -> "track"; Kind.Recipe -> "recipe"; Kind.Audio -> "audio"; else -> null } }
     }
     // something shared from another app opens a new note, ready to save
     LaunchedEffect(share, loaded != null) {

@@ -130,7 +130,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                     Text(OPTS.first { it.id == m }.label, style = MaterialTheme.typography.titleLarge)
                 }
                 when (m) {
-                    "audio" -> RecordPane(repo, noteId, onClose)
+                    "audio" -> VoicePane(repo, noteId, onClose)
                     "quote" -> {
                         OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("The quote") }, minLines = 2)
                         OutlinedTextField(text2, { text2 = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Who said it") }, singleLine = true)
