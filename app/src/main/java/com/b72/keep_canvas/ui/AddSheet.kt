@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Link
@@ -79,7 +80,7 @@ private val OPTS = listOf(
     Opt("link", "Link", Icons.Rounded.Link), Opt("quote", "Quote", Icons.Rounded.FormatQuote),
     Opt("film", "Film & show", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
     Opt("track", "Track", Icons.Rounded.MusicNote), Opt("recipe", "Recipe", Icons.Rounded.LocalDining),
-    Opt("audio", "Audio", Icons.Rounded.Mic),
+    Opt("audio", "Audio", Icons.Rounded.Mic), Opt("scan", "Scan", Icons.Rounded.CameraAlt),
 )
 
 /** The plus menu of the note page: everything that can be added to a note, without leaving it. */
@@ -97,8 +98,20 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
         if (uris.isNotEmpty()) repo.addPhotos(noteId, uris)
         onClose()
     }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var shot by remember { mutableStateOf<android.net.Uri?>(null) }
+    val cam = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) shot?.let { repo.addPhotos(noteId, listOf(it)) }
+        onClose()
+    }
     fun go(id: String) {
         when (id) {
+            "scan" -> {
+                val dir = java.io.File(ctx.cacheDir, "scans").apply { mkdirs() }
+                val u = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", java.io.File(dir, "s${System.nanoTime()}.jpg"))
+                shot = u
+                cam.launch(u)
+            }
             "photo" -> pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             "list" -> {
                 if (!hasList) repo.appendBlock(noteId, newBlock(Kind.Checklist, "in_c${System.nanoTime()}", title = "List", items = listOf("")))
@@ -113,7 +126,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp).height(300.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(OPTS.filter { initial != null || it.id in setOf("photo", "list", "quote", "audio") }) { o ->
+                    items(OPTS.filter { initial != null || it.id in setOf("photo", "scan", "list", "quote", "audio") }) { o ->
                         Column(
                             Modifier.clip(RoundedCornerShape(22.dp)).background(cs.secondaryContainer).clickable(onClickLabel = o.label) { go(o.id) }.padding(vertical = 16.dp).fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,

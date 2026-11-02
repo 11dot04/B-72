@@ -76,6 +76,7 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.AutoAwesome
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
@@ -158,19 +159,27 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   val test: (Note) -> Boolean = if (filter.startsWith("#")) { n -> filter.substring(1) in n.tags } else (FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true })
   var cols by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(2) }
   var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
-  val shown = remember(loaded?.library, q, filter, sort) {
+  // notes that mean what the search says, found by the on-device model after a short pause in typing
+  val meaning by produceState<List<Note>>(emptyList(), q, loaded?.library) {
+    value = emptyList()
+    if (q.trim().length >= 3) { kotlinx.coroutines.delay(350); value = repo.similar(q) }
+  }
+  val shown = remember(loaded?.library, q, filter, sort, meaning) {
     // notes that are only a song, book, film, recipe or link live in the Library tab (a search still finds them)
     val l = loaded?.library?.notes.orEmpty().filter { test(it) && (q.isBlank() && !it.isLibrary && !(filter == "All" && it.starred) || q.isNotBlank() && matchesQuery(texts[it.id].orEmpty(), q)) }
+    val extra = if (q.isBlank()) emptyList() else meaning.filter { m -> test(m) && l.none { it.id == m.id } }
     when (sort) {
-      1 -> l
-      2 -> l.sortedByDescending { it.edited }
-      3 -> l.sortedBy { it.title.ifBlank { it.snippet() }.lowercase() }
-      else -> l.asReversed()
+      1 -> l + extra
+      2 -> l.sortedByDescending { it.edited } + extra
+      3 -> l.sortedBy { it.title.ifBlank { it.snippet() }.lowercase() } + extra
+      else -> l.asReversed() + extra
     }
   }
   val starred = remember(loaded?.library) { loaded?.library?.notes.orEmpty().filter { it.starred && !it.isLibrary }.asReversed() }
   val revisit = remember(loaded?.library) { pickRevisit(loaded?.library?.notes.orEmpty()) }
   val trip = remember(loaded?.library) { com.b72.keep_canvas.data.Trips.next(loaded?.library?.notes.orEmpty()) }
+  var asking by remember { mutableStateOf<String?>(null) }
+  asking?.let { AskSheet(repo, it, onOpen) { asking = null } }
   BackHandler(menu) { menu = false }
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
@@ -228,6 +237,19 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                             colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         )
                     }
+                }
+            }
+            // with the assistant installed, a search can also be a question
+            if (q.trim().length >= 3 && com.b72.keep_canvas.data.Assistant.installed) item(span = StaggeredGridItemSpan.FullLine, key = "ask") {
+                val cs = MaterialTheme.colorScheme
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(28.dp)).background(cs.primaryContainer)
+                        .clickable(onClickLabel = "Ask your notes") { asking = q.trim() }.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, tint = cs.onPrimaryContainer)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Ask your notes: \u201c${q.trim()}\u201d", style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             // starred notes first, as a row you can slide through
