@@ -36,6 +36,14 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         Related.rank(all, me, k) { brain.vector(it) }
     }
 
+    /** Notes that mean something close to a search phrase, even with none of its words; empty when the language model isn't packaged. */
+    suspend fun similar(q: String, k: Int = 8): List<Note> = withContext(Dispatchers.Default) {
+        val all = loaded?.library?.notes ?: return@withContext emptyList()
+        val qv = brain.query(q) ?: return@withContext emptyList()
+        all.mapNotNull { n -> brain.vector(n)?.let { n to brain.similarity(qv, it) } }
+            .filter { it.second >= 0.42f }.sortedByDescending { it.second }.take(k).map { it.first }
+    }
+
     suspend fun init() { loaded = Store.load(ctx); autoClean() }
 
     /** Deletes picture files that no note, cut-out, sticker or placed item refers to any more (and are over a day old, so a note being written is safe). Returns the bytes freed. */

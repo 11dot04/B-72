@@ -38,4 +38,19 @@ class Brain(private val ctx: Context) {
         cache[n.id] = h to v
         return v
     }
+
+    /** A search phrase as a vector, for comparing with notes. */
+    @Synchronized
+    fun query(text: String): FloatArray? {
+        val e = embedder ?: return null
+        if (text.isBlank()) return null
+        return runCatching { e.embed(text.trim().take(300)).embeddingResult().embeddings().first().floatEmbedding() }.getOrNull()
+    }
+
+    fun similarity(a: FloatArray, b: FloatArray): Float {
+        if (a.size != b.size || a.isEmpty()) return 0f
+        var dot = 0f; var na = 0f; var nb = 0f
+        for (i in a.indices) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        return if (na == 0f || nb == 0f) 0f else dot / kotlin.math.sqrt(na * nb)
+    }
 }
