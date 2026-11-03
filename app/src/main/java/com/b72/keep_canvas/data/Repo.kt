@@ -36,6 +36,12 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         Related.rank(all, me, k) { brain.vector(it) }
     }
 
+    /** What each note says, as vectors (only for the notes that have words, and only when the language model is packaged). */
+    suspend fun vectors(ids: Collection<String>): Map<String, FloatArray> = withContext(Dispatchers.Default) {
+        val all = loaded?.library?.notes.orEmpty().filter { it.id in ids }
+        buildMap { for (n in all) brain.vector(n)?.let { put(n.id, it) } }
+    }
+
     /** Notes that mean something close to a search phrase, even with none of its words; empty when the language model isn't packaged. */
     suspend fun similar(q: String, k: Int = 8): List<Note> = withContext(Dispatchers.Default) {
         val all = loaded?.library?.notes ?: return@withContext emptyList()
