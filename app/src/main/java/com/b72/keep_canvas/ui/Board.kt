@@ -86,6 +86,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
@@ -260,7 +266,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
         val origin = { Offset(pan.x, pan.y) }
         Box(
-            Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { androidx.compose.foundation.gestures.detectTapGestures(onDoubleTap = { pan.home() }) },
+            Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { detectTapGestures(onDoubleTap = { pan.home() }) },
         ) {
             if (grid) Canvas(Modifier.fillMaxSize()) {
                 // a dot grid that travels with the canvas
@@ -518,15 +524,15 @@ class Pan(private val scope: kotlinx.coroutines.CoroutineScope) {
 
 /** Drag anywhere that is not a card being moved to slide the canvas about; lift the finger and it keeps going. */
 private fun Modifier.panning(pan: Pan): Modifier = pointerInput(Unit) {
-    androidx.compose.foundation.gestures.awaitEachGesture {
-        val down = androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
         pan.stop()
         val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
         tracker.addPosition(down.uptimeMillis, down.position)
-        val slop = androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation(down.id) { change, over -> change.consume(); pan.x += over.x; pan.y += over.y }
+        val slop = awaitTouchSlopOrCancellation(down.id) { change, over -> change.consume(); pan.x += over.x; pan.y += over.y }
             ?: return@awaitEachGesture
         tracker.addPosition(slop.uptimeMillis, slop.position)
-        androidx.compose.foundation.gestures.drag(slop.id) { ch ->
+        drag(slop.id) { ch ->
             val d = ch.positionChange()
             pan.x += d.x; pan.y += d.y
             tracker.addPosition(ch.uptimeMillis, ch.position)
