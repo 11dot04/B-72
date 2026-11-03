@@ -21,8 +21,12 @@ const val WIDE = 2.0f
 /** Card sizes are fractions of the canvas width; this keeps cards the size they were on a 1.2-wide canvas. */
 const val K_WIDE = 1.2f / WIDE
 private const val GAP = .010f * K_WIDE
-private const val BAND_L = .05f
-private const val BAND_R = .95f
+private const val BAND_L = .03f
+/** How far right the packer spreads new cards (canvas widths): a little over one screen, so most of the board is in view when it opens. The canvas itself has no edge. */
+var packRight = .62f
+/** Changed by the shuffle button; mixed into every tie-break so each press gives a different arrangement. */
+var shuffle = 0
+private val BAND_R get() = packRight
 
 /** One block of one note, placed on a tag's canvas. */
 class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h: Float, x0: Float, y0: Float, val placed: Boolean, val label: String = "", val starred: Boolean = false, val behind: Boolean = false) {
@@ -43,12 +47,12 @@ class Card(val noteId: String, val b: Block, val order: Int, val w: Float, val h
     val bare get() = kind == Kind.Bare
     val rect: Rect get() = Rect(x, y, x + w, y + h)
     /** Tilt in radians, stable per card. */
-    val angle: Float get() = if (starred && !bare) 0.045f * (if (seedOf(id) % 2 == 0) 1 else -1) + base else base
+    val angle: Float get() = if (starred && low) 0.045f * (if (seedOf(id) % 2 == 0) 1 else -1) + base else base
+    /** Photos and picture cards sit at a slight angle, as pinned prints do; text cards stay square to the page. */
     private val base: Float get() = when {
-        bare -> 0f
         isPhoto -> (((seedOf(id) % 11) - 5) * .019f)
         isPictureCard -> (((seedOf(id) % 9) - 4) * .017f)
-        else -> (((seedOf(id) % 7) - 3) * .016f)
+        else -> 0f
     }
 
     /** The part of a card that must stay visible, in its own coordinates: a photo's subject (an oval), a picture card's title area,
@@ -91,9 +95,6 @@ private fun hitsProtected(up: Rect, low: Card): Boolean {
 
 /** The rules of the canvas. Upper cards may ride over a lower photo's empty space, never over its subject or over text. */
 fun valid(m: Card, others: List<Card>): Boolean {
-    val r = m.rect
-    if (r.left < 0f || r.top < 0f || r.right > 1f) return false
-    if (!m.isPhoto && (r.left < BAND_L || r.right > BAND_R)) return false
     return rules(m, others)
 }
 
@@ -148,8 +149,8 @@ fun settle(m: Card, others: List<Card>) {
  */
 fun place(m: Card, placed: List<Card>, anchor: Card?) {
     val bottom = placed.maxOfOrNull { it.rect.bottom } ?: 0f
-    val xMin = if (m.isPhoto) 0f else BAND_L
-    val xMax = (if (m.isPhoto) 1f else BAND_R) - m.w
+    val xMin = if (m.isPhoto) .01f else BAND_L
+    val xMax = (if (m.isPhoto) BAND_R + .04f else BAND_R) - m.w
     var bx = xMin.coerceAtMost(max(xMin, xMax))
     var by = bottom + .05f
     var bc = Float.MAX_VALUE
@@ -232,7 +233,7 @@ private fun buildCluster(cs: List<Card>): Cluster {
             c -= .08f * tuckOf(m, placed)
             val mr = m.rect
             for (q in placed) if (abs(q.x - mr.left) < .006f || abs(q.x + q.w - mr.right) < .006f) c += .012f
-            c += ((seedOf(m.id) + (x * 997).toInt() + (y * 463).toInt()).mod(100)) / 100f * .004f
+            c += ((seedOf(m.id) + shuffle * 13 + (x * 997).toInt() + (y * 463).toInt()).mod(100)) / 100f * .004f
             if (!m.isPhoto && anchor.isPhoto) {
                 c += .25f * hypot(mr.center.x - anchor.rect.center.x, mr.center.y - anchor.rect.center.y)
                 // a note's words ride over a fifth or so of its photo by default
@@ -273,8 +274,8 @@ private fun buildCluster(cs: List<Card>): Cluster {
 private fun placeCluster(cl: Cluster, placed: List<Card>, index: Int) {
     val bottom = placed.maxOfOrNull { it.rect.bottom } ?: 0f
     val hasPhoto = cl.cards.any { it.isPhoto }
-    val xMin = if (hasPhoto) 0f else BAND_L
-    val xMax = (if (hasPhoto) 1f else BAND_R) - cl.w
+    val xMin = if (hasPhoto) .01f else BAND_L
+    val xMax = (if (hasPhoto) BAND_R + .04f else BAND_R) - cl.w
     val bx0 = cl.cards.map { it.x }
     val by0 = cl.cards.map { it.y }
     val area = cl.cards.sumOf { (it.w * it.h).toDouble() }.toFloat()
@@ -294,8 +295,8 @@ private fun placeCluster(cl: Cluster, placed: List<Card>, index: Int) {
                     if (r.overlaps(q)) t += Rect(max(r.left, q.left), max(r.top, q.top), min(r.right, q.right), min(r.bottom, q.bottom)).area()
                 }
                 t /= area
-                val pref = if (index % 2 == 0) xMin else xMax
-                var cost = (y + cl.h) + .35f * abs(x - pref) + ((seedOf(cl.cards[0].id) + (x * 997).toInt() + (y * 463).toInt()).mod(100) / 100f) * .02f
+                val pref = if ((index + shuffle) % 2 == 0) xMin else xMax
+                var cost = (y + cl.h) + .35f * abs(x - pref) + ((seedOf(cl.cards[0].id) + shuffle * 7 + (x * 997).toInt() + (y * 463).toInt()).mod(100) / 100f) * .02f
                 cost -= .25f * (1f - min(abs(t - .07f), .07f) / .07f)
                 if (cost < bc) { bc = cost; bestX = x; bestY = y }
             }
@@ -423,7 +424,7 @@ fun bottomOf(cards: List<Card>) = cards.maxOfOrNull { it.rect.bottom } ?: 0f
 fun placeKey(tag: String, b: Block) = "$tag|${b.id}"
 
 /** Bumped whenever the layout rules change: positions stored by an older version are laid out again once. */
-const val LAYOUT_VERSION = 5.0
+const val LAYOUT_VERSION = 6.0
 fun versionKey(tag: String) = "$tag|#v"
 
 private fun shortWords(t: String) = t.length <= 100 && t.count { it == '\n' } < 3
@@ -470,6 +471,35 @@ fun cardsFor(notes: List<Note>, tag: String, size: (Block, Boolean) -> Pair<Floa
             val behind = hasPhoto && b.kind in setOf(Kind.Text, Kind.Checklist, Kind.Quote, Kind.Stat, Kind.Info) && seedOf(b.id) % 4 == 0
             out.add(Card(n.id, b, i, w, h, p?.getOrNull(0)?.toFloat() ?: .3f, p?.getOrNull(1)?.toFloat() ?: 0f, p != null && current, label, n.starred, behind))
         }
+    }
+    return out
+}
+
+
+/**
+ * The order notes are laid out in: each next note is the one closest in meaning to the last (from the on-device model's vectors,
+ * when there are any), starting from a different note every shuffle, so related notes end up side by side. Without vectors it is
+ * a plain shuffle.
+ */
+fun orderNotes(ids: List<String>, vec: Map<String, FloatArray>, seed: Int): List<String> {
+    if (ids.size < 3) return if (ids.isEmpty()) ids else ids.drop(seed.mod(ids.size)) + ids.take(seed.mod(ids.size))
+    val rnd = java.util.Random(seed * 7919L + 13)
+    val left = ids.toMutableList()
+    var cur = if (seed == 0) left.removeAt(0) else left.removeAt(rnd.nextInt(left.size))
+    val out = mutableListOf(cur)
+    fun cos(a: FloatArray, b: FloatArray): Float {
+        if (a.size != b.size || a.isEmpty()) return 0f
+        var d = 0f; var na = 0f; var nb = 0f
+        for (i in a.indices) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        return if (na == 0f || nb == 0f) 0f else d / kotlin.math.sqrt(na * nb)
+    }
+    while (left.isNotEmpty()) {
+        val a = vec[cur]
+        val scored = left.map { it to (if (a != null && vec[it] != null) cos(a, vec[it]!!) else -1f) }
+        // among the few closest, a seeded pick, so a shuffle really changes things
+        val top = scored.sortedByDescending { it.second }.take(if (seed == 0) 1 else 3)
+        val next = top[rnd.nextInt(top.size)].first
+        left.remove(next); out.add(next); cur = next
     }
     return out
 }
