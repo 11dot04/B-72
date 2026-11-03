@@ -72,4 +72,6 @@ dependencies {
     // the optional on-device assistant (runs a downloaded .litertlm model; nothing is bundled)
     implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    // Drive backup: the sign-in/consent screen for the app-data scope
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
 }
