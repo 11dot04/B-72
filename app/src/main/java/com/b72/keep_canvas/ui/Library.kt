@@ -252,8 +252,15 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     val notes = loaded?.library?.notes.orEmpty()
     var shelf by rememberSaveable { mutableIntStateOf(0) }
     val counts = remember(notes) { SHELVES.map { s -> notes.count { n -> n.blocks.any { it.kind == s.kind } } } }
-    val items = remember(notes, shelf) {
+    var stage by rememberSaveable { mutableIntStateOf(-1) }
+    val all = remember(notes, shelf) {
         notes.asReversed().mapNotNull { n -> n.blocks.firstOrNull { it.kind == SHELVES[shelf].kind }?.let { n to it } }
+    }
+    val items = remember(all, stage) { if (stage < 0) all else all.filter { it.second.str("status") == STATUS_KEYS[stage] } }
+    val stats = remember(all) {
+        val done = all.count { it.second.str("status") == "done" }
+        val rated = all.mapNotNull { it.second.dbl("rating") }.filter { it > 0 }
+        listOfNotNull("${all.size} in all", if (done > 0) "$done ${statusLabels(SHELVES[shelf].kind).getOrNull(2)?.lowercase() ?: "done"}" else null, if (rated.isNotEmpty()) "avg %.1f★".format(rated.average()) else null).joinToString("  ·  ")
     }
     val ls = rememberLazyListState()
     val focus by remember {
@@ -269,15 +276,23 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             SHELVES.forEachIndexed { i, s ->
-                Row(Modifier.clickable(onClickLabel = s.name) { shelf = i }, verticalAlignment = Alignment.Top) {
+                Row(Modifier.clickable(onClickLabel = s.name) { shelf = i; stage = -1 }, verticalAlignment = Alignment.Top) {
                     Text(s.name, style = flexStyle(22.sp, wght = if (i == shelf) 650 else 420, lh = 1f), color = if (i == shelf) cs.onSurface else cs.onSurface.copy(alpha = .35f))
                     Text("${counts[i]}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp), color = if (i == shelf) cs.primary else cs.onSurface.copy(alpha = .35f), modifier = Modifier.padding(start = 2.dp))
                 }
             }
         }
+        if (all.isNotEmpty()) {
+            Text(stats.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+            val labels = statusLabels(SHELVES[shelf].kind)
+            if (labels.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilterChip(stage < 0, { stage = -1 }, label = { Text("All") })
+                labels.forEachIndexed { i, l -> androidx.compose.material3.FilterChip(stage == i, { stage = if (stage == i) -1 else i }, label = { Text(l) }) }
+            }
+        }
         if (items.isEmpty()) {
             Text(
-                "Nothing on the ${SHELVES[shelf].name.lowercase()} shelf yet. Tap Add to put the first one here.",
+                if (all.isNotEmpty()) "Nothing here yet. Mark things from their own page." else "Nothing on the ${SHELVES[shelf].name.lowercase()} shelf yet. Tap Add to put the first one here.",
                 style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp),
             )
         } else {

@@ -38,6 +38,30 @@ object Shapes {
         val first = pts.first(); val last = pts.last()
         val closed = dist(first, last) < diag * .3f && pathLen > diag * 1.6f
         if (!closed) {
+            val poly0 = simplify(pts, diag * .07f)
+            // an arrow: one long straight run, then a short head folded back on it
+            if (poly0.size in 4..6) {
+                val segs = poly0.zipWithNext { a, b -> dist(a, b) }
+                val total = segs.sum()
+                if (segs[0] > .6f * total && segs.drop(1).all { it < .24f * total } && dist(poly0[0], poly0[1]) > .04f) {
+                    val a = poly0[0]; val b = poly0[1]
+                    val len = dist(a, b)
+                    return Stuck(id, "m:Dart", (a.x + b.x) / 2 - len / 2, (a.y + b.y) / 2 - .01f, len, atan2(b.y - a.y, b.x - a.x) * 180f / Math.PI.toFloat(), color, .02f)
+                }
+            }
+            // a tick: down a little, then up a long way
+            if (poly0.size == 3) {
+                val d1 = dist(poly0[0], poly0[1]); val d2 = dist(poly0[1], poly0[2])
+                if (d2 > d1 * 1.4f && poly0[1].y > poly0[0].y && poly0[1].y > poly0[2].y && bw > .03f) {
+                    val s2 = max(bw, bh) + .01f
+                    return Stuck(id, "m:Check", (minX + maxX) / 2 - s2 / 2, (minY + maxY) / 2 - s2 / 2, s2, 0f, color)
+                }
+            }
+            // a squiggle: many turns along a thin band
+            var turns = 0
+            var dir = 0
+            for (i in 1 until pts.size) { val dx = pts[i].x - pts[i - 1].x; val d = if (dx > 0) 1 else if (dx < 0) -1 else 0; if (d != 0 && dir != 0 && d != dir && abs(dx) > diag * .01f) turns++; if (d != 0) dir = d }
+            if (turns >= 3 && bh < bw * .5f && bw > .05f) return Stuck(id, "m:Squiggle", minX, (minY + maxY) / 2 - bw * .16f, bw, 0f, color)
             // a line: the stroke stays close to the straight run between its ends
             val chord = dist(first, last)
             if (chord > .03f) {

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,24 +88,25 @@ private fun markOf(k: String): Mark? = if (k.startsWith("m:")) runCatching { Mar
 
 /** The layer above the cards. [cw] is the canvas width in px; [topInset] the room under the status bar. */
 @Composable
-fun PlacedLayer(st: PlacedState, cw: Float, topInset: Float, ring: Color) {
+fun PlacedLayer(st: PlacedState, cw: Float, topInset: Float, ring: Color, ink: Color, origin: () -> androidx.compose.ui.geometry.Offset, onEditText: (String) -> Unit) {
     LaunchedEffect(Unit) { st.autosave() }
-    for (it in st.items) androidx.compose.runtime.key(it.id) { PlacedItem(it, st, cw, topInset, ring) }
+    for (it in st.items) androidx.compose.runtime.key(it.id) { PlacedItem(it, st, cw, topInset, ring, ink, origin, onEditText) }
 }
 
 @Composable
-private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ring: Color) {
+private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ring: Color, ink: Color, origin: () -> androidx.compose.ui.geometry.Offset, onEditText: (String) -> Unit) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val mark = markOf(s.k)
+    val isText = s.k.startsWith("t:")
     val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: 1f
     val wPx = s.w * cw
     val on = st.selected == s.id
     val latest by androidx.compose.runtime.rememberUpdatedState(s)
     Box(
         Modifier
-            .offset { IntOffset((s.x * cw).roundToInt(), (s.y * cw + topInset).roundToInt()) }
-            .size(with(density) { wPx.toDp() }, with(density) { (wPx * aspect).toDp() })
-            .pointerInput(s.id) { detectTapGestures { st.selected = if (st.selected == s.id) null else s.id } }
+            .offset { IntOffset((s.x * cw + origin().x).roundToInt(), (s.y * cw + topInset + origin().y).roundToInt()) }
+            .then(if (isText) Modifier.width(with(density) { wPx.toDp() }) else Modifier.size(with(density) { wPx.toDp() }, with(density) { (wPx * aspect).toDp() }))
+            .pointerInput(s.id) { detectTapGestures(onDoubleTap = { if (isText) onEditText(s.id) }) { st.selected = if (st.selected == s.id) null else s.id } }
             .pointerInput(s.id) {
                 detectTransformGestures { _, pan, zoom, rot ->
                     st.selected = s.id
@@ -116,7 +118,14 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
             }
             .graphicsLayer { rotationZ = latest.r },
     ) {
-        if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
+        if (isText) androidx.compose.foundation.text.BasicText(
+            s.k.substring(2),
+            style = androidx.compose.ui.text.TextStyle(
+                fontFamily = Serif, fontSize = with(density) { (wPx / 8.5f).toSp() }, lineHeight = with(density) { (wPx / 6.2f).toSp() },
+                color = if (s.c == 3) ink else MarkColors[s.c.mod(MarkColors.size)],
+            ),
+        )
+        else if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
         else {
             val img by produceState<ImageBitmap?>(Images.peek(s.k.substring(2), 500), s.k) { value = Images.load(s.k.substring(2), 500) }
             img?.let { Image(it, null, Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit) }
@@ -127,7 +136,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
 
 /** What to do with the selected item: its colour (marks), a bit smaller or bigger, a copy, remove, or done. */
 @Composable
-fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier) {
+fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val sel = st.items.firstOrNull { it.id == st.selected } ?: return
     val isMark = sel.k.startsWith("m:")
@@ -135,11 +144,12 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier) {
         modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        if (isMark) for ((i, c) in MarkColors.withIndex()) Box(
+        if (isMark || sel.k.startsWith("t:")) for ((i, c) in MarkColors.withIndex()) Box(
             Modifier.padding(horizontal = 3.dp).size(28.dp).clip(CircleShape).background(c)
                 .border(if (sel.c == i) 3.dp else 1.dp, if (sel.c == i) cs.onTertiary else cs.onTertiary.copy(alpha = .4f), CircleShape)
                 .clickable(onClickLabel = "Colour") { st.update(sel.id) { it.copy(c = i) } },
         )
+        if (sel.k.startsWith("t:")) IconButton({ onEdit(sel.id) }) { Icon(Icons.Rounded.Edit, "Edit the text", tint = cs.onTertiary) }
         IconButton({ st.update(sel.id) { it.copy(w = (it.w / 1.2f).coerceAtLeast(.04f)) } }) { Icon(Icons.Rounded.Remove, "Smaller", tint = cs.onTertiary) }
         IconButton({ st.update(sel.id) { it.copy(w = (it.w * 1.2f).coerceAtMost(1f)) } }) { Icon(Icons.Rounded.Add, "Bigger", tint = cs.onTertiary) }
         IconButton({ st.duplicate(sel.id) }) { Icon(Icons.Rounded.ContentCopy, "Duplicate", tint = cs.onTertiary) }

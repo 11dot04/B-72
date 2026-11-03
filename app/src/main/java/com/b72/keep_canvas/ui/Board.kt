@@ -4,6 +4,7 @@ package com.b72.keep_canvas.ui
 
 import com.b72.keep_canvas.ui.board.swatchOf
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.foundation.Canvas
@@ -52,6 +53,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.AddReaction
+import androidx.compose.material.icons.rounded.GridOn
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -60,6 +64,8 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -74,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -98,6 +105,8 @@ import com.b72.keep_canvas.ui.board.Scale
 import com.b72.keep_canvas.ui.board.Tones
 import com.b72.keep_canvas.ui.board.WIDE
 import com.b72.keep_canvas.ui.board.arrange
+import com.b72.keep_canvas.ui.board.orderNotes
+import com.b72.keep_canvas.ui.board.shuffle
 import com.b72.keep_canvas.ui.board.bottomOf
 import com.b72.keep_canvas.ui.board.cardWidth
 import com.b72.keep_canvas.ui.board.cardsFor
@@ -219,8 +228,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     var dragId by remember { mutableStateOf<String?>(null) }
     var liftTick by remember { mutableIntStateOf(0) }
     val force = remember { booleanArrayOf(false) } // set by the re-tidy button, consumed by the next layout
-    val vs = rememberScrollState()
-    val hs = rememberScrollState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pan = remember { Pan(scope) }
+    var grid by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+    var textEdit by remember { mutableStateOf<Pair<String?, String>?>(null) }
     val placed = remember(tag) { PlacedState(repo, tag) }
     LaunchedEffect(loaded != null) { placed.seed() }
     var tray by remember { mutableStateOf(false) }
@@ -233,56 +244,65 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         val topInset = with(density) { WindowInsets.statusBars.getTop(density).toFloat() } + with(density) { 72.dp.toPx() }
 
         LaunchedEffect(notes, tag, s, retidy) {
-            val fresh = cardsFor(notes, tag) { b, big -> val w = cardWidth(b, big); w to lay(b, w, s).h / s.cw }
+            val raw = cardsFor(notes, tag) { b, big -> val w = cardWidth(b, big); w to lay(b, w, s).h / s.cw }
             val all = force[0]
             force[0] = false
+            // notes are laid out in an order that keeps related ones together; every press of the wand starts from somewhere new
+            val vec = if (raw.size > 2 && (all || raw.any { !it.placed })) repo.vectors(raw.map { it.noteId }.toSet()) else emptyMap()
+            val order = orderNotes(raw.map { it.noteId }.distinct(), vec, if (all) shuffle else 0)
+            val fresh = raw.sortedBy { order.indexOf(it.noteId) }
             val changed = withContext(Dispatchers.Default) { arrange(fresh, all) }
             cards = fresh
             if (changed.isNotEmpty()) persist(repo, tag, changed)
-        }
-        LaunchedEffect(Unit) {
-            snapshotFlow { hs.maxValue }.first { it > 0 }
-            hs.scrollTo(hs.maxValue / 2)
+            if (all) pan.home()
         }
 
         val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
-        val bottom by remember(cards) { androidx.compose.runtime.derivedStateOf { (bottomOf(cards) * 20f).roundToInt() / 20f } }
-        val contentH = max(shPx, (bottom + .35f) * cw + topInset)
-        Box(Modifier.fillMaxSize().verticalScroll(vs).horizontalScroll(hs)) {
-            Box(Modifier.size(with(density) { cw.toDp() }, with(density) { contentH.toDp() })) {
-                for (c in ordered) key(c.id) {
-                    BoardCard(
-                        c, s, t, topInset,
-                        dragging = dragId == c.id,
-                        all = cards,
-                        onDragStart = {
-                            dragId = c.id
-                            c.lift = (cards.maxOfOrNull { it.lift } ?: 0) + 1
-                            liftTick++
-                        },
-                        onMove = { dx, dy -> c.x += dx / s.cw; c.y += dy / s.cw; c.moved() },
-                        onDrop = {
-                            settle(c, cards)
-                            c.moved()
-                            dragId = null
-                            persist(repo, tag, listOf(c))
-                        },
-                        onOpen = { onOpen(c.noteId) },
-                        onNudge = { dx, dy ->
-                            c.x = (c.x + dx).coerceAtLeast(0f); c.y = (c.y + dy).coerceAtLeast(0f)
-                            settle(c, cards); c.moved(); persist(repo, tag, listOf(c))
-                        },
-                    )
-                }
-                // arrows are annotations above the cards; they sit out while a card is being dragged
-                Canvas(Modifier.matchParentSize()) {
-                    cards.forEach { it.rev }
-                    if (dragId == null) arrows(com.b72.keep_canvas.ui.board.arrowsFor(cards), s.cw, topInset, t.primary)
-                }
-                // marks and stickers the person put here themselves, above everything
-                PlacedLayer(placed, s.cw, topInset, t.primary)
-                if (placed.drawing) Unit
+        val origin = { Offset(pan.x, pan.y) }
+        Box(
+            Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { androidx.compose.foundation.gestures.detectTapGestures(onDoubleTap = { pan.home() }) },
+        ) {
+            if (grid) Canvas(Modifier.fillMaxSize()) {
+                // a dot grid that travels with the canvas
+                val step = 26.dp.toPx()
+                val ox = ((pan.x % step) + step) % step
+                val oy = (((pan.y + topInset) % step) + step) % step
+                val dots = ArrayList<Offset>()
+                var x = ox
+                while (x < size.width) { var y = oy; while (y < size.height) { dots.add(Offset(x, y)); y += step }; x += step }
+                drawPoints(dots, androidx.compose.ui.graphics.PointMode.Points, t.onBg.copy(alpha = .16f), 2.2.dp.toPx(), StrokeCap.Round)
             }
+            for (c in ordered) key(c.id) {
+                BoardCard(
+                    c, s, t, topInset, origin,
+                    dragging = dragId == c.id,
+                    all = cards,
+                    onDragStart = {
+                        dragId = c.id
+                        c.lift = (cards.maxOfOrNull { it.lift } ?: 0) + 1
+                        liftTick++
+                    },
+                    onMove = { dx, dy -> c.x += dx / s.cw; c.y += dy / s.cw; c.moved() },
+                    onDrop = {
+                        settle(c, cards)
+                        c.moved()
+                        dragId = null
+                        persist(repo, tag, listOf(c))
+                    },
+                    onOpen = { onOpen(c.noteId) },
+                    onNudge = { dx, dy ->
+                        c.x += dx; c.y += dy
+                        settle(c, cards); c.moved(); persist(repo, tag, listOf(c))
+                    },
+                )
+            }
+            // arrows are annotations above the cards; they sit out while a card is being dragged
+            Canvas(Modifier.fillMaxSize()) {
+                cards.forEach { it.rev }
+                if (dragId == null) translate(pan.x, pan.y) { arrows(com.b72.keep_canvas.ui.board.arrowsFor(cards), s.cw, topInset, t.primary) }
+            }
+            // marks, text and stickers the person put here themselves, above everything
+            PlacedLayer(placed, s.cw, topInset, t.primary, t.onBg, origin) { id -> textEdit = id to (placed.items.firstOrNull { it.id == id }?.k?.removePrefix("t:") ?: "") }
         }
         if (cards.isEmpty() && loaded != null) Text(
             "Nothing on this canvas yet", style = flexStyle(22.sp, wght = 600, rond = 40f), color = t.onBg.copy(alpha = .6f),
@@ -296,26 +316,46 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 tag, style = flexStyle(26.sp, wght = 720, wdth = 108f, rond = 40f), color = t.onBg, maxLines = 1,
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
+            IconButton(onClick = { grid = !grid }, colors = btn) { Icon(Icons.Rounded.GridOn, if (grid) "Hide the dot grid" else "Show the dot grid") }
         }
         if (placed.drawing) {
-            DrawLayer(placed, hs.value, vs.value, s.cw, topInset, Modifier.fillMaxSize())
+            DrawLayer(placed, (-pan.x).roundToInt(), (-pan.y).roundToInt(), s.cw, topInset, Modifier.fillMaxSize())
             DrawBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
         }
-        PlacedBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
+        PlacedBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp)) { id -> textEdit = id to (placed.items.firstOrNull { it.id == id }?.k?.removePrefix("t:") ?: "") }
         if (tray) PlacedTray(
             stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
             onMark = { m, c ->
                 tray = false
                 val w = .15f
-                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "m:${m.name}", centreX(hs.value, swPx, s.cw, w), centreY(vs.value, shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c))
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "m:${m.name}", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c))
             },
             onSticker = { p ->
                 tray = false
                 val w = .17f
-                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "s:$p", centreX(hs.value, swPx, s.cw, w), centreY(vs.value, shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f))
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "s:$p", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f))
             },
             onClose = { tray = false },
         )
+        textEdit?.let { (id, initial) ->
+            var txt by remember(id) { mutableStateOf(initial) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { textEdit = null },
+                title = { Text(if (id == null) "Add text" else "Edit text") },
+                text = { androidx.compose.material3.OutlinedTextField(txt, { txt = it }, minLines = 2, label = { Text("Your words") }) },
+                confirmButton = {
+                    androidx.compose.material3.TextButton({
+                        val v = txt.trim()
+                        if (v.isNotEmpty()) {
+                            if (id == null) placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "t:$v", centreX((-pan.x).roundToInt(), swPx, s.cw, .3f), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, .1f), .3f, 0f, 3))
+                            else placed.update(id) { it.copy(k = "t:$v") }
+                        }
+                        textEdit = null
+                    }) { Text("Done") }
+                },
+                dismissButton = { androidx.compose.material3.TextButton({ textEdit = null }) { Text("Cancel") } },
+            )
+        }
         // tools in a floating pill, and the one thing you do most (a new note) as its own larger button beside it
         Row(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
@@ -325,10 +365,11 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 expanded = true,
                 colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
                 content = {
-                    IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw a shape") }
-                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Marks and stickers") }
-                    IconButton(onClick = onStickers) { Icon(Icons.Rounded.EmojiEmotions, "Artifacts") }
-                    IconButton(onClick = { force[0] = true; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Tidy the whole canvas") }
+                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
+                    IconButton(onClick = { textEdit = null to "" }) { Icon(Icons.Rounded.TextFields, "Add text") }
+                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Stamps and marks") }
+                    IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw, arrows and scribbles") }
+                    IconButton(onClick = { force[0] = true; shuffle++; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
                 },
             )
             FloatingActionButton(
@@ -358,7 +399,7 @@ private fun persist(repo: Repo, tag: String, changed: List<Card>) {
 
 @Composable
 private fun BoardCard(
-    c: Card, s: Scale, t: Tones, topInset: Float,
+    c: Card, s: Scale, t: Tones, topInset: Float, origin: () -> Offset,
     dragging: Boolean, all: List<Card>,
     onDragStart: () -> Unit, onMove: (Float, Float) -> Unit, onDrop: () -> Unit, onOpen: () -> Unit, onNudge: (Float, Float) -> Unit,
 ) {
@@ -381,7 +422,7 @@ private fun BoardCard(
     val lift by animateFloatAsState(if (dragging) 1.04f else 1f, MaterialTheme.motionScheme.fastSpatialSpec<Float>(), label = "lift")
     Box(
         Modifier
-            .offset { IntOffset(pos.value.x.roundToInt(), pos.value.y.roundToInt()) }
+            .offset { IntOffset((pos.value.x + origin().x).roundToInt(), (pos.value.y + origin().y).roundToInt()) }
             .size(s.dp(c.w * s.cw), s.dp(c.h * s.cw))
             .scale(lift)
             .rotate(Math.toDegrees(c.angle.toDouble()).toFloat())
@@ -444,5 +485,54 @@ private fun DrawScope.arrows(list: List<com.b72.keep_canvas.ui.board.Arrow>, cw:
             val path = Path().apply { moveTo(tip.x, tip.y); quadraticTo(mid.x, mid.y, e.x, e.y) }
             drawPath(path, color, style = Stroke(width = base * .9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
+    }
+}
+
+
+/** Where the canvas is, in pixels: dragged by a finger, flung with momentum, and with no edge in any direction. */
+class Pan(private val scope: kotlinx.coroutines.CoroutineScope) {
+    var x by mutableFloatStateOf(0f)
+    var y by mutableFloatStateOf(0f)
+    private var job: kotlinx.coroutines.Job? = null
+
+    fun stop() { job?.cancel() }
+
+    /** Back to the top-left corner, where the cards start. */
+    fun home() {
+        job?.cancel()
+        job = scope.launch {
+            val a = androidx.compose.animation.core.Animatable(androidx.compose.ui.geometry.Offset(x, y), androidx.compose.ui.geometry.Offset.VectorConverter)
+            a.animateTo(androidx.compose.ui.geometry.Offset.Zero, androidx.compose.animation.core.spring(dampingRatio = .85f, stiffness = 140f)) { x = value.x; y = value.y }
+        }
+    }
+
+    fun fling(vx: Float, vy: Float) {
+        job?.cancel()
+        job = scope.launch {
+            val decay = androidx.compose.animation.core.exponentialDecay<Float>(frictionMultiplier = 1.2f)
+            launch { androidx.compose.animation.core.Animatable(x).also { it.animateDecay(vx, decay) { x = value } } }
+            launch { androidx.compose.animation.core.Animatable(y).also { it.animateDecay(vy, decay) { y = value } } }
+        }
+    }
+}
+
+/** Drag anywhere that is not a card being moved to slide the canvas about; lift the finger and it keeps going. */
+private fun Modifier.panning(pan: Pan): Modifier = pointerInput(Unit) {
+    androidx.compose.foundation.gestures.awaitEachGesture {
+        val down = androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+        pan.stop()
+        val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+        tracker.addPosition(down.uptimeMillis, down.position)
+        val slop = androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation(down.id) { change, over -> change.consume(); pan.x += over.x; pan.y += over.y }
+            ?: return@awaitEachGesture
+        tracker.addPosition(slop.uptimeMillis, slop.position)
+        androidx.compose.foundation.gestures.drag(slop.id) { ch ->
+            val d = ch.positionChange()
+            pan.x += d.x; pan.y += d.y
+            tracker.addPosition(ch.uptimeMillis, ch.position)
+            ch.consume()
+        }
+        val v = tracker.calculateVelocity()
+        pan.fling(v.x, v.y)
     }
 }

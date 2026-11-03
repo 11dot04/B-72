@@ -145,7 +145,7 @@ fun InlineBody(
 
 /** A checklist edited in place: tick a row, type in it, Enter adds the next, Backspace on an empty row removes it. */
 @Composable
-fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, onItems: (List<String>) -> Unit) {
+fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed: Int = 0, onItems: (List<String>) -> Unit) {
     val items = remember { mutableStateListOf<String>().also { it.addAll(items0.ifEmpty { listOf("") }) } }
     val saved = remember(items0) { items0.joinToString("\n") }
     val now = items.filter { it.isNotBlank() }.joinToString("\n")
@@ -175,7 +175,7 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, onIt
                     contentAlignment = Alignment.Center,
                 ) { Icon(if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, tint = if (done) pal.primary else pal.fg) }
                 Spacer(Modifier.width(6.dp))
-                if (done) ScribbleText(s.substring(2), true, pal.fg, pal.primary, style, Modifier.weight(1f))
+                if (done) ScribbleText(s.substring(2), true, pal.fg, MaterialTheme.colorScheme.tertiary, style, Modifier.weight(1f), seed = seed)
                 else Box(Modifier.weight(1f)) {
                     if (s.isEmpty() && i == items.lastIndex) Text("List item", style = style, color = pal.fg.copy(alpha = .4f))
                     BasicTextField(

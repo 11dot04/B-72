@@ -54,6 +54,38 @@ import com.b72.keep_canvas.data.field
 import com.b72.keep_canvas.data.seedOf
 import kotlin.math.roundToInt
 
+/** The three stages a thing goes through, in the words that suit it. Stored as want, doing, done. */
+fun statusLabels(kind: Kind): List<String> = when (kind) {
+    Kind.Film -> listOf("To watch", "Watching", "Watched")
+    Kind.Book -> listOf("To read", "Reading", "Read")
+    Kind.Recipe -> listOf("To try", "Cooking", "Made")
+    Kind.Track -> listOf("To hear", "On repeat", "Loved")
+    else -> emptyList()
+}
+val STATUS_KEYS = listOf("want", "doing", "done")
+
+/** Where you are with it, and what you thought: tap a stage, tap a star (tap the same star again to clear it). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun Tracker(b: Block, fg: androidx.compose.ui.graphics.Color, onData: (String, kotlinx.serialization.json.JsonElement) -> Unit) {
+    val labels = statusLabels(b.kind)
+    val cur = b.str("status").orEmpty()
+    val r = b.dbl("rating")?.roundToInt() ?: 0
+    Column(Modifier.padding(bottom = 16.dp)) {
+        if (labels.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            labels.forEachIndexed { i, l ->
+                androidx.compose.material3.FilterChip(cur == STATUS_KEYS[i], { onData("status", kotlinx.serialization.json.JsonPrimitive(if (cur == STATUS_KEYS[i]) "" else STATUS_KEYS[i])) }, label = { Text(l) })
+            }
+        }
+        Row(Modifier.padding(top = 10.dp)) {
+            for (i in 1..5) Icon(
+                if (i <= r) Icons.Rounded.Star else Icons.Rounded.StarOutline, "Rate $i",
+                Modifier.size(34.dp).clip(CircleShape).clickable { onData("rating", kotlinx.serialization.json.JsonPrimitive(if (i == r) 0 else i)) }.padding(3.dp), tint = fg,
+            )
+        }
+    }
+}
+
 @Composable
 private fun Stars(r: Int, color: androidx.compose.ui.graphics.Color, size: Dp) {
     Row { for (i in 1..5) Icon(if (i <= r) Icons.Rounded.Star else Icons.Rounded.StarOutline, null, Modifier.size(size), tint = color) }
@@ -86,7 +118,7 @@ private fun Notes(l: String, text: String, fg: androidx.compose.ui.graphics.Colo
 
 /** A film, book, track, recipe or link on the note page. [w] is the content width. */
 @Composable
-fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null) {
+fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null, onData: ((String, kotlinx.serialization.json.JsonElement) -> Unit)? = null) {
     var lyricSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val fg = pal.fg
     val showTitle = b.title != noteTitle
@@ -94,6 +126,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
     fun v(k: String) = b.field(k)
     val rating = b.dbl("rating")?.roundToInt() ?: 0
     Column(modifier.padding(bottom = 26.dp)) {
+        if (onData != null && b.kind != Kind.Link) Tracker(b, fg, onData)
         when (b.kind) {
             Kind.Film, Kind.Book -> {
                 val book = b.kind == Kind.Book

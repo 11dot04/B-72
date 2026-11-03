@@ -2,6 +2,7 @@ package com.b72.keep_canvas.ui
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -28,7 +29,7 @@ enum class Mark(val label: String, val aspect: Float) {
     Underline("Underline", .32f), Squiggle("Squiggle", .32f), Box("Box", .75f), Scribble("Scribble", .55f),
     Star("Star", 1f), Heart("Heart", 1f), Sparkle("Sparkle", 1f), Bang("Bang", 1f),
     // shapes a rough stroke is corrected into; their height is free
-    Line("Line", .1f), Oval("Circle", 1f), Rect("Box", .7f), Tri("Triangle", .9f),
+    Line("Line", .1f), Dart("Arrow line", .1f), Oval("Circle", 1f), Rect("Box", .7f), Tri("Triangle", .9f),
 }
 
 /** The pen colours, in the order a mark cycles through them. */
@@ -169,6 +170,13 @@ fun DrawScope.drawMark(m: Mark, x: Float, y: Float, w: Float, color: Color, seed
             x, y, w, h, color, seed, pen * .9f, .01f,
         )
         Mark.Line -> drawLine(color, Offset(x + pen, y + h / 2), Offset(x + w - pen, y + h / 2), pen * 1.2f, StrokeCap.Round)
+        Mark.Dart -> {
+            val pw = minOf(pen, 3.2.dp.toPx()) * 1.25f
+            val a = Offset(x + pw, y + h / 2); val b = Offset(x + w - pw, y + h / 2)
+            drawLine(color, a, b, pw, StrokeCap.Round)
+            val hl = minOf(w * .3f, pw * 6f)
+            for (da in floatArrayOf(.5f, -.5f)) drawLine(color, b, b - Offset(cos(da), sin(da)) * hl, pw, StrokeCap.Round)
+        }
         Mark.Oval -> drawOval(color, Offset(x + pen, y + pen), androidx.compose.ui.geometry.Size(w - 2 * pen, h - 2 * pen), style = Stroke(pen * 1.2f, cap = StrokeCap.Round))
         Mark.Rect -> drawRoundRect(color, Offset(x + pen, y + pen), androidx.compose.ui.geometry.Size(w - 2 * pen, h - 2 * pen), androidx.compose.ui.geometry.CornerRadius(pen * 1.5f), style = Stroke(pen * 1.2f, join = StrokeJoin.Round))
         Mark.Tri -> drawPath(Path().apply { moveTo(x + w / 2, y + pen); lineTo(x + w - pen, y + h - pen); lineTo(x + pen, y + h - pen); close() }, color, style = Stroke(pen * 1.2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
