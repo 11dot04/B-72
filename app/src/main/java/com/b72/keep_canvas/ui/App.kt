@@ -110,7 +110,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                         open = null
                         scope.launch {
                             val r = snack.showSnackbar("Note deleted", actionLabel = "Undo", withDismissAction = true, duration = androidx.compose.material3.SnackbarDuration.Long)
-                            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) repo.upsert(note)
+                            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) repo.restore(note.id)
                         }
                     },
                     onToggle = { b, i -> repo.toggleItem(note.id, b, i) },
@@ -145,7 +145,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     },
                     label = "tabs",
                 ) { t -> when (t) {
-                    1 -> CanvasHub(loaded) { board = it }
+                    1 -> CanvasHub(loaded, onRename = { a, b -> repo.renameTag(a, b) }) { board = it }
                     2 -> LibraryScreen(loaded, { open = it }, onAdd = { begin(it, null) })
                     3 -> StickersScreen(repo, loaded) { tab = 0 }
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },

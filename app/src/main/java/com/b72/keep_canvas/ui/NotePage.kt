@@ -424,7 +424,7 @@ fun NotePage(
             trailingContent = {
                 Box {
                     IconButton(onClick = { details = true }) { Icon(Icons.Rounded.MoreVert, "Details and more") }
-                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag, onParts = if (repo != null) ({ parts = true }) else null)
+                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag, onParts = if (repo != null) ({ parts = true }) else null, onArchive = if (repo != null) ({ repo.archive(note.id); onBack() }) else null)
                 }
             },
             content = {

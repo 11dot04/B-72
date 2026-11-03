@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EditCalendar
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Notes
@@ -236,8 +237,24 @@ fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, mo
     val sum = note.summary()
     val tags = note.suggestedTags()
     val name = if (note.title.isBlank() && onTitle != null) note.blocks.firstNotNullOfOrNull { b -> (b.data["aiTitle"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.length >= 3 } }.orEmpty() else ""
-    if (sum.isEmpty() && tags.isEmpty() && name.isEmpty()) return
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val events = androidx.compose.runtime.remember(note.blocks) { com.b72.keep_canvas.data.findEvents(note.blocks.joinToString("\n") { it.tripText() }, note.title) }
+    if (sum.isEmpty() && tags.isEmpty() && name.isEmpty() && events.isEmpty()) return
     Column(modifier.fillMaxWidth()) {
+        if (events.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+            for (e in events) AssistChip(
+                onClick = {
+                    val i = android.content.Intent(android.content.Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+                        .putExtra(android.provider.CalendarContract.Events.TITLE, e.title)
+                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.start)
+                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, e.start + 3_600_000L)
+                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, !e.timed)
+                    runCatching { ctx.startActivity(i) }
+                },
+                label = { Text(e.title.take(22) + " · " + java.time.format.DateTimeFormatter.ofPattern(if (e.timed) "d MMM, h:mm a" else "d MMM").format(java.time.Instant.ofEpochMilli(e.start).atZone(java.time.ZoneId.systemDefault()))) },
+                leadingIcon = { Icon(Icons.Rounded.EditCalendar, null) },
+            )
+        }
         if (name.isNotEmpty()) AssistChip(onClick = { onTitle?.invoke(name) }, label = { Text("Title it: $name") }, modifier = Modifier.padding(bottom = 10.dp))
         if (sum.isNotEmpty()) Text(sum, style = TextStyle(fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontStyle = FontStyle.Italic, color = fg.copy(alpha = .85f)), modifier = Modifier.padding(bottom = 10.dp))
         if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -348,7 +365,7 @@ fun EditSplit(
 
 /** The three-dot menu: when the note was made and last changed, what is in it, and (kept apart, in red) delete. */
 @Composable
-fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit, onParts: (() -> Unit)? = null) {
+fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit, onParts: (() -> Unit)? = null, onArchive: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val now = System.currentTimeMillis()
     val fmt = DateTimeFormatter.ofPattern("EEE d MMM yyyy · HH:mm")
@@ -391,9 +408,23 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
                 }
             }
             Spacer(Modifier.height(4.dp))
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val csv = androidx.compose.runtime.remember(note.blocks) { com.b72.keep_canvas.data.ledgerCsv(note.blocks.joinToString("\n") { it.tripText() }) }
             val acts = buildList {
                 add(Triple(Icons.Rounded.Share, "Share as text", { onDismiss(); onShare() }))
+                if (csv != null) add(Triple(Icons.Rounded.Notes, "Export ledger as CSV", {
+                    onDismiss()
+                    runCatching {
+                        val dir = java.io.File(ctx.cacheDir, "exports").apply { mkdirs() }
+                        val f = java.io.File(dir, (note.title.ifBlank { "ledger" }.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().ifBlank { "ledger" }) + ".csv")
+                        f.writeText(csv)
+                        val u = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+                        ctx.startActivity(android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/csv").putExtra(android.content.Intent.EXTRA_STREAM, u).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Export ledger"))
+                    }
+                }))
                 if (onParts != null) add(Triple(Icons.Rounded.Layers, "Remove parts of this note", { onDismiss(); onParts() }))
+                if (onArchive != null) add(Triple(Icons.Rounded.Inventory2, "Archive", { onDismiss(); onArchive() }))
                 for (t in note.tags) add(Triple(Icons.Rounded.Dashboard, "Open the $t canvas", { onDismiss(); onTag(t) }))
             }
             acts.forEachIndexed { i, (icon, label, go) ->

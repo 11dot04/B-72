@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -8,6 +8,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -118,7 +119,23 @@ fun Modifier.bottomBlur(radius: androidx.compose.ui.unit.Dp = 5.dp, from: Float 
 )
 
 @Composable
-fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
+fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> }, onTag: (String) -> Unit) {
+    var renaming by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var newName by remember { androidx.compose.runtime.mutableStateOf("") }
+    renaming?.let { old ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename \"$old\"") },
+            text = {
+                Column {
+                    androidx.compose.material3.OutlinedTextField(newName, { newName = it }, singleLine = true, label = { Text("New name") })
+                    Text("Type the name of another tag to merge the two into one.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton({ onRename(old, newName); renaming = null }, enabled = newName.isNotBlank()) { Text("Save") } },
+            dismissButton = { androidx.compose.material3.TextButton({ renaming = null }) { Text("Cancel") } },
+        )
+    }
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     val cs = MaterialTheme.colorScheme
     LightStatusBar(!dark)
@@ -243,7 +260,7 @@ fun CanvasHub(loaded: Loaded?, onTag: (String) -> Unit) {
                                 alpha = .28f + .72f * f
                                 translationY = (me?.let { (it.offset + it.size / 2f - mid) } ?: 0f) * -.08f
                             }
-                            .clickable(onClickLabel = "Open the ${g.key} canvas") { onTag(g.key) },
+                            .combinedClickable(onClickLabel = "Open the ${g.key} canvas", onLongClickLabel = "Rename or merge", onLongClick = { newName = g.key; renaming = g.key }) { onTag(g.key) },
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text(name, style = titleStyle, color = if (step >= 5) ink else ink.copy(alpha = .8f), maxLines = 1, softWrap = false)

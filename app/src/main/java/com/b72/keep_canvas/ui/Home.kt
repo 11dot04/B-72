@@ -80,7 +80,6 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -548,6 +547,10 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     var assistant by remember { mutableStateOf(false) }
     var services by remember { mutableStateOf(false) }
+    var drive by remember { mutableStateOf(false) }
+    var trash by remember { mutableStateOf(false) }
+    if (trash) TrashSheet(repo) { trash = false }
+    if (drive) DriveSheet(repo) { drive = false }
     if (assistant) AssistantDialog { assistant = false }
     if (services) ServicesSheet(repo) { services = false }
     fun say(t: String) = android.widget.Toast.makeText(ctx, t, android.widget.Toast.LENGTH_LONG).show()
@@ -564,13 +567,32 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
             say(if (lib == null) "That is not a B-72 backup" else "Restored ${repo.merge(lib)} new notes")
         }
     }
+    val keep = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            say("Reading your Keep export…")
+            val lib = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.openInputStream(uri)!!.use { com.b72.keep_canvas.data.KeepImport.read(ctx, it) } }.getOrNull() }
+            say(if (lib == null) "No Keep notes found in that file" else "Imported ${repo.merge(lib)} notes from Keep")
+        }
+    }
     Box {
         androidx.compose.material3.IconButton({ open = true }) { Icon(Icons.Rounded.Menu, "Menu") }
         androidx.compose.material3.DropdownMenu(open, { open = false }) {
             androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Connected apps") }, { open = false; services = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Clear unused photos") }, { open = false; scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } })
+            androidx.compose.material3.DropdownMenuItem(
+                { Text("Weekly digest") }, { var on = com.b72.keep_canvas.data.Digest.enabled(ctx); on = !on; com.b72.keep_canvas.data.Digest.setEnabled(ctx, on); open = false; say(if (on) "Sunday digest on" else "Sunday digest off") },
+                trailingIcon = { if (com.b72.keep_canvas.data.Digest.enabled(ctx)) Icon(Icons.Rounded.Check, null) },
+            )
+            androidx.compose.material3.DropdownMenuItem(
+                { Text("Lock the app") },
+                { val on = !com.b72.keep_canvas.data.AppLock.enabled(ctx); open = false; say(if (!com.b72.keep_canvas.data.AppLock.set(ctx, on)) "Set a screen lock on the phone first" else if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") },
+                trailingIcon = { if (com.b72.keep_canvas.data.AppLock.enabled(ctx)) Icon(Icons.Rounded.Check, null) },
+            )
+            androidx.compose.material3.DropdownMenuItem({ Text("Archive & trash") }, { open = false; trash = true })
+            androidx.compose.material3.DropdownMenuItem({ Text("Back up to Google Drive") }, { open = false; drive = true })
             androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
+            androidx.compose.material3.DropdownMenuItem({ Text("Import from Google Keep") }, { open = false; keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) })
             androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
         }
     }
