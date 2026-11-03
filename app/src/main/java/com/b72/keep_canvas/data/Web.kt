@@ -168,28 +168,94 @@ suspend fun searchTracks(query: String): List<Cand> =
             mapOf("artist" to r.s("artistName"), "album" to r.s("collectionName"), "year" to year(r.s("releaseDate")), "genre" to r.s("primaryGenreName")))
     }
 
-/** Books: Open Library first (covers by id), Google Books as a fallback. Neither needs a key. */
-suspend fun searchBooks(query: String): List<Cand> {
-    val out = ArrayList<Cand>()
-    val j = json("https://openlibrary.org/search.json?q=${q(query)}&limit=10&fields=title,author_name,first_publish_year,cover_i,number_of_pages_median,subject") as? JSONObject
-    for (d in j?.optJSONArray("docs")?.objs() ?: emptyList()) {
-        if (d.s("title").isEmpty()) continue
-        val au = d.optJSONArray("author_name")?.optString(0) ?: ""
-        val yr = d.s("first_publish_year")
-        val sub = d.optJSONArray("subject")?.optString(0) ?: ""
-        val cover = d.s("cover_i")
-        out += Cand(d.s("title"), "$au · $yr", cover.takeIf { it.isNotEmpty() }?.let { "https://covers.openlibrary.org/b/id/$it-L.jpg" },
-            mapOf("author" to au, "year" to yr, "pages" to d.s("number_of_pages_median"), "genre" to sub))
+/** The width-to-height of a cover image, or null when there is no image there. Reads only the header, from the small size. */
+private suspend fun coverShape(url: String): Float? = withContext(Dispatchers.IO) {
+    val bytes = get(url) ?: return@withContext null
+    val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+    if (o.outWidth < 60 || o.outHeight < 60) null else o.outWidth.toFloat() / o.outHeight
+}
+
+/** A book jacket is about two thirds as wide as it is tall; a photograph of a book on a table, or a badly cropped scan, is not. */
+private fun jacket(aspect: Float?) = aspect != null && aspect in .5f..0.8f
+
+/** The English title of a book known by a foreign or romanised one (Sasameyuki -> The Makioka Sisters), from Wikipedia. */
+private suspend fun englishTitle(query: String): String? {
+    val j = json("https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=4" +
+        "&gsrsearch=${q("$query novel")}&prop=description") as? JSONObject ?: return null
+    val pages = j.optJSONObject("query")?.optJSONObject("pages") ?: return null
+    val list = pages.keys().asSequence().mapNotNull { pages.optJSONObject(it) }.sortedBy { it.optInt("index", 99) }
+    for (p in list) {
+        val d = p.s("description").lowercase()
+        if (Regex("novel|novella|book|memoir|short story|story collection|poem|play|manga").containsMatchIn(d)) {
+            return p.s("title").replace(Regex("\\s*\\([^)]*\\)$"), "").trim().ifEmpty { null }
+        }
     }
-    // books with a cover first, keeping the relevance order otherwise
-    val sorted = out.sortedBy { if (it.image == null) 1 else 0 }
-    if (sorted.isNotEmpty()) return sorted.take(8)
-    val g = json("https://www.googleapis.com/books/v1/volumes?q=${q(query)}&maxResults=8") as? JSONObject
+    return null
+}
+
+private suspend fun openLibrary(query: String, english: Boolean): List<JSONObject> {
+    val qq = if (english) "$query language:eng" else query
+    val fields = "key,title,author_name,first_publish_year,cover_i,number_of_pages_median,subject,editions,editions.key,editions.title,editions.language,editions.cover_i,editions.number_of_pages"
+    val j = json("https://openlibrary.org/search.json?q=${q(qq)}&limit=10&lang=en&fields=${q(fields)}") as? JSONObject
+    return j?.optJSONArray("docs")?.objs()?.filter { it.s("title").isNotEmpty() } ?: emptyList()
+}
+
+/** A cover from Google Books for the English edition of [title], when Open Library has no good one. */
+private suspend fun googleCover(title: String, author: String): String? {
+    val qs = "intitle:\"$title\"" + if (author.isNotEmpty()) " inauthor:\"$author\"" else ""
+    val g = json("https://www.googleapis.com/books/v1/volumes?q=${q(qs)}&maxResults=5&langRestrict=en&printType=books") as? JSONObject ?: return null
+    for (it in g.optJSONArray("items")?.objs() ?: emptyList()) {
+        val img = it.optJSONObject("volumeInfo")?.optJSONObject("imageLinks")?.s("thumbnail")?.ifEmpty { null } ?: continue
+        val big = img.replaceFirst("http://", "https://").replace("&edge=curl", "").replaceFirst("zoom=1", "zoom=2")
+        if (jacket(coverShape(big))) return big
+    }
+    return null
+}
+
+/**
+ * Books from Open Library, in English where there is an English edition (title and cover are the English edition's). A book known by
+ * a foreign title is found through Wikipedia. Of the covers a book has, one shaped like a jacket wins over a photograph or a bad crop,
+ * and Google Books fills in when Open Library has none that will do. Neither source needs a key.
+ */
+suspend fun searchBooks(query: String): List<Cand> {
+    var docs = openLibrary(query, true)
+    val foreign = query.any { it.isLetter() && it.code > 0x24F }
+    if (docs.isEmpty() || foreign) {
+        val en = englishTitle(query)
+        if (en != null && !en.equals(query, true)) {
+            val more = openLibrary(en, true)
+            docs = if (foreign) more + docs else docs.ifEmpty { more }
+        }
+    }
+    if (docs.isEmpty()) docs = openLibrary(query, false)
+    if (docs.isNotEmpty()) {
+        val out = coroutineScope {
+            docs.distinctBy { it.s("key") }.take(8).map { d -> async {
+                val ed = d.optJSONObject("editions")?.optJSONArray("docs")?.objs()?.firstOrNull()
+                val english = ed?.optJSONArray("language")?.let { a -> (0 until a.length()).any { a.optString(it) == "eng" } } == true
+                val title = if (english && ed?.s("title")?.isNotEmpty() == true) ed.s("title") else d.s("title")
+                val au = d.optJSONArray("author_name")?.optString(0) ?: ""
+                val yr = d.s("first_publish_year")
+                val ids = listOfNotNull(ed?.s("cover_i")?.ifEmpty { null }, d.s("cover_i").ifEmpty { null }).distinct()
+                var cover: String? = null
+                for (id in ids) { if (jacket(coverShape("https://covers.openlibrary.org/b/id/$id-M.jpg?default=false"))) { cover = "https://covers.openlibrary.org/b/id/$id-L.jpg"; break } }
+                if (cover == null) cover = googleCover(title, au)
+                if (cover == null && ids.isNotEmpty()) cover = "https://covers.openlibrary.org/b/id/${ids.first()}-L.jpg"
+                val pages = ed?.s("number_of_pages")?.ifEmpty { null } ?: d.s("number_of_pages_median")
+                Cand(title, "$au · $yr", cover, mapOf("author" to au, "year" to yr, "pages" to pages, "genre" to (d.optJSONArray("subject")?.optString(0) ?: "")))
+            } }.awaitAll()
+        }
+        // books with a cover first, keeping the relevance order otherwise
+        return out.sortedBy { if (it.image == null) 1 else 0 }
+    }
+    val out = ArrayList<Cand>()
+    val g = json("https://www.googleapis.com/books/v1/volumes?q=${q(query)}&maxResults=8&langRestrict=en&printType=books") as? JSONObject
     for (it in g?.optJSONArray("items")?.objs() ?: emptyList()) {
         val v = it.optJSONObject("volumeInfo") ?: continue
         if (v.s("title").isEmpty()) continue
         val au = v.optJSONArray("authors")?.optString(0) ?: ""
-        val img = v.optJSONObject("imageLinks")?.s("thumbnail")?.replaceFirst("http://", "https://")?.replaceFirst("zoom=1", "zoom=2")?.ifEmpty { null }
+        val img = v.optJSONObject("imageLinks")?.s("thumbnail")?.replaceFirst("http://", "https://")?.replace("&edge=curl", "")?.replaceFirst("zoom=1", "zoom=2")?.ifEmpty { null }
         out += Cand(v.s("title"), "$au · ${year(v.s("publishedDate"))}", img,
             mapOf("author" to au, "year" to year(v.s("publishedDate")), "pages" to v.s("pageCount"), "genre" to (v.optJSONArray("categories")?.optString(0) ?: "")))
     }
