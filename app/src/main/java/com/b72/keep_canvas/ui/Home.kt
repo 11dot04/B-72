@@ -80,6 +80,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
