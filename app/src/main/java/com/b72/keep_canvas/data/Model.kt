@@ -44,6 +44,8 @@ data class Note(
     @SerialName("st") val starred: Boolean = false,
     /** How the note's words and photo are laid out on its page (see Layouts); empty is the plain page. */
     @SerialName("ly") val layout: String = "",
+    /** When the note was moved to the trash (epoch millis); 0 for a note that is not in it. */
+    @SerialName("tr") val trashedAt: Long = 0,
 ) {
     /**
      * The title the person gave the note; failing that, the one the assistant suggested (when it is installed).
@@ -83,6 +85,10 @@ data class Library(
     val stickers: List<JsonElement> = emptyList(),
     /** Marks and stickers a person put on a canvas by hand, per tag. */
     val placed: Map<String, List<Stuck>> = emptyMap(),
+    /** Notes put away: out of every tab until brought back. */
+    val archive: List<Note> = emptyList(),
+    /** Deleted notes, kept for 30 days. */
+    val trash: List<Note> = emptyList(),
 )
 
 /** One hand-placed item on a canvas. [k] is "m:<Mark>" for a drawn mark or "s:<path>" for a sticker; x, y and w are fractions of the canvas width. */

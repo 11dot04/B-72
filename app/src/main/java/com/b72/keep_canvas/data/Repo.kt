@@ -44,7 +44,12 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             .filter { it.second >= 0.42f }.sortedByDescending { it.second }.take(k).map { it.first }
     }
 
-    suspend fun init() { loaded = Store.load(ctx); autoClean() }
+    suspend fun init() {
+        loaded = Store.load(ctx)
+        // the trash is emptied of anything older than 30 days
+        loaded?.library?.let { l -> val cut = System.currentTimeMillis() - 30 * 86_400_000L; if (l.trash.any { it.trashedAt in 1 until cut }) commit(l.copy(trash = l.trash.filter { it.trashedAt == 0L || it.trashedAt >= cut })) }
+        autoClean()
+    }
 
     /** Deletes picture files that no note, cut-out, sticker or placed item refers to any more (and are over a day old, so a note being written is safe). Returns the bytes freed. */
     suspend fun cleanOrphans(): Long = withContext(Dispatchers.IO) {
@@ -206,6 +211,17 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "ai${System.nanoTime()}", body = text.trim())))
     }
 
+    /** Renames a tag everywhere; if the new name is already a tag the two simply become one. Its canvas marks and stickers move along. */
+    fun renameTag(old: String, new: String) {
+        val l = loaded?.library ?: return
+        val to = new.trim().trimStart('#')
+        if (to.isEmpty() || to == old) return
+        val notes = l.notes.map { n -> if (old in n.tags) n.copy(tags = n.tags.map { if (it == old) to else it }.distinct()) else n }
+        val moved = l.placed[old]
+        val placed = if (moved == null) l.placed else (l.placed - old) + (to to (l.placed[to].orEmpty() + moved))
+        commit(l.copy(notes = notes, placed = placed))
+    }
+
     fun setPlaced(tag: String, items: List<Stuck>) {
         val l = loaded?.library ?: return
         if (l.placed[tag].orEmpty() == items) return
@@ -329,7 +345,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                 else -> false
             }
         }
-        if (blank) delete(id)
+        if (blank) delete(id, hard = true)
     }
 
     /** Sets the note's own title, kept in a title-only block (older notes kept it on their text block). */
@@ -406,10 +422,32 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         commit(l.copy(notes = l.notes.map { by[it.id] ?: it }))
     }
 
-    fun delete(id: String) {
+    /** Deleting moves a note to the trash for 30 days; [hard] (a blank draft) throws it away at once. */
+    fun delete(id: String, hard: Boolean = false) {
         val l = loaded?.library ?: return
+        val n = l.notes.firstOrNull { it.id == id } ?: return
         TripAlerts.cancel(ctx, id)
-        commit(l.copy(notes = l.notes.filter { it.id != id }))
+        commit(l.copy(notes = l.notes.filter { it.id != id }, trash = if (hard) l.trash else l.trash + n.copy(trashedAt = System.currentTimeMillis())))
+    }
+
+    /** Puts a note away without deleting it. */
+    fun archive(id: String) {
+        val l = loaded?.library ?: return
+        val n = l.notes.firstOrNull { it.id == id } ?: return
+        commit(l.copy(notes = l.notes.filter { it.id != id }, archive = l.archive + n))
+    }
+
+    /** Brings a note back from the archive or the trash. */
+    fun restore(id: String) {
+        val l = loaded?.library ?: return
+        val n = (l.archive + l.trash).firstOrNull { it.id == id } ?: return
+        commit(l.copy(notes = l.notes + n.copy(trashedAt = 0), archive = l.archive.filter { it.id != id }, trash = l.trash.filter { it.id != id }))
+    }
+
+    /** Removes a trashed note for good (all of them when [id] is null). */
+    fun purge(id: String?) {
+        val l = loaded?.library ?: return
+        commit(l.copy(trash = if (id == null) emptyList() else l.trash.filter { it.id != id }))
     }
 
     private fun commit(lib: Library) {

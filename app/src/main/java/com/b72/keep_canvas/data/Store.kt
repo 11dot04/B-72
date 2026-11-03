@@ -61,7 +61,7 @@ object Store {
         val root = AppJson.parseToJsonElement(text)
         return when (root) {
             is JsonArray -> Library(notes = root.map { AppJson.decodeFromJsonElement<Note>(it) })
-            is JsonObject -> Library(
+            is JsonObject -> runCatching { AppJson.decodeFromJsonElement(Library.serializer(), root) }.getOrNull() ?: Library(
                 notes = root["notes"]?.jsonArray?.map { AppJson.decodeFromJsonElement<Note>(it) } ?: emptyList(),
                 stickers = root["stickers"]?.jsonArray?.toList() ?: emptyList(),
             )

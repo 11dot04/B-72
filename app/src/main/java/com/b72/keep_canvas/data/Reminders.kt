@@ -79,6 +79,7 @@ class ReminderReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        Digest.schedule(ctx.applicationContext)
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             runCatching {

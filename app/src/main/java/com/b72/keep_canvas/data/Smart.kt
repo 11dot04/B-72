@@ -220,3 +220,23 @@ fun cleanFacts(raw: List<Fact>): List<Fact> {
     }
     return out
 }
+
+/** The same ledger as a CSV for a spreadsheet: date, description, credit, debit and the running balance, every row (not just the ones the card shows). */
+fun ledgerCsv(text: String): String? {
+    if (parseLedger(text) == null) return null
+    fun q(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
+    val sb = StringBuilder("Date,Description,Credit,Debit,Balance\n")
+    var bal = 0.0
+    for (raw in text.lines()) {
+        val m = LEDGER.matchEntire(raw.trim().replaceFirst(Regex("""^\s*(?:[-•*>]+|\d+[.)])\s+(?=[(\d])"""), "")) ?: continue
+        val side = (m.groupValues[2].ifEmpty { m.groupValues[3] }).lowercase(); val sign = m.groupValues[4]
+        val amt = m.groupValues[5].replace(",", "").toDoubleOrNull() ?: continue
+        val debit = side == "dr" || sign == "-" || sign == "−"
+        bal += if (debit) -amt else amt
+        val n = if (amt % 1.0 == 0.0) amt.toLong().toString() else amt.toString()
+        val b = if (bal % 1.0 == 0.0) bal.toLong().toString() else "%.2f".format(java.util.Locale.US, bal)
+        sb.append(q(m.groupValues[1])).append(',').append(q(m.groupValues[6].trim())).append(',')
+            .append(if (debit) "" else n).append(',').append(if (debit) n else "").append(',').append(b).append('\n')
+    }
+    return sb.toString()
+}
