@@ -422,6 +422,7 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
                         ctx.startActivity(android.content.Intent.createChooser(
                             android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/csv").putExtra(android.content.Intent.EXTRA_STREAM, u).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Export ledger"))
                     }
+                    Unit
                 }))
                 if (onParts != null) add(Triple(Icons.Rounded.Layers, "Remove parts of this note", { onDismiss(); onParts() }))
                 if (onArchive != null) add(Triple(Icons.Rounded.Inventory2, "Archive", { onDismiss(); onArchive() }))
