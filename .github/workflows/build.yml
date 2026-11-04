@@ -38,6 +38,13 @@ jobs:
           curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
           ls -l $d
 
+      # Optional: the brush script for one-word titles (Mr Dafoe, OFL). If it is not fetched the italic serif stands in.
+      - name: Fetch script font
+        run: |
+          d=app/src/main/res/font
+          curl -fsSL "https://raw.githubusercontent.com/google/fonts/main/ofl/mrdafoe/MrDafoe-Regular.ttf" -o $d/mrdafoe_regular.ttf || { rm -f $d/mrdafoe_regular.ttf; echo "script font not fetched; continuing"; }
+          ls -l $d
+
       # Optional: a small sentence-embedding model (about 6 MB) that makes "Related" understand meaning, not just words.
       # If the download fails the app still works on word overlap alone.
       - name: Fetch language model
