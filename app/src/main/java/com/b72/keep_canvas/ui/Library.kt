@@ -4,6 +4,8 @@ package com.b72.keep_canvas.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.verticalScroll
 import com.b72.keep_canvas.data.str
 import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clipToBounds
@@ -194,125 +196,27 @@ private fun BookItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, onClick
     val spine = look?.bg ?: fallback
     val ink = look?.ink ?: fallbackInk
     val accent = look?.accent ?: fallbackInk
-    // a thicker book has a wider spine
-    val pages = b.field("pages").toIntOrNull() ?: 0
-    val thick = if (pages > 0) (40 + pages / 9).coerceIn(50, 90).dp else 62.dp
-    fun shade(c: androidx.compose.ui.graphics.Color, f: Float) = androidx.compose.ui.graphics.lerp(c, androidx.compose.ui.graphics.Color.Black, f)
     Box(
-        Modifier.width(lerpDp(thick, 220.dp, p)).height(h).graphicsLayer {
+        Modifier.fillMaxSize().graphicsLayer {
             cameraDistance = 16f * density
             // the spine turns edge-on, the cover comes round from the other side
             rotationY = if (p < .5f) -p * 180f else (1f - p) * 180f
         }.clickable(onClickLabel = "Open", onClick = onClick),
     ) {
-        if (p < .5f) Box(
-            Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 10.dp, bottomEnd = 10.dp))
-                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(shade(spine, .22f), spine, spine, shade(spine, .16f)))),
-        ) {
-            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                // the hinge grooves of a bound book, either side of the spine
-                for (x in listOf(7.dp.toPx(), size.width - 7.dp.toPx())) drawLine(androidx.compose.ui.graphics.Color.Black.copy(alpha = .16f), androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height), 1.dp.toPx())
-                drawRect(androidx.compose.ui.graphics.Color.White.copy(alpha = .06f), androidx.compose.ui.geometry.Offset(size.width * .3f, 0f), androidx.compose.ui.geometry.Size(size.width * .14f, size.height))
-            }
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(20.dp))
-                Box(Modifier.fillMaxWidth(.5f).height(2.5.dp).background(accent))
-                Spacer(Modifier.height(3.dp))
-                Box(Modifier.fillMaxWidth(.5f).height(1.dp).background(accent.copy(alpha = .6f)))
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.layout.Row(Modifier.wrapContentSize(unbounded = true).width(h - 130.dp).rotate(90f), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            b.title.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis, color = ink, modifier = Modifier.weight(1f),
-                            style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 19.sp, letterSpacing = .6.sp),
-                        )
-                        val au = b.field("author")
-                        if (au.isNotBlank()) {
-                            Spacer(Modifier.width(10.dp))
-                            Text(au.uppercase(), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, color = ink.copy(alpha = .72f), style = TextStyle(fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), modifier = Modifier.width(96.dp))
-                        }
-                    }
+        if (p < .5f) Box(Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)).background(spine), contentAlignment = Alignment.Center) {
+            // flat: one colour, one accent, and the title set big enough to read, wrapped to two lines rather than cut
+            androidx.compose.foundation.layout.Column(Modifier.wrapContentSize(unbounded = true).width(h - 52.dp).rotate(90f)) {
+                Text(b.title.ifBlank { "Untitled" }, maxLines = 2, overflow = TextOverflow.Ellipsis, color = ink, style = flexStyle(19.sp, wght = 700, wdth = 92f, lh = 1.12f))
+                val au = b.field("author")
+                if (au.isNotBlank()) {
+                    Box(Modifier.padding(vertical = 7.dp).width(26.dp).height(3.dp).clip(CircleShape).background(accent))
+                    Text(au, maxLines = 2, overflow = TextOverflow.Ellipsis, color = ink.copy(alpha = .8f), style = flexStyle(11.sp, wght = 520, lh = 1.2f))
                 }
-                Box(Modifier.size(16.dp).clip(CircleShape).background(accent.copy(alpha = .0f)).border(1.5.dp, accent, CircleShape))
-                Spacer(Modifier.height(3.dp))
-                Box(Modifier.fillMaxWidth(.5f).height(1.dp).background(accent.copy(alpha = .6f)))
-                Spacer(Modifier.height(3.dp))
-                Box(Modifier.fillMaxWidth(.5f).height(2.5.dp).background(accent))
-                Spacer(Modifier.height(20.dp))
             }
-        } else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 24.dp, bottomEnd = 24.dp)).background(spine)) {
+        } else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 24.dp, bottomEnd = 24.dp)).background(spine)) {
             if (b.path != null) PhotoImage(b.path, 700, false, spine, Modifier.fillMaxSize())
             else Icon(Icons.Rounded.MenuBook, null, Modifier.align(Alignment.Center).size(56.dp), tint = ink)
         }
-    }
-}
-
-/** How far a card in the fan leans, in degrees. Flip the sign if the cards behind the front one lean the wrong way. */
-private const val FAN_LEAN = -34f
-
-/**
- * The films, as a fan of posters in depth: the one in front stands square, the ones behind it step up and away, each leaning back with
- * the perspective, and the ones you have passed swing off to the left. Drag along the fan to move through it; tap a card behind to bring
- * it forward, the one in front to open it.
- */
-@Composable
-private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -> Unit, onOpen: (String) -> Unit, h: androidx.compose.ui.unit.Dp) {
-    val cs = MaterialTheme.colorScheme
-    val n = items.size
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val pos = remember { androidx.compose.animation.core.Animatable(index.coerceIn(0, (n - 1).coerceAtLeast(0)).toFloat()) }
-    androidx.compose.runtime.LaunchedEffect(n) { pos.snapTo(pos.value.coerceIn(0f, (n - 1).coerceAtLeast(0).toFloat())) }
-    androidx.compose.runtime.LaunchedEffect(pos) { androidx.compose.runtime.snapshotFlow { pos.value }.collect { onIndex(kotlin.math.round(it).toInt().coerceIn(0, (n - 1).coerceAtLeast(0))) } }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val step = with(density) { 110.dp.toPx() }
-    val drag = androidx.compose.foundation.gestures.rememberDraggableState { dx -> scope.launch { pos.snapTo((pos.value - dx / step).coerceIn(-.25f, n - 1f + .25f)) } }
-    val w = h * .66f
-    fun settle(to: Int) { scope.launch { pos.animateTo(to.coerceIn(0, n - 1).toFloat(), androidx.compose.animation.core.spring(.8f, 220f)) } }
-    Box(
-        Modifier.fillMaxWidth().height(h + 36.dp).clipToBounds().draggable(drag, androidx.compose.foundation.gestures.Orientation.Horizontal, onDragStopped = { v ->
-            settle(kotlin.math.round(pos.value - v / step * .3f).toInt())
-        }),
-    ) {
-        val p = pos.value
-        val order = items.indices.filter { it - p > -1.7f && it - p < 5.5f }.sortedByDescending { kotlin.math.abs(it - p) }
-        for (i in order) {
-            val d = i - p
-            val b = items[i].second
-            val front = kotlin.math.abs(d) < .5f
-            Box(
-                Modifier.align(Alignment.CenterStart).padding(start = 28.dp).width(w).height(h)
-                    .graphicsLayer {
-                        cameraDistance = 14f * density.density
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (d >= 0f) 0f else 1f, .5f)
-                        if (d >= 0f) {
-                            val k = d.coerceAtMost(4f)
-                            translationX = k * 52.dp.toPx() * (1f - .05f * k)
-                            translationY = -k * 15.dp.toPx()
-                            val sc = (1f - .07f * k).coerceAtLeast(.62f); scaleX = sc; scaleY = sc
-                            rotationY = FAN_LEAN * (d.coerceAtMost(1f))
-                            alpha = (1f - (d - 3f).coerceIn(0f, 1.5f) / 1.5f)
-                        } else {
-                            val k = -d
-                            translationX = -k * 300.dp.toPx()
-                            rotationY = -FAN_LEAN * k.coerceAtMost(1f) * 1.2f
-                            rotationZ = -5f * k
-                            alpha = (1f + d * .55f).coerceIn(0f, 1f)
-                        }
-                        shadowElevation = if (d in -.5f..2f) 18.dp.toPx() else 0f
-                        shape = RoundedCornerShape(22.dp); clip = true
-                    }
-                    .background(cs.primaryContainer)
-                    .clickable(onClickLabel = if (front) "Open" else "Bring forward") { if (front) onOpen(items[i].first.id) else settle(i) },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (b.path != null) PhotoImage(b.path, 700, false, cs.primary, Modifier.fillMaxSize())
-                else Icon(Icons.Rounded.Movie, null, Modifier.size(48.dp), tint = cs.onPrimaryContainer)
-            }
-        }
-        val at = kotlin.math.round(p).toInt().coerceIn(0, (n - 1).coerceAtLeast(0)) + 1
-        Text(
-            "$at / $n", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp), color = cs.onSurface,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp).border(1.dp, cs.onSurface.copy(alpha = .5f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
-        )
     }
 }
 
@@ -395,7 +299,10 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     }
     val ls = rememberLazyListState()
     val isFilm = SHELVES[shelf].kind == Kind.Film
+    val isBook = SHELVES[shelf].kind == Kind.Book
     var filmIdx by rememberSaveable { mutableIntStateOf(0) }
+    var bookIdx by rememberSaveable { mutableIntStateOf(0) }
+    val page = rememberScrollState()
     val focus by remember {
         derivedStateOf {
             val info = ls.layoutInfo
@@ -404,7 +311,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         }
     }
     Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().padding(top = 16.dp)) {
+    Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().verticalScroll(page).padding(top = 16.dp)) {
         TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))
         Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -429,7 +336,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
                 style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp),
             )
         } else {
-            val cur = items.getOrNull((if (isFilm) filmIdx else focus).coerceIn(0, items.lastIndex))!!
+            val cur = items.getOrNull((if (isFilm) filmIdx else if (isBook) bookIdx else focus).coerceIn(0, items.lastIndex))!!
             Text(
                 cur.second.title.ifBlank { cur.first.title }.ifBlank { SHELVES[shelf].name },
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -438,7 +345,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
             Text(cur.second.recSub(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp, end = 20.dp))
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 14.dp)) {
                 val side = (maxWidth - 220.dp) / 2
-                if (isFilm) FilmFan(items, filmIdx, { filmIdx = it }, onOpen = onOpen, h = 320.dp) else LazyRow(
+                if (isFilm) FilmFan(items, filmIdx, { filmIdx = it }, onOpen = onOpen, h = 320.dp) else if (isBook) BookShelf(items, bookIdx, { bookIdx = it }, onOpen, 320.dp) else LazyRow(
                     state = ls, flingBehavior = rememberSnapFlingBehavior(ls),
                     contentPadding = PaddingValues(horizontal = side), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -488,6 +395,8 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
                 )
             }
         }
+        // room below the last thing, so it can be scrolled clear of the floating bar
+        Spacer(Modifier.height(150.dp))
     }
     androidx.compose.material3.ExtendedFloatingActionButton(
         text = { Text("Add " + listOf("song", "book", "film or show", "recipe", "link")[shelf]) },

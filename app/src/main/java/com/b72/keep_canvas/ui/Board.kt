@@ -240,7 +240,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     var textEdit by remember { mutableStateOf<Pair<String?, String>?>(null) }
     val placed = remember(tag) { PlacedState(repo, tag) }
     LaunchedEffect(loaded != null) { placed.seed() }
-    var tray by remember { mutableStateOf(false) }
+    var trayMode by remember { androidx.compose.runtime.mutableIntStateOf(0) } // 0 shut, 1 artifacts, 2 marks and stamps
 
     BoxWithConstraints(Modifier.fillMaxSize().background(t.bg)) {
         val swPx = with(density) { maxWidth.toPx() }
@@ -329,19 +329,20 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             DrawBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
         }
         PlacedBar(placed, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp)) { id -> textEdit = id to (placed.items.firstOrNull { it.id == id }?.k?.removePrefix("t:") ?: "") }
-        if (tray) PlacedTray(
+        if (trayMode != 0) PlacedTray(
+            marks = trayMode == 2,
             stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
             onMark = { m, c ->
-                tray = false
+                trayMode = 0
                 val w = .15f
                 placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "m:${m.name}", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c))
             },
             onSticker = { p ->
-                tray = false
+                trayMode = 0
                 val w = .17f
                 placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "s:$p", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f))
             },
-            onClose = { tray = false },
+            onClose = { trayMode = 0 },
         )
         textEdit?.let { (id, initial) ->
             var txt by remember(id) { mutableStateOf(initial) }
@@ -371,9 +372,9 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 expanded = true,
                 colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
                 content = {
-                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
+                    IconButton(onClick = { trayMode = 1 }) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
                     IconButton(onClick = { textEdit = null to "" }) { Icon(Icons.Rounded.TextFields, "Add text") }
-                    IconButton(onClick = { tray = true }) { Icon(Icons.Rounded.Draw, "Stamps and marks") }
+                    IconButton(onClick = { trayMode = 2 }) { Icon(Icons.Rounded.Draw, "Stamps and marks") }
                     IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw, arrows and scribbles") }
                     IconButton(onClick = { force[0] = true; shuffle++; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
                 },

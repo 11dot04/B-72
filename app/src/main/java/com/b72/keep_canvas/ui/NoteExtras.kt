@@ -253,12 +253,13 @@ fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, mo
                 },
                 label = { Text(e.title.take(22) + " · " + java.time.format.DateTimeFormatter.ofPattern(if (e.timed) "d MMM, h:mm a" else "d MMM").format(java.time.Instant.ofEpochMilli(e.start).atZone(java.time.ZoneId.systemDefault()))) },
                 leadingIcon = { Icon(Icons.Rounded.EditCalendar, null) },
+                border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)), colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg, leadingIconContentColor = fg),
             )
         }
-        if (name.isNotEmpty()) AssistChip(onClick = { onTitle?.invoke(name) }, label = { Text("Title it: $name") }, modifier = Modifier.padding(bottom = 10.dp))
+        if (name.isNotEmpty()) AssistChip(onClick = { onTitle?.invoke(name) }, label = { Text("Title it: $name") }, modifier = Modifier.padding(bottom = 10.dp), border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)), colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg, leadingIconContentColor = fg))
         if (sum.isNotEmpty()) Text(sum, style = TextStyle(fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontStyle = FontStyle.Italic, color = fg.copy(alpha = .85f)), modifier = Modifier.padding(bottom = 10.dp))
         if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in tags) AssistChip(onClick = { onAddTag(t) }, label = { Text("+ $t") })
+            for (t in tags) AssistChip(onClick = { onAddTag(t) }, label = { Text("+ $t") }, border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)), colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg, leadingIconContentColor = fg))
         }
     }
 }
@@ -347,7 +348,7 @@ fun EditSplit(
         )
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(28.dp)) {
             DropdownMenuItem(
-                { Column { Text("Page layout"); Text(LAYOUTS.firstOrNull { it.id == layout }?.name ?: "Plain", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                { Column { Text("Title style"); Text(LAYOUTS.firstOrNull { it.id == layout }?.name ?: "Auto", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
                 { open = false; picking = true }, leadingIcon = { Icon(Icons.Rounded.ViewAgenda, null) },
             )
             androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -523,14 +524,14 @@ fun BrainstormSheet(note: Note, onDismiss: () -> Unit, onAppend: (String) -> Uni
     }
 }
 
-/** The page layouts as a list you can read before choosing. */
+/** The title styles as a list you can read before choosing. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun LayoutSheet(current: String, onClose: () -> Unit, onPick: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     androidx.compose.material3.ModalBottomSheet(onClose) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Text("Page layout", style = flexStyle(26.sp, wght = 720, rond = 40f), modifier = Modifier.padding(bottom = 10.dp))
+            Text("Title style", style = flexStyle(26.sp, wght = 720, rond = 40f), modifier = Modifier.padding(bottom = 10.dp))
             for (l in LAYOUTS) Row(
                 Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(20.dp))
                     .background(if (current == l.id) cs.tertiaryContainer else cs.surfaceContainerHigh)

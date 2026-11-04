@@ -160,36 +160,38 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -
 
 /** The tray: every mark in the pen colour you pick, and your stickers. A tap puts the item in the middle of what you are looking at. */
 @Composable
-fun PlacedTray(stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
+fun PlacedTray(marks: Boolean, stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var color by remember { mutableStateOf(0) }
     ModalBottomSheet(onClose) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
-            Text("Mark up this canvas", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
-            Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                for ((i, c) in MarkColors.withIndex()) Box(
-                    Modifier.size(34.dp).clip(CircleShape).background(c).border(if (color == i) 3.dp else 1.dp, if (color == i) cs.onSurface else cs.outlineVariant, CircleShape)
-                        .clickable(onClickLabel = "Pen colour") { color = i },
-                )
-            }
-            LazyVerticalGrid(GridCells.Fixed(4), Modifier.height(172.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(Mark.entries.toList()) { m ->
-                    Box(
-                        Modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.label) { onMark(m, color) }.padding(10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Canvas(Modifier.fillMaxWidth().aspectRatio(1f / m.aspect)) { drawMark(m, 0f, 0f, size.width, MarkColors[color], m.ordinal * 7) }
+            Text(if (marks) "Marks and stamps" else "Artifacts", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
+            if (marks) {
+                Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for ((i, c) in MarkColors.withIndex()) Box(
+                        Modifier.size(34.dp).clip(CircleShape).background(c).border(if (color == i) 3.dp else 1.dp, if (color == i) cs.onSurface else cs.outlineVariant, CircleShape)
+                            .clickable(onClickLabel = "Pen colour") { color = i },
+                    )
+                }
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.height(260.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(Mark.entries.toList()) { m ->
+                        Box(
+                            Modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.label) { onMark(m, color) }.padding(10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Canvas(Modifier.fillMaxWidth().aspectRatio(1f / m.aspect)) { drawMark(m, 0f, 0f, size.width, MarkColors[color], m.ordinal * 7) }
+                        }
                     }
                 }
-            }
-            if (stickers.isNotEmpty()) {
-                Text("ARTIFACTS", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            } else if (stickers.isEmpty()) {
+                Text("No artifacts yet. Cut a subject out of a photo and it will wait here.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
+            } else {
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 12.dp).height(300.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(stickers.size) { i ->
                         val p = stickers[i]
                         val img by produceState<ImageBitmap?>(Images.peek(p, 300), p) { value = Images.load(p, 300) }
-                        Box(Modifier.size(76.dp).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = "Add sticker") { onSticker(p) }.padding(6.dp)) {
-                            img?.let { Image(it, null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) }
+                        Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = "Add artifact") { onSticker(p) }.padding(8.dp)) {
+                            img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
                         }
                     }
                 }
@@ -197,7 +199,6 @@ fun PlacedTray(stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (
         }
     }
 }
-
 
 /** Draw mode: a finger-drawn line, circle, box or triangle is corrected into the clean shape as soon as the finger lifts. */
 @Composable

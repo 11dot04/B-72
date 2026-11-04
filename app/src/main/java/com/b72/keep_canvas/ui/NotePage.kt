@@ -164,7 +164,8 @@ fun NotePage(
     val title = note.title
     val photos = note.photos
     val structured = remember(note.blocks) { if (note.blocks.any { it.kind == Kind.Poster }) null else note.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.let { com.b72.keep_canvas.data.looksStructured(it.body) } }
-    val layoutId = if (note.layout.isEmpty()) autoLayout(note) else if (note.layout == "plain") "" else note.layout
+    // page layouts are gone: the note's layout field now holds only its title style
+    val layoutId = ""
     val hero = if (photos.size == 1 && canPopOut(photos[0])) photos[0] else null
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
     val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
@@ -175,7 +176,7 @@ fun NotePage(
     BoxWithConstraints(Modifier.fillMaxSize().background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
-        val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id) else null
+        val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
 
         LazyColumn(
             state = ls,
@@ -209,9 +210,8 @@ fun NotePage(
                     onDone = { editTitle = false }, onChange = onTitle,
                 )
             } else if (lay != null && !coverMode) item(key = "title-big") {
-                if (layoutId == "script") ScriptTitle(title, pal, Modifier.clickable { editTitle = true })
-                else FitTitle(
-                    title, pal.fg, note.id,
+                FitTitle(
+                    title, pal.fg, note.id, style = note.layout,
                     modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                 )
@@ -412,9 +412,10 @@ fun NotePage(
         // reminder and details on the sides, the primary action in the middle as a split button
         if (rich == null && !tagging) HorizontalFloatingToolbar(
             expanded = barOpen,
-            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(
-                toolbarContainerColor = MaterialTheme.colorScheme.tertiary,
-                toolbarContentColor = MaterialTheme.colorScheme.onTertiary,
+            // neutral on purpose: the page takes its colours from the note, so the bar must not share them
+            colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
+                toolbarContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                toolbarContentColor = MaterialTheme.colorScheme.onSurface,
             ),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
             leadingContent = {
@@ -429,7 +430,7 @@ fun NotePage(
             },
             content = {
                 EditSplit(
-                    container = MaterialTheme.colorScheme.onTertiary, content = MaterialTheme.colorScheme.tertiary,
+                    container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary,
                     smart = smartOn, layout = note.layout, onAdd = { adding = true }, onLayout = onLayout, onSmart = { onSmart(!smartOn) }, onBrainstorm = { brainstorm = true },
                 )
             },

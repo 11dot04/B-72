@@ -4,6 +4,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -13,15 +15,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.seedOf
 import kotlin.math.abs
@@ -45,6 +48,26 @@ private val Looks = listOf(
 )
 
 fun lookFor(seed: String) = Looks[seedOf(seed) % Looks.size]
+
+/** A note's own choice of title style (kept in the note's layout field). Anything else is "Auto": the look its id picks. */
+private val StyleLooks = mapOf(
+    "caps" to TitleLook(900, 0f, 0f, upper = true),
+    "soft" to TitleLook(800, 100f, 0f),
+    "light" to TitleLook(300, 0f, 0f, accent = Accent.Flip),
+    "serif" to TitleLook(880, 0f, 0f, accent = Accent.Serif),
+    "slant" to TitleLook(720, 100f, -10f),
+)
+
+fun lookFor(seed: String, style: String) = StyleLooks[style] ?: lookFor(seed)
+
+/** The brush script is used when it is asked for, and by Auto for a title that is one short word. */
+fun isScriptTitle(text: String, style: String) = style == "script" || (style !in StyleLooks && style.isEmpty() && text.trim().let { it.isNotEmpty() && ' ' !in it && it.length <= 14 })
+
+/** The brush-script face, when the build fetched it; the italic serif otherwise. */
+fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily {
+    val id = ctx.resources.getIdentifier("mrdafoe_regular", "font", ctx.packageName)
+    return if (id != 0) androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(id)) else Script
+}
 
 private val Tail = setOf("a", "an", "the", "of", "in", "on", "at", "to", "for", "and", "or", "with", "as", "by", "from") // never end a line on these
 private val Lead = setOf("as", "of", "in", "on", "with", "for", "from", "by", "and", "to")                              // good words to start a line with
@@ -84,7 +107,8 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val base = TextStyle(
         fontFamily = flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
-        lineHeight = (sz.value * 0.88f).sp,
+        // a lowercase line with tails (g, j, p, q, y) needs more room under it than a tight 0.88 leaves, or the tails are cut
+        lineHeight = (sz.value * (if (t.any { it in "gjpqy,;" }) (if (t == t.lowercase()) 1.04f else .95f) else .88f)).sp,
         lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
             alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
             trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
@@ -147,10 +171,10 @@ class TitleLay(
 
 private val layCache = HashMap<String, TitleLay>()
 
-fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, m: TextMeasurer, d: Density): TitleLay {
-    val key = "$text|${w.toInt()}|$seed|$maxLines|${grade.toInt()}|${d.density}"
+fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, m: TextMeasurer, d: Density, style: String = ""): TitleLay {
+    val key = "$text|${w.toInt()}|$seed|$maxLines|${grade.toInt()}|${d.density}|$style"
     layCache[key]?.let { return it }
-    val k = lookFor(seed.ifEmpty { text })
+    val k = lookFor(seed.ifEmpty { text }, style)
     val lines = breakTitle(if (k.upper) text.uppercase() else text, maxLines)
     val size = w * (if (lines.size == 1) .26f else if (lines.size == 2) .19f else .15f)
     val sz = ArrayList<Float>()
@@ -171,18 +195,19 @@ fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, 
 }
 
 @Composable
-fun rememberTitleLay(text: String, wPx: Float, seed: String, maxLines: Int = 3): TitleLay {
+fun rememberTitleLay(text: String, wPx: Float, seed: String, maxLines: Int = 3, style: String = ""): TitleLay {
     val m = rememberTextMeasurer()
     val d = LocalDensity.current
     val grade = if (isSystemInDarkTheme()) -25f else 0f
-    return remember(text, wPx, seed, maxLines, grade, d.density) { titleLay(text, wPx, seed, maxLines, grade, m, d) }
+    return remember(text, wPx, seed, maxLines, grade, d.density, style) { titleLay(text, wPx, seed, maxLines, grade, m, d, style) }
 }
 
 /** A title that always fills its width. [flex] (0..1) is read per frame; the layout itself is computed once. */
 @Composable
-fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modifier, maxLines: Int = 3, flex: () -> Float = { 1f }) {
+fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modifier, maxLines: Int = 3, flex: () -> Float = { 1f }, style: String = "") {
+    if (isScriptTitle(text, style)) { ScriptFit(text, color, seed, modifier); return }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val lay = rememberTitleLay(text, constraints.maxWidth.toFloat(), seed, maxLines)
+        val lay = rememberTitleLay(text, constraints.maxWidth.toFloat(), seed, maxLines, style)
         val f = flex()
         Column {
             for (i in lay.lines.indices) {
@@ -192,7 +217,7 @@ fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modi
                     p.text, style = p.style, maxLines = 1, softWrap = false,
                     modifier = Modifier.layout { m, c ->
                         val pl = m.measure(c)
-                        val h = (lay.sizes[i] * .8f).toInt()
+                        val h = (lay.sizes[i] * .9f).toInt()
                         layout(pl.width, h) { pl.place(0, (h - pl.height) / 2) }
                     },
                 )
@@ -218,5 +243,29 @@ fun FitLine(text: String, style: TextStyle, color: Color, modifier: Modifier = M
             s.copy(fontSize = size.coerceAtLeast(min).sp)
         }
         Text(text, style = shown, color = color, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+}
+
+
+/** A title in brush script, set as large as its width allows and tipped up a few degrees, like a hand-lettered heading. */
+@Composable
+fun ScriptFit(text: String, color: Color, seed: String, modifier: Modifier = Modifier) {
+    val m = rememberTextMeasurer()
+    val family = scriptFamily(androidx.compose.ui.platform.LocalContext.current)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val w = constraints.maxWidth
+        val lines = remember(text) { breakTitle(text, 2) }
+        val size = remember(text, w, family) {
+            val probe = TextStyle(fontFamily = family, fontSize = 100.sp)
+            val widest = lines.maxOf { m.measure(it, probe, softWrap = false, maxLines = 1).size.width }.coerceAtLeast(1)
+            (100f * w * .92f / widest).coerceIn(30f, if (lines.size == 1) 110f else 80f)
+        }
+        val tilt = -(2.5f + (seedOf(seed) % 4) * .7f)
+        androidx.compose.foundation.layout.Column(
+            Modifier.padding(top = (size * .14f).dp, bottom = (size * .1f).dp)
+                .graphicsLayer { rotationZ = tilt; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f) },
+        ) {
+            for (l in lines) Text(l, style = TextStyle(fontFamily = family, fontSize = size.sp, lineHeight = (size * 1.18f).sp, color = color), maxLines = 1, softWrap = false)
+        }
     }
 }

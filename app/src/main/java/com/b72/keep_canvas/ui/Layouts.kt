@@ -59,14 +59,13 @@ import com.b72.keep_canvas.data.seedOf
 class PageLayout(val id: String, val name: String, val blurb: String)
 
 val LAYOUTS = listOf(
-    PageLayout("", "Auto", "Picks the layout that suits the photos and the words"),
-    PageLayout("plain", "Plain", "Title, photo, words"),
-    PageLayout("cover", "Cover", "The title set in the empty space of your photo; words in a box below"),
-    PageLayout("poster", "Poster", "A high-contrast photo bleeding off one edge, title beneath, a tall column of words"),
-    PageLayout("wordmark", "Wordmark", "A giant title, small captions, photos on a loose grid"),
-    PageLayout("column", "Column", "A panel of colour: small caption left, large light title right, photos below"),
-    PageLayout("script", "Script", "A bold italic serif heading, serif text, first-line indents"),
-    PageLayout("ledger", "Ledger", "Serif text with line numbers in the margin, every fifth"),
+    PageLayout("", "Auto", "A look picked from the note; one short word is set in brush script"),
+    PageLayout("script", "Brush script", "Hand-lettered and tipped up a little"),
+    PageLayout("caps", "Poster caps", "Heavy capitals"),
+    PageLayout("soft", "Soft and heavy", "Round, fat letters"),
+    PageLayout("light", "Light, last word bold", "A fine title with its last word heavy"),
+    PageLayout("serif", "Serif accent", "Bold, the last word in italic serif"),
+    PageLayout("slant", "Slanted", "Round and leaning"),
 )
 
 /** What the page does with no choice made: the layout that suits this note's photos and words. */

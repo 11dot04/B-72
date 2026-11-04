@@ -101,7 +101,7 @@ fun TagEditor(
                 }
             }
             if (suggestions.isNotEmpty()) FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (t in suggestions) SuggestionChip(onClick = { commit(t) }, label = { Text(t) }, shape = RoundedCornerShape(50))
+                for (t in suggestions) SuggestionChip(onClick = { commit(t) }, label = { Text(t) }, shape = RoundedCornerShape(50), border = androidx.compose.foundation.BorderStroke(1.dp, pal.fg.copy(alpha = .5f)), colors = androidx.compose.material3.SuggestionChipDefaults.suggestionChipColors(labelColor = pal.fg))
             }
         }
     }

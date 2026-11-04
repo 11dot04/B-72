@@ -12,6 +12,10 @@ import androidx.compose.ui.graphics.blur.BlurStop
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Image
@@ -32,6 +36,15 @@ import com.b72.keep_canvas.data.trip
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Notes
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Checklist
@@ -80,7 +93,6 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import com.b72.keep_canvas.data.matchesQuery
 import com.b72.keep_canvas.data.searchText
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -182,6 +194,10 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var asking by remember { mutableStateOf<String?>(null) }
   asking?.let { AskSheet(repo, it, onOpen) { asking = null } }
   BackHandler(menu) { menu = false }
+  val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+  val drawerScope = androidx.compose.runtime.rememberCoroutineScope()
+  BackHandler(drawer.isOpen) { drawerScope.launch { drawer.close() } }
+  androidx.compose.material3.ModalNavigationDrawer(drawerContent = { AppDrawer(repo) { drawerScope.launch { drawer.close() } } }, drawerState = drawer) {
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
         LazyVerticalStaggeredGrid(
@@ -308,7 +324,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
     KeepBar(
         q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
         count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
-        menu = { BackupMenu(repo, onStickers) },
+        menu = { androidx.compose.material3.IconButton({ drawerScope.launch { drawer.open() } }) { Icon(Icons.Rounded.Menu, "Menu") } },
         modifier = Modifier.align(Alignment.TopCenter),
     )
     if (menu) Box(
@@ -329,6 +345,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             FloatingActionButtonMenuItem(onClick = { menu = false; onAdd(kind) }, icon = { Icon(icon, null) }, text = { Text(label) })
         }
     }
+  }
   }
 }
 
@@ -404,7 +421,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = Color.White)
                 }
                 if (t.isNotEmpty()) Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
                 }
             }
         } else {
@@ -414,7 +431,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = fg)
                 }
                 Column(Modifier.padding(top = 28.dp)) {
-                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
                     Spacer(Modifier.height(12.dp))
                     Preview(n, fg)
                 }
@@ -423,7 +440,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     }
 }
 
-private val TileShape = RoundedCornerShape(28.dp)
+private val TileShape = RoundedCornerShape(18.dp)
 
 @Composable
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
@@ -465,8 +482,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
                 Column {
-                    Meta(n, Color.White.copy(alpha = .75f))
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
                 }
             }
             if (hasList || hasTrip) Box(
@@ -475,8 +491,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                Meta(n, fg.copy(alpha = .6f), Modifier.padding(bottom = 6.dp))
-                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3)
+                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
                 Spacer(Modifier.height(10.dp))
                 Preview(n, fg)
             }
@@ -540,12 +555,11 @@ private fun Meta(n: Note, color: Color, modifier: Modifier = Modifier) {
 
 private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % n
 
-/** Export and restore the whole collection as one zip, through the system file picker. */
+/** The side menu: the on-device assistant, connected apps, security, and everything about getting data in and out. */
 @Composable
-private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
+private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var open by remember { mutableStateOf(false) }
     var assistant by remember { mutableStateOf(false) }
     var services by remember { mutableStateOf(false) }
     var drive by remember { mutableStateOf(false) }
@@ -575,26 +589,38 @@ private fun BackupMenu(repo: Repo, onStickers: () -> Unit) {
             say(if (lib == null) "No Keep notes found in that file" else "Imported ${repo.merge(lib)} notes from Keep")
         }
     }
-    Box {
-        androidx.compose.material3.IconButton({ open = true }) { Icon(Icons.Rounded.Menu, "Menu") }
-        androidx.compose.material3.DropdownMenu(open, { open = false }) {
-            androidx.compose.material3.DropdownMenuItem({ Text("On-device assistant") }, { open = false; assistant = true })
-            androidx.compose.material3.DropdownMenuItem({ Text("Connected apps") }, { open = false; services = true })
-            androidx.compose.material3.DropdownMenuItem({ Text("Clear unused photos") }, { open = false; scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } })
-            androidx.compose.material3.DropdownMenuItem(
-                { Text("Weekly digest") }, { var on = com.b72.keep_canvas.data.Digest.enabled(ctx); on = !on; com.b72.keep_canvas.data.Digest.setEnabled(ctx, on); open = false; say(if (on) "Sunday digest on" else "Sunday digest off") },
-                trailingIcon = { if (com.b72.keep_canvas.data.Digest.enabled(ctx)) Icon(Icons.Rounded.Check, null) },
-            )
-            androidx.compose.material3.DropdownMenuItem(
-                { Text("Lock the app") },
-                { val on = !com.b72.keep_canvas.data.AppLock.enabled(ctx); open = false; say(if (!com.b72.keep_canvas.data.AppLock.set(ctx, on)) "Set a screen lock on the phone first" else if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") },
-                trailingIcon = { if (com.b72.keep_canvas.data.AppLock.enabled(ctx)) Icon(Icons.Rounded.Check, null) },
-            )
-            androidx.compose.material3.DropdownMenuItem({ Text("Archive & trash") }, { open = false; trash = true })
-            androidx.compose.material3.DropdownMenuItem({ Text("Back up to Google Drive") }, { open = false; drive = true })
-            androidx.compose.material3.DropdownMenuItem({ Text("Export backup") }, { open = false; save.launch("b72-backup.zip") })
-            androidx.compose.material3.DropdownMenuItem({ Text("Import from Google Keep") }, { open = false; keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) })
-            androidx.compose.material3.DropdownMenuItem({ Text("Restore backup") }, { open = false; load.launch(arrayOf("application/zip", "application/octet-stream")) })
+    var digestOn by remember { mutableStateOf(com.b72.keep_canvas.data.Digest.enabled(ctx)) }
+    var lockOn by remember { mutableStateOf(com.b72.keep_canvas.data.AppLock.enabled(ctx)) }
+    val cs = MaterialTheme.colorScheme
+    @Composable
+    fun Item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean? = null, go: () -> Unit) = androidx.compose.material3.NavigationDrawerItem(
+        label = { Text(label) }, selected = false, onClick = { onClose(); go() }, icon = { Icon(icon, null) },
+        badge = if (on == true) ({ Icon(Icons.Rounded.Check, "On") }) else null,
+        modifier = Modifier.padding(horizontal = 12.dp),
+    )
+    @Composable
+    fun Head(t: String) = Text(t.uppercase(), style = MaterialTheme.typography.labelMedium, color = cs.primary, modifier = Modifier.padding(start = 28.dp, top = 18.dp, bottom = 6.dp))
+    androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = cs.surfaceContainerLow) {
+        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            Text("B-72", style = flexStyle(34.sp, wght = 700, lh = 1f), color = cs.onSurface, modifier = Modifier.statusBarsPadding().padding(start = 28.dp, top = 24.dp))
+            Text("Settings and your data", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 2.dp))
+            Head("On this phone")
+            Item("On-device assistant", Icons.Rounded.AutoAwesome) { assistant = true }
+            Item("Connected apps", Icons.Rounded.Extension) { services = true }
+            Item("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } }
+            Item("Weekly digest", Icons.Rounded.Notifications, digestOn) { digestOn = !digestOn; com.b72.keep_canvas.data.Digest.setEnabled(ctx, digestOn); say(if (digestOn) "Sunday digest on" else "Sunday digest off") }
+            Head("Privacy")
+            Item("Lock the app", Icons.Rounded.Lock, lockOn) {
+                val on = !lockOn
+                if (com.b72.keep_canvas.data.AppLock.set(ctx, on)) { lockOn = on; say(if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") } else say("Set a screen lock on the phone first")
+            }
+            Item("Archive & trash", Icons.Rounded.Archive) { trash = true }
+            Head("Backup")
+            Item("Back up to Google Drive", Icons.Rounded.CloudUpload) { drive = true }
+            Item("Export backup", Icons.Rounded.Save) { save.launch("b72-backup.zip") }
+            Item("Restore backup", Icons.Rounded.Restore) { load.launch(arrayOf("application/zip", "application/octet-stream")) }
+            Head("Bring notes in")
+            Item("Import from Google Keep", Icons.Rounded.Notes) { keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
         }
     }
 }
