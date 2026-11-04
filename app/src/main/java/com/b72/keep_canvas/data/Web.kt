@@ -374,13 +374,97 @@ suspend fun importRecipe(url: String): Map<String, String> {
     }
 }
 
-/** The lines of a song from LRCLIB (free, no key). The app only keeps the few the person picks. */
-suspend fun fetchLyrics(artist: String, title: String): List<String> {
-    if (title.isBlank()) return emptyList()
-    var text = (json("https://lrclib.net/api/get?track_name=${q(title)}&artist_name=${q(artist)}") as? JSONObject)?.s("plainLyrics").orEmpty()
-    if (text.isBlank()) {
-        val arr = json("https://lrclib.net/api/search?q=${q("$title $artist".trim())}") as? JSONArray
-        text = arr?.objs()?.firstOrNull { it.s("plainLyrics").isNotBlank() }?.s("plainLyrics").orEmpty()
+// ------------------------------------------------------------------ lyrics
+
+/** Streaming services decorate titles ("- Remastered 2011", "(feat. X)", "[Live]"); a lyrics database has the bare title. */
+private fun cleanTitle(t: String): String {
+    var s = t
+    s = s.replace(Regex("\\s*[(\\[][^)\\]]*(feat|ft\\.|with |remaster|live|version|edit|mix|from |official|lyric|video|audio|mono|stereo|deluxe|bonus|explicit|soundtrack)[^)\\]]*[)\\]]", RegexOption.IGNORE_CASE), "")
+    s = s.replace(Regex("\\s+[-\u2013\u2014]\\s+(\\d{4}\\s+)?(remaster(ed)?|live|single|mono|stereo|radio|album|deluxe|bonus|from|feat|version|edit|mix).*$", RegexOption.IGNORE_CASE), "")
+    s = s.replace(Regex("\\s+(feat\\.?|ft\\.?|featuring)\\s+.*$", RegexOption.IGNORE_CASE), "")
+    return s.trim()
+}
+
+private fun firstArtist(a: String) = a.split(Regex("\\s*(,|;|/|&|\\sx\\s|\\sfeat\\.?\\s|\\sft\\.?\\s|\\sfeaturing\\s)\\s*", RegexOption.IGNORE_CASE)).first().trim()
+
+private fun norm(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+    .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "").replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
+/** One song a lyrics source offered. */
+private class Hit(val title: String, val artist: String, val plain: String, val synced: String, val instrumental: Boolean = false)
+
+/** How well a hit is the song asked for; below 3 it is some other song. */
+private fun score(h: Hit, title: String, artist: String): Float {
+    val ht = norm(cleanTitle(h.title)); val wt = norm(title)
+    var sc = when {
+        ht == wt -> 3f
+        ht.isNotEmpty() && wt.isNotEmpty() && (ht.contains(wt) || wt.contains(ht)) -> 3f * minOf(ht.length, wt.length) / maxOf(ht.length, wt.length) + .4f
+        else -> 0f
     }
-    return text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    if (artist.isNotBlank()) {
+        val ha = norm(h.artist); val wa = norm(firstArtist(artist))
+        sc += if (ha.isNotEmpty() && wa.isNotEmpty() && (ha.contains(wa) || wa.contains(ha))) 2f else -1.5f
+    }
+    if (h.instrumental) sc -= 5f
+    if (h.plain.isNotBlank() || h.synced.isNotBlank()) sc += .5f else sc -= 5f
+    return sc
+}
+
+private fun best(hits: List<Hit>, title: String, artist: String): Hit? =
+    hits.maxByOrNull { score(it, title, artist) }?.takeIf { score(it, title, artist) >= 3f }
+
+/** Synced lyrics have a time on every line; the card only wants the words. */
+private fun toLines(text: String): List<String> = text.lines()
+    .map { it.replace(Regex("\\[[^\\]]*]"), "").replace(Regex("<[^>]*>"), "").trim() }
+    .filter { it.isNotEmpty() && !Regex("^(\u4f5c\u8bcd|\u4f5c\u66f2|\u7f16\u66f2|\u5236\u4f5c\u4eba|lyrics by|composed by|music by)\\s*[:\uff1a]", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+
+private suspend fun lrclib(title: String, artist: String): Hit? {
+    val tries = listOf(
+        "track_name=${q(title)}&artist_name=${q(artist)}",
+        "track_name=${q(title)}&artist_name=${q(firstArtist(artist))}",
+        "q=${q("$title $artist".trim())}",
+        "q=${q("$title ${firstArtist(artist)}".trim())}",
+        "q=${q(title)}",
+    ).distinct()
+    for (qs in tries) {
+        val arr = json("https://lrclib.net/api/search?$qs") as? JSONArray ?: continue
+        val hits = arr.objs().map { Hit(it.s("trackName"), it.s("artistName"), it.s("plainLyrics"), it.s("syncedLyrics"), it.optBoolean("instrumental")) }
+        best(hits, title, artist)?.let { return it }
+    }
+    return null
+}
+
+private suspend fun netease(title: String, artist: String): Hit? {
+    val j = json("https://music.163.com/api/search/get/web?s=${q("$title $artist".trim())}&type=1&offset=0&limit=8") as? JSONObject ?: return null
+    val songs = j.optJSONObject("result")?.optJSONArray("songs")?.objs() ?: return null
+    val cands = songs.map { Triple(it.optLong("id"), it.s("name"), it.optJSONArray("artists")?.optJSONObject(0)?.s("name").orEmpty()) }
+    val pick = cands.maxByOrNull { score(Hit(it.second, it.third, "x", ""), title, artist) }?.takeIf { score(Hit(it.second, it.third, "x", ""), title, artist) >= 3f } ?: return null
+    val l = json("https://music.163.com/api/song/lyric?id=${pick.first}&lv=1&kv=1&tv=-1") as? JSONObject ?: return null
+    val lrc = l.optJSONObject("lrc")?.s("lyric").orEmpty()
+    return if (lrc.isBlank()) null else Hit(pick.second, pick.third, "", lrc)
+}
+
+private suspend fun lyricsOvh(title: String, artist: String): Hit? {
+    if (artist.isBlank()) return null
+    fun seg(x: String) = q(x).replace("+", "%20")
+    val j = json("https://api.lyrics.ovh/v1/${seg(firstArtist(artist))}/${seg(title)}") as? JSONObject ?: return null
+    val t = j.s("lyrics")
+    return if (t.isBlank()) null else Hit(title, artist, t, "")
+}
+
+/**
+ * The lines of a song, asked of several free sources in turn until one has it: LRCLIB (searched four ways, because its exact lookup
+ * misses most songs), then NetEase, then lyrics.ovh. Titles are cleaned of "remastered" and "feat." trimmings first, and a result is
+ * only taken when its title and artist actually match, so a different song is never passed off as this one.
+ */
+suspend fun fetchLyrics(artist: String, title: String): List<String> {
+    val t = cleanTitle(title)
+    if (t.isBlank()) return emptyList()
+    val sources: List<suspend (String, String) -> Hit?> = listOf(::lrclib, ::netease, ::lyricsOvh)
+    for (src in sources) {
+        val hit = runCatching { src(t, artist) }.getOrNull() ?: continue
+        val lines = toLines(hit.plain.ifBlank { hit.synced })
+        if (lines.size >= 4) return lines
+    }
+    return emptyList()
 }
