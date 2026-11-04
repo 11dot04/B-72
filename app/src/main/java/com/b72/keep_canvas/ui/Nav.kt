@@ -310,10 +310,15 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
 /** A tag's photos thrown across the page at random, each in its own shape and tilt; the same tag always lands the same way. */
 @Composable
 private fun ScatterPhotos(key: String, paths: List<String>, accent: Color, modifier: Modifier) {
-    val shapes = remember {
+    // toShape() is composable, so the shapes are made here and only then put in a list
+    val cookie = MaterialShapes.Cookie6Sided.toShape()
+    val clover = MaterialShapes.Clover4Leaf.toShape()
+    val oval = MaterialShapes.Oval.toShape()
+    val arch = MaterialShapes.Arch.toShape()
+    val shapes = remember(cookie, clover, oval, arch) {
         listOf<androidx.compose.ui.graphics.Shape>(
-            RoundedCornerShape(30.dp), MaterialShapes.Cookie6Sided.toShape(), MaterialShapes.Clover4Leaf.toShape(), MaterialShapes.Oval.toShape(),
-            RoundedCornerShape(topStart = 90.dp, topEnd = 18.dp, bottomEnd = 90.dp, bottomStart = 18.dp), MaterialShapes.Arch.toShape(), RoundedCornerShape(50),
+            RoundedCornerShape(30.dp), cookie, clover, oval,
+            RoundedCornerShape(topStart = 90.dp, topEnd = 18.dp, bottomEnd = 90.dp, bottomStart = 18.dp), arch, RoundedCornerShape(50),
         )
     }
     androidx.compose.foundation.layout.BoxWithConstraints(modifier) {

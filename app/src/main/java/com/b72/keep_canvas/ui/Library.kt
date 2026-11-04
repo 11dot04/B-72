@@ -220,6 +220,133 @@ private fun BookItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, onClick
     }
 }
 
+/** How far a card in the fan leans, in degrees. Flip the sign if the cards behind the front one lean the wrong way. */
+private const val FAN_LEAN = -34f
+
+/**
+ * The films, as a fan of posters in depth: the one in front stands square, the ones behind it step up and away, each leaning back with
+ * the perspective, and the ones you have passed swing off to the left. Drag along the fan to move through it; tap a card behind to bring
+ * it forward, the one in front to open it. Everything that moves while you drag is read in the draw phase, so a drag recomposes nothing.
+ */
+@Composable
+private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -> Unit, onOpen: (String) -> Unit, h: androidx.compose.ui.unit.Dp) {
+    val cs = MaterialTheme.colorScheme
+    val n = items.size
+    val last = (n - 1).coerceAtLeast(0)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pos = remember { androidx.compose.animation.core.Animatable(index.coerceIn(0, last).toFloat()) }
+    androidx.compose.runtime.LaunchedEffect(n) { pos.snapTo(pos.value.coerceIn(0f, last.toFloat())) }
+    // which card is nearest the front changes rarely, so only that is read while composing; the cards are stacked by it
+    val near by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.round(pos.value).toInt().coerceIn(0, last) } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { near }.collect { onIndex(it) } }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val step = with(density) { 110.dp.toPx() }
+    val drag = androidx.compose.foundation.gestures.rememberDraggableState { dx ->
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { pos.snapTo((pos.value - dx / step).coerceIn(-.25f, last + .25f)) }
+    }
+    val w = h * .66f
+    fun settle(to: Int) { scope.launch { pos.animateTo(to.coerceIn(0, last).toFloat(), androidx.compose.animation.core.spring(.85f, 260f)) } }
+    Box(
+        Modifier.fillMaxWidth().height(h + 36.dp).clipToBounds().draggable(drag, androidx.compose.foundation.gestures.Orientation.Horizontal, onDragStopped = { v ->
+            settle(kotlin.math.round(pos.value - v / step * .3f).toInt())
+        }),
+    ) {
+        val order = (near - 2..near + 6).filter { it in 0..last }.sortedByDescending { kotlin.math.abs(it - near) }
+        for (i in order) androidx.compose.runtime.key(items[i].second.id) {
+            val b = items[i].second
+            Box(
+                Modifier.align(Alignment.CenterStart).padding(start = 28.dp).width(w).height(h)
+                    .graphicsLayer {
+                        val d = i - pos.value
+                        cameraDistance = 14f * density.density
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (d >= 0f) 0f else 1f, .5f)
+                        if (d >= 0f) {
+                            val k = d.coerceAtMost(4f)
+                            translationX = k * 52.dp.toPx() * (1f - .05f * k)
+                            translationY = -k * 15.dp.toPx()
+                            val sc = (1f - .07f * k).coerceAtLeast(.62f); scaleX = sc; scaleY = sc
+                            rotationY = FAN_LEAN * d.coerceAtMost(1f)
+                            alpha = 1f - (d - 3f).coerceIn(0f, 1.5f) / 1.5f
+                        } else {
+                            val k = -d
+                            translationX = -k * 300.dp.toPx()
+                            rotationY = -FAN_LEAN * k.coerceAtMost(1f) * 1.2f
+                            rotationZ = -5f * k
+                            alpha = (1f + d * .55f).coerceIn(0f, 1f)
+                        }
+                        shape = RoundedCornerShape(22.dp); clip = true
+                    }
+                    .background(cs.primaryContainer)
+                    .clickable(onClickLabel = "Open") { if (i == near) onOpen(items[i].first.id) else settle(i) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (b.path != null) PhotoImage(b.path, 700, false, cs.primary, Modifier.fillMaxSize())
+                else Icon(Icons.Rounded.Movie, null, Modifier.size(48.dp), tint = cs.onPrimaryContainer)
+                // depth without a shadow: the further back a poster is, the more it dims
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((i - pos.value).coerceIn(0f, 4f) * .11f) }.background(androidx.compose.ui.graphics.Color.Black))
+            }
+        }
+        Text(
+            "${near + 1} / $n", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp), color = cs.onSurface,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp).border(1.dp, cs.onSurface.copy(alpha = .5f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+/** How wide a book's spine is: a thicker book, a wider spine. */
+private fun bookThick(b: Block): androidx.compose.ui.unit.Dp {
+    val pages = b.field("pages").toIntOrNull() ?: 0
+    return if (pages > 0) (64 + pages / 10).coerceIn(84, 108).dp else 88.dp
+}
+
+/**
+ * The books, side by side as spines, the one in the middle opened out to its cover. Where it is on the shelf is one number, [pos], and
+ * every spine's width and place follow from it, so the shelf can always be dragged back to the very first book and out to the last.
+ */
+@Composable
+private fun BookShelf(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -> Unit, onOpen: (String) -> Unit, h: androidx.compose.ui.unit.Dp) {
+    val n = items.size
+    val last = (n - 1).coerceAtLeast(0)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pos = remember { androidx.compose.animation.core.Animatable(index.coerceIn(0, last).toFloat()) }
+    androidx.compose.runtime.LaunchedEffect(n) { pos.snapTo(pos.value.coerceIn(0f, last.toFloat())) }
+    val near by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.round(pos.value).toInt().coerceIn(0, last) } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { near }.collect { onIndex(it) } }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val step = with(density) { 84.dp.toPx() }
+    val drag = androidx.compose.foundation.gestures.rememberDraggableState { dx ->
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { pos.snapTo((pos.value - dx / step).coerceIn(0f, last.toFloat())) }
+    }
+    fun settle(to: Int) { scope.launch { pos.animateTo(to.coerceIn(0, last).toFloat(), androidx.compose.animation.core.spring(.85f, 260f)) } }
+    val thick = remember(items) { items.map { bookThick(it.second).value } }
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().height(h).clipToBounds().draggable(drag, androidx.compose.foundation.gestures.Orientation.Horizontal, onDragStopped = { v ->
+            settle(kotlin.math.round(pos.value - v / step * .35f).toInt())
+        }),
+    ) {
+        val vw = maxWidth.value
+        val p = pos.value
+        val gap = 12f
+        fun open(i: Int) = (1f - kotlin.math.abs(i - p)).coerceIn(0f, 1f)
+        val width = FloatArray(n) { thick[it] + (220f - thick[it]) * open(it) }
+        val left = FloatArray(n)
+        for (i in 1 until n) left[i] = left[i - 1] + width[i - 1] + gap
+        val lo = kotlin.math.floor(p).toInt().coerceIn(0, last); val hi = (lo + 1).coerceAtMost(last)
+        val frac = (p - lo).coerceIn(0f, 1f)
+        val centre = (left[lo] + width[lo] / 2) * (1f - frac) + (left[hi] + width[hi] / 2) * frac
+        val shift = vw / 2 - centre
+        for (i in 0 until n) {
+            val x = left[i] + shift
+            if (x > vw || x + width[i] < 0f) continue
+            androidx.compose.runtime.key(items[i].second.id) {
+                Box(Modifier.offset(x = x.dp).width(width[i].dp).height(h)) {
+                    BookItem(items[i].second, open(i), h) { if (i == near) onOpen(items[i].first.id) else settle(i) }
+                }
+            }
+        }
+    }
+}
+
 /** A film waits as a frame of film stock, sprocket holes down both edges, and opens out to its whole poster in the middle. */
 @Composable
 private fun FilmItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {

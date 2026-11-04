@@ -147,7 +147,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 ) { t -> when (t) {
                     1 -> CanvasHub(loaded, onRename = { a, b -> repo.renameTag(a, b) }) { board = it }
                     2 -> LibraryScreen(loaded, { open = it }, onAdd = { begin(it, null) })
-                    3 -> StickersScreen(repo, loaded) { tab = 0 }
+                    3 -> StickersScreen(repo, loaded, onBack = { tab = 0 }, onCanvas = { board = it })
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 } }
