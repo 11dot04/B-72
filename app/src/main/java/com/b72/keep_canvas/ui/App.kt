@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Unit = {}, start: com.b72.keep_canvas.data.Launch? = null, onLaunchHandled: () -> Unit = {}) {
     val ctx = LocalContext.current
+    UiPrefs.init(ctx); Rf.init(ctx)
     val scope = rememberCoroutineScope()
     val repo = remember { Repo(ctx.applicationContext, scope) }
     LaunchedEffect(Unit) { com.b72.keep_canvas.data.Assistant.refresh(ctx.applicationContext); repo.init() }
@@ -59,7 +60,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // the tag whose canvas is showing; a note opened from it returns here
     var board by rememberSaveable { mutableStateOf<String?>(null) }
     // 0 notes, 1 canvas, 2 library, 3 artifacts: the top-level places in the floating bar
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by UiPrefs.tab
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
     fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }

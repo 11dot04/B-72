@@ -2,6 +2,7 @@
 
 package com.b72.keep_canvas.ui
 
+import androidx.compose.foundation.verticalScroll
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -348,7 +349,7 @@ fun EditSplit(
         )
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(28.dp)) {
             DropdownMenuItem(
-                { Column { Text("Title style"); Text(LAYOUTS.firstOrNull { it.id == layout }?.name ?: "Auto", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                { Column { Text("Title style"); Text(LAYOUTS.firstOrNull { it.id == layout.substringBefore(':') }?.name ?: "Auto", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
                 { open = false; picking = true }, leadingIcon = { Icon(Icons.Rounded.ViewAgenda, null) },
             )
             androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -530,19 +531,29 @@ fun BrainstormSheet(note: Note, onDismiss: () -> Unit, onAppend: (String) -> Uni
 fun LayoutSheet(current: String, onClose: () -> Unit, onPick: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     androidx.compose.material3.ModalBottomSheet(onClose) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Title style", style = flexStyle(26.sp, wght = 720, rond = 40f), modifier = Modifier.padding(bottom = 10.dp))
             for (l in LAYOUTS) Row(
                 Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(20.dp))
-                    .background(if (current == l.id) cs.tertiaryContainer else cs.surfaceContainerHigh)
-                    .clickable { onPick(l.id); onClose() }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    .background(if (current.substringBefore(':') == l.id) cs.tertiaryContainer else cs.surfaceContainerHigh)
+                    .clickable { onPick(if (l.id == "script") "script" + (current.substringAfter(':', "").takeIf { it.isNotEmpty() && current.startsWith("script") }?.let { ":$it" } ?: "") else l.id); onClose() }.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(l.name, style = MaterialTheme.typography.titleMedium, color = if (current == l.id) cs.onTertiaryContainer else cs.onSurface)
-                    Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = if (current == l.id) cs.onTertiaryContainer.copy(alpha = .8f) else cs.onSurfaceVariant)
+                    Text(l.name, style = MaterialTheme.typography.titleMedium, color = if (current.substringBefore(':') == l.id) cs.onTertiaryContainer else cs.onSurface)
+                    Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = if (current.substringBefore(':') == l.id) cs.onTertiaryContainer.copy(alpha = .8f) else cs.onSurfaceVariant)
                 }
-                if (current == l.id) Icon(Icons.Rounded.Check, null, tint = cs.onTertiaryContainer)
+                if (current.substringBefore(':') == l.id) Icon(Icons.Rounded.Check, null, tint = cs.onTertiaryContainer)
+            }
+            // little pictures to set after a script title; they come from the Playlist Ornament font, when it is in the app
+            val orn = ornamentFamily(androidx.compose.ui.platform.LocalContext.current)
+            if (orn != null) {
+                Text("Ornament", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val now = ornamentOf(current)
+                    androidx.compose.material3.FilterChip(now == null, { onPick("script"); onClose() }, label = { Text("None") })
+                    for (ch in 'A'..'Z') androidx.compose.material3.FilterChip(now == ch.toString(), { onPick("script:$ch"); onClose() }, label = { Text(ch.toString(), style = TextStyle(fontFamily = orn, fontSize = 22.sp)) })
+                }
             }
         }
     }

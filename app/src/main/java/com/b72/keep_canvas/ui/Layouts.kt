@@ -60,7 +60,7 @@ class PageLayout(val id: String, val name: String, val blurb: String)
 
 val LAYOUTS = listOf(
     PageLayout("", "Auto", "A look picked from the note; one short word is set in brush script"),
-    PageLayout("script", "Brush script", "Hand-lettered and tipped up a little"),
+    PageLayout("script", "Playlist Script", "Hand-lettered, tipped up a little, with optional ornament"),
     PageLayout("caps", "Poster caps", "Heavy capitals"),
     PageLayout("soft", "Soft and heavy", "Round, fat letters"),
     PageLayout("light", "Light, last word bold", "A fine title with its last word heavy"),

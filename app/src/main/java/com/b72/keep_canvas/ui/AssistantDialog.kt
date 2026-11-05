@@ -64,11 +64,14 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                     }
                     importing -> Text("Copying the model…", style = MaterialTheme.typography.labelLarge)
                     Assistant.installed -> {
-                        Text("Ready. Notes are read in the background when you save them.", style = MaterialTheme.typography.titleSmall)
+                        Text(if (Assistant.legacy) "The old, smaller model is installed. Remove it to switch to Gemma 3n E2B, which reads notes and artifacts better." else "Ready. Notes are read in the background when you save them.", style = MaterialTheme.typography.titleSmall)
                         OutlinedButton(onClick = { Assistant.remove(ctx); note = "Assistant removed" }, modifier = Modifier.padding(top = 12.dp)) { Text("Remove the model") }
                     }
                     else -> {
-                        Button(onClick = { Assistant.download(ctx) }) { Text("Download (about 1.6 GB, best on Wi-Fi)") }
+                        var token by remember { mutableStateOf(Assistant.token(ctx)) }
+                        Text("Gemma 3n E2B. Google asks you to accept its licence once, on the model's Hugging Face page (google/gemma-3n-E2B-it-litert-lm); then paste a read token from that account here.", style = MaterialTheme.typography.bodySmall)
+                        androidx.compose.material3.OutlinedTextField(token, { token = it; Assistant.setToken(ctx, it) }, singleLine = true, label = { Text("Hugging Face token") }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                        Button(onClick = { Assistant.download(ctx, token = token) }) { Text("Download (about 3.4 GB, best on Wi-Fi)") }
                         TextButton(onClick = { pick.launch(arrayOf("*/*")) }) { Text("Use a model file I already have") }
                     }
                 }

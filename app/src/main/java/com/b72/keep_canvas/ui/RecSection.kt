@@ -120,7 +120,8 @@ private fun Notes(l: String, text: String, fg: androidx.compose.ui.graphics.Colo
 
 /** A film, book, track, recipe or link on the note page. [w] is the content width. */
 @Composable
-fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null, onData: ((String, kotlinx.serialization.json.JsonElement) -> Unit)? = null) {
+fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null, onData: ((String, kotlinx.serialization.json.JsonElement) -> Unit)? = null, onCover: ((String) -> Unit)? = null) {
+    var pickCover by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var lyricSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val fg = pal.fg
     val showTitle = b.title != noteTitle
@@ -137,7 +138,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 val by = if (book) v("author").takeIf { it.isNotEmpty() }?.let { "By $it" } ?: "" else v("director").takeIf { it.isNotEmpty() }?.let { (if (v("series").isNotEmpty()) "Created by " else "Directed by ") + it } ?: ""
                 Row {
                     if (has) {
-                        PhotoImage(b.path!!, 700, false, pal.primary, Modifier.width(w * .38f).aspectRatio(2f / 3f).clip(RoundedCornerShape(22.dp)))
+                        PhotoImage(b.path!!, 700, false, pal.primary, Modifier.width(w * .38f).aspectRatio(2f / 3f).clip(RoundedCornerShape(22.dp)).let { if (book && onCover != null) it.clickable(onClickLabel = "Change cover") { pickCover = true } else it })
                         Spacer(Modifier.width(16.dp))
                     }
                     Column(Modifier.weight(1f)) {
@@ -146,8 +147,15 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                         Text(meta.filter { it.isNotEmpty() }.joinToString(" · "), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp), color = fg.copy(alpha = .78f))
                         if (by.isNotEmpty()) Text(by, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp), color = fg, modifier = Modifier.padding(top = 6.dp))
                         if (rating > 0) Box(Modifier.padding(top = 12.dp)) { Stars(rating, fg, 26.dp) }
+                        if (book && onCover != null) androidx.compose.material3.AssistChip(
+                            onClick = { pickCover = true }, label = { Text("Change cover") },
+                            modifier = Modifier.padding(top = 12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)),
+                            colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg),
+                        )
                     }
                 }
+                if (pickCover && onCover != null) CoverPicker(b.title.ifBlank { noteTitle }, v("author"), onPick = onCover, onDismiss = { pickCover = false })
                 if (!book && v("overview").isNotEmpty()) Text(v("overview"), maxLines = 6, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .78f), modifier = Modifier.padding(top = 16.dp))
                 Notes("YOUR THOUGHTS", b.body, fg)
             }

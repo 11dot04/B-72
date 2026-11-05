@@ -61,6 +61,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxHeight
 import com.b72.keep_canvas.data.Images
 import com.b72.keep_canvas.data.Repo
 import com.b72.keep_canvas.data.Stuck
@@ -98,8 +100,9 @@ fun PlacedLayer(st: PlacedState, cw: Float, topInset: Float, ring: Color, ink: C
 private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ring: Color, ink: Color, origin: () -> androidx.compose.ui.geometry.Offset, onEditText: (String) -> Unit) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val mark = markOf(s.k)
+    val stamp = stampOf(s.k)
     val isText = s.k.startsWith("t:")
-    val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: 1f
+    val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: stamp?.aspect ?: 1f
     val wPx = s.w * cw
     val on = st.selected == s.id
     val latest by androidx.compose.runtime.rememberUpdatedState(s)
@@ -126,6 +129,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
                 color = if (s.c == 3) ink else MarkColors[s.c.mod(MarkColors.size)],
             ),
         )
+        else if (stamp != null) StampView(stamp, s.c, s.id.hashCode(), Modifier.fillMaxWidth())
         else if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
         else {
             val img by produceState<ImageBitmap?>(Images.peek(s.k.substring(2), 500), s.k) { value = Images.load(s.k.substring(2), 500) }
@@ -140,7 +144,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
 fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val sel = st.items.firstOrNull { it.id == st.selected } ?: return
-    val isMark = sel.k.startsWith("m:")
+    val isMark = sel.k.startsWith("m:") || sel.k.startsWith("x:")
     Row(
         modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -159,28 +163,31 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -
     }
 }
 
-/** The tray: every mark in the pen colour you pick, and your stickers. A tap puts the item in the middle of what you are looking at. */
+/** The tray: either the stamps, in the pen colour you pick, or your artifacts. A tap puts the item in the middle of what you are looking at. */
 @Composable
-fun PlacedTray(marks: Boolean, stickers: List<String>, onMark: (Mark, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
+fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (Stamp, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var color by remember { mutableStateOf(0) }
     ModalBottomSheet(onClose) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
-            Text(if (marks) "Marks and stamps" else "Artifacts", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
+            Text(if (marks) "Stamps" else "Artifacts", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
             if (marks) {
                 Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     for ((i, c) in MarkColors.withIndex()) Box(
                         Modifier.size(34.dp).clip(CircleShape).background(c).border(if (color == i) 3.dp else 1.dp, if (color == i) cs.onSurface else cs.outlineVariant, CircleShape)
-                            .clickable(onClickLabel = "Pen colour") { color = i },
+                            .clickable(onClickLabel = "Stamp colour") { color = i },
                     )
                 }
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.height(260.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(Mark.entries.toList()) { m ->
-                        Box(
-                            Modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.label) { onMark(m, color) }.padding(10.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Canvas(Modifier.fillMaxWidth().aspectRatio(1f / m.aspect)) { drawMark(m, 0f, 0f, size.width, MarkColors[color], m.ordinal * 7) }
+                LazyVerticalGrid(GridCells.Fixed(3), Modifier.height(420.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (g in listOf("Lingo", "Brutalist", "Postmodern")) {
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            Text(g.uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                        }
+                        items(Stamp.entries.filter { it.group == g }) { m ->
+                            Box(
+                                Modifier.aspectRatio(1.15f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.label) { onStamp(m, color) }.padding(14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { StampView(m, color, m.ordinal * 7, if (m.aspect > 1.1f / 1.15f) Modifier.fillMaxHeight(.9f) else Modifier.fillMaxWidth()) }
                         }
                     }
                 }

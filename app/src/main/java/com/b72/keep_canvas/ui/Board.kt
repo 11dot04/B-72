@@ -146,14 +146,14 @@ private fun swatchesFor(hues: List<Float>): List<Pair<Color, Color>> {
 
 /** The canvas takes its colour from its photos: a pastel wash in light mode, a deep tint of the same hue in dark mode. Cards stay bright either way. */
 private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Color, Color>>, blockHue: Map<String, Float>) = if (dark) Tones(
-    bg = hsl(hue, .36f, .13f), onBg = hsl(hue, .3f, .93f),
+    bg = hsl(hue, .5f, .15f), onBg = hsl(hue, .3f, .93f),
     primary = hsl(hue, .75f, .72f), onPrimary = hsl(hue, .6f, .1f),
     pc = hsl(hue, .45f, .3f), onPc = hsl(hue, .6f, .92f),
     sc = hsl(hue + 25f, .4f, .26f), onSc = hsl(hue + 25f, .5f, .92f),
     tc = hsl(hue + 60f, .42f, .27f), onTc = hsl(hue + 60f, .5f, .92f),
     error = error, swatches = sw, blockHue = blockHue,
 ) else Tones(
-    bg = hsl(hue, .55f, .86f), onBg = hsl(hue, .45f, .1f),
+    bg = hsl(hue, .62f, .84f), onBg = hsl(hue, .45f, .1f),
     primary = hsl(hue, .55f, .38f), onPrimary = hsl(hue, .4f, .97f),
     pc = hsl(hue, .6f, .72f), onPc = hsl(hue, .5f, .12f),
     sc = hsl(hue + 25f, .55f, .8f), onSc = hsl(hue + 25f, .5f, .12f),
@@ -236,8 +236,11 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     val force = remember { booleanArrayOf(false) } // set by the re-tidy button, consumed by the next layout
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val pan = remember { Pan(scope) }
-    var grid by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+    var gridPref by UiPrefs.boardGrid
+    val grid = gridPref == 1
     var textEdit by remember { mutableStateOf<Pair<String?, String>?>(null) }
+    val isDark = isSystemInDarkTheme()
+    var finger by remember { mutableStateOf<Offset?>(null) }
     val placed = remember(tag) { PlacedState(repo, tag) }
     LaunchedEffect(loaded != null) { placed.seed() }
     var trayMode by remember { androidx.compose.runtime.mutableIntStateOf(0) } // 0 shut, 1 artifacts, 2 marks and stamps
@@ -263,11 +266,40 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             if (all) pan.home()
         }
 
+        // while a card is held near an edge the canvas slides that way, and the card goes with it, so it can be carried a long way in one hold
+        LaunchedEffect(dragId) {
+            if (dragId == null) return@LaunchedEffect
+            var last = androidx.compose.runtime.withFrameNanos { it }
+            val edge = with(density) { 90.dp.toPx() }
+            val speed = with(density) { 900.dp.toPx() }
+            val bottomStart = shPx - with(density) { 210.dp.toPx() }
+            while (true) {
+                val now = androidx.compose.runtime.withFrameNanos { it }
+                val dt = ((now - last) / 1_000_000_000f).coerceAtMost(.05f); last = now
+                val f = finger; val c = cards.firstOrNull { it.id == dragId }
+                if (f != null && c != null) {
+                    val dx = (if (f.x < edge) -(edge - f.x) / edge else if (f.x > swPx - edge) (f.x - (swPx - edge)) / edge else 0f).coerceIn(-1f, 1f)
+                    val dy = (if (f.y < topInset + edge * .5f) -((topInset + edge * .5f) - f.y) / (edge * .5f) else if (f.y > bottomStart) (f.y - bottomStart) / (edge * 1.1f) else 0f).coerceIn(-1f, 1f)
+                    if (dx != 0f || dy != 0f) {
+                        val v = speed * dt
+                        pan.stop(); pan.x -= dx * v; pan.y -= dy * v
+                        c.x += dx * v / s.cw; c.y += dy * v / s.cw; c.moved()
+                    }
+                }
+            }
+        }
+
         val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
         val origin = { Offset(pan.x, pan.y) }
         Box(
             Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { detectTapGestures(onDoubleTap = { pan.home() }) },
         ) {
+            // two soft pools of the canvas's other colours, drifting a little slower than the cards, so the ground is never one flat tone
+            Canvas(Modifier.fillMaxSize()) {
+                val k = if (isDark) .6f else .75f
+                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(t.pc.copy(alpha = k), Color.Transparent), Offset(size.width * .1f + pan.x * .12f, size.height * .15f + pan.y * .12f), size.width * 1.1f))
+                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(t.tc.copy(alpha = k), Color.Transparent), Offset(size.width * .95f + pan.x * .08f, size.height * .85f + pan.y * .08f), size.width * 1.2f))
+            }
             if (grid) Canvas(Modifier.fillMaxSize()) {
                 // a dot grid that travels with the canvas
                 val step = 26.dp.toPx()
@@ -289,10 +321,11 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                         liftTick++
                     },
                     onMove = { dx, dy -> c.x += dx / s.cw; c.y += dy / s.cw; c.moved() },
+                    onFinger = { finger = it },
                     onDrop = {
                         settle(c, cards)
                         c.moved()
-                        dragId = null
+                        dragId = null; finger = null
                         persist(repo, tag, listOf(c))
                     },
                     onOpen = { onOpen(c.noteId) },
@@ -322,7 +355,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 tag, style = flexStyle(26.sp, wght = 720, wdth = 108f, rond = 40f), color = t.onBg, maxLines = 1,
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
-            IconButton(onClick = { grid = !grid }, colors = btn) { Icon(Icons.Rounded.GridOn, if (grid) "Hide the dot grid" else "Show the dot grid") }
+            IconButton(onClick = { gridPref = 1 - gridPref }, colors = btn) { Icon(Icons.Rounded.GridOn, if (grid) "Hide the dot grid" else "Show the dot grid") }
         }
         if (placed.drawing) {
             DrawLayer(placed, (-pan.x).roundToInt(), (-pan.y).roundToInt(), s.cw, topInset, Modifier.fillMaxSize())
@@ -332,10 +365,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         if (trayMode != 0) PlacedTray(
             marks = trayMode == 2,
             stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
-            onMark = { m, c ->
+            onStamp = { m, c ->
                 trayMode = 0
-                val w = .15f
-                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "m:${m.name}", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c))
+                val w = .3f
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "x:${m.name}", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c, w * m.aspect))
             },
             onSticker = { p ->
                 trayMode = 0
@@ -374,7 +407,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 content = {
                     IconButton(onClick = { trayMode = 1 }) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
                     IconButton(onClick = { textEdit = null to "" }) { Icon(Icons.Rounded.TextFields, "Add text") }
-                    IconButton(onClick = { trayMode = 2 }) { Icon(Icons.Rounded.Draw, "Stamps and marks") }
+                    IconButton(onClick = { trayMode = 2 }) { Icon(Icons.Rounded.Draw, "Stamps") }
                     IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw, arrows and scribbles") }
                     IconButton(onClick = { force[0] = true; shuffle++; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
                 },
@@ -408,7 +441,7 @@ private fun persist(repo: Repo, tag: String, changed: List<Card>) {
 private fun BoardCard(
     c: Card, s: Scale, t: Tones, topInset: Float, origin: () -> Offset,
     dragging: Boolean, all: List<Card>,
-    onDragStart: () -> Unit, onMove: (Float, Float) -> Unit, onDrop: () -> Unit, onOpen: () -> Unit, onNudge: (Float, Float) -> Unit,
+    onDragStart: () -> Unit, onMove: (Float, Float) -> Unit, onFinger: (Offset) -> Unit, onDrop: () -> Unit, onOpen: () -> Unit, onNudge: (Float, Float) -> Unit,
 ) {
     val u = s.u
     val l: Lay = remember(c.b, c.w, s) { lay(c.b, c.w, s) }
@@ -419,6 +452,7 @@ private fun BoardCard(
     val start by androidx.compose.runtime.rememberUpdatedState(onDragStart)
     val move by androidx.compose.runtime.rememberUpdatedState(onMove)
     val drop by androidx.compose.runtime.rememberUpdatedState(onDrop)
+    val fingerCb by androidx.compose.runtime.rememberUpdatedState(onFinger)
     val radius = if (bare) 0f else u * .07f
     val ringColor = if (bare) (if (bad) t.error.copy(alpha = .28f) else Color.Transparent) else if (bad) t.error else t.bg
     val pos = animateOffsetAsState(
@@ -450,7 +484,7 @@ private fun BoardCard(
             .pointerInput(c.id) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { start() },
-                    onDrag = { ch, amt -> ch.consume(); move(amt.x, amt.y) },
+                    onDrag = { ch, amt -> ch.consume(); move(amt.x, amt.y); fingerCb(Offset(pos.value.x + origin().x + ch.position.x, pos.value.y + origin().y + ch.position.y)) },
                     onDragEnd = { drop() },
                     onDragCancel = { drop() },
                 )

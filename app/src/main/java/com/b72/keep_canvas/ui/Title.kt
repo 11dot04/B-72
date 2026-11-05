@@ -61,13 +61,21 @@ private val StyleLooks = mapOf(
 fun lookFor(seed: String, style: String) = StyleLooks[style] ?: lookFor(seed)
 
 /** The brush script is used when it is asked for, and by Auto for a title that is one short word. */
-fun isScriptTitle(text: String, style: String) = style == "script" || (style !in StyleLooks && style.isEmpty() && text.trim().let { it.isNotEmpty() && ' ' !in it && it.length <= 14 })
+fun isScriptTitle(text: String, style: String) = style.startsWith("script") || (style !in StyleLooks && style.isEmpty() && text.trim().let { it.isNotEmpty() && ' ' !in it && it.length <= 14 })
 
 /** The brush-script face, when the build fetched it; the italic serif otherwise. */
-fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily {
-    val id = ctx.resources.getIdentifier("mrdafoe_regular", "font", ctx.packageName)
-    return if (id != 0) androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(id)) else Script
+fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily = assetFamily(ctx, "fonts/playlist_script.ttf") ?: Script
+
+/** Playlist Ornament: a font of little pictures on the letter keys (A is a cup, B a smiley), or null if its file is not in assets/fonts. */
+fun ornamentFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily? = assetFamily(ctx, "fonts/playlist_ornament.ttf")
+
+private val assetFonts = HashMap<String, androidx.compose.ui.text.font.FontFamily?>()
+private fun assetFamily(ctx: android.content.Context, path: String): androidx.compose.ui.text.font.FontFamily? = assetFonts.getOrPut(path) {
+    runCatching { androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.createFromAsset(ctx.assets, path)) }.getOrNull()
 }
+
+/** The ornament chosen for a title style ("script:B" -> "B"), or null. */
+fun ornamentOf(style: String): String? = style.substringAfter(':', "").takeIf { it.length == 1 }
 
 private val Tail = setOf("a", "an", "the", "of", "in", "on", "at", "to", "for", "and", "or", "with", "as", "by", "from") // never end a line on these
 private val Lead = setOf("as", "of", "in", "on", "with", "for", "from", "by", "and", "to")                              // good words to start a line with
@@ -205,7 +213,7 @@ fun rememberTitleLay(text: String, wPx: Float, seed: String, maxLines: Int = 3, 
 /** A title that always fills its width. [flex] (0..1) is read per frame; the layout itself is computed once. */
 @Composable
 fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modifier, maxLines: Int = 3, flex: () -> Float = { 1f }, style: String = "") {
-    if (isScriptTitle(text, style)) { ScriptFit(text, color, seed, modifier); return }
+    if (isScriptTitle(text, style)) { ScriptFit(text, color, seed, modifier, ornamentOf(style)); return }
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val lay = rememberTitleLay(text, constraints.maxWidth.toFloat(), seed, maxLines, style)
         val f = flex()
@@ -247,25 +255,56 @@ fun FitLine(text: String, style: TextStyle, color: Color, modifier: Modifier = M
 }
 
 
-/** A title in brush script, set as large as its width allows and tipped up a few degrees, like a hand-lettered heading. */
+/**
+ * A title in brush script, set as large as its width allows and tipped up a few degrees. The box is cut to the ink of the letters, not to
+ * the font's own ascent and descent, so a script with tall loops leaves no hole above or below the title. An ornament picked for the
+ * style is set after the last word.
+ */
 @Composable
-fun ScriptFit(text: String, color: Color, seed: String, modifier: Modifier = Modifier) {
+fun ScriptFit(text: String, color: Color, seed: String, modifier: Modifier = Modifier, ornament: String? = null) {
     val m = rememberTextMeasurer()
-    val family = scriptFamily(androidx.compose.ui.platform.LocalContext.current)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val family = scriptFamily(ctx)
+    val orn = ornamentFamily(ctx)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val w = constraints.maxWidth
         val lines = remember(text) { breakTitle(text, 2) }
-        val size = remember(text, w, family) {
+        fun shown(i: Int): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+            append(lines[i])
+            if (i == lines.lastIndex && ornament != null && orn != null) {
+                append(" ")
+                withStyle(androidx.compose.ui.text.SpanStyle(fontFamily = orn)) { append(ornament) }
+            }
+        }
+        val size = remember(text, w, family, ornament, orn) {
             val probe = TextStyle(fontFamily = family, fontSize = 100.sp)
-            val widest = lines.maxOf { m.measure(it, probe, softWrap = false, maxLines = 1).size.width }.coerceAtLeast(1)
-            (100f * w * .92f / widest).coerceIn(30f, if (lines.size == 1) 110f else 80f)
+            val widest = lines.indices.maxOf { m.measure(shown(it), probe, softWrap = false, maxLines = 1).size.width }.coerceAtLeast(1)
+            (100f * w * .94f / widest).coerceIn(30f, if (lines.size == 1) 120f else 84f)
+        }
+        val style = TextStyle(fontFamily = family, fontSize = size.sp, lineHeight = (size * 1.2f).sp, color = color)
+        // where the ink of each line really starts and ends, measured, so the box can be cut to it
+        val ink = remember(text, size, family, ornament, orn) {
+            lines.indices.map { i ->
+                val lay = m.measure(shown(i), style.copy(color = Color.Unspecified), softWrap = false, maxLines = 1)
+                val b = lay.getPathForRange(0, lay.layoutInput.text.length).getBounds()
+                if (b.height > 1f) b.top to b.bottom else 0f to lay.size.height.toFloat()
+            }
         }
         val tilt = -(2.5f + (seedOf(seed) % 4) * .7f)
+        val lift = with(androidx.compose.ui.platform.LocalDensity.current) { (w * kotlin.math.sin(Math.toRadians(-tilt.toDouble())).toFloat() * .5f).toDp() }
         androidx.compose.foundation.layout.Column(
-            Modifier.padding(top = (size * .14f).dp, bottom = (size * .1f).dp)
-                .graphicsLayer { rotationZ = tilt; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f) },
+            Modifier.padding(top = lift).graphicsLayer { rotationZ = tilt; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f) },
         ) {
-            for (l in lines) Text(l, style = TextStyle(fontFamily = family, fontSize = size.sp, lineHeight = (size * 1.18f).sp, color = color), maxLines = 1, softWrap = false)
+            lines.indices.forEach { i ->
+                val (top, bottom) = ink[i]
+                Text(
+                    shown(i), style = style, maxLines = 1, softWrap = false,
+                    modifier = Modifier.layout { meas, c ->
+                        val p = meas.measure(c.copy(maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
+                        layout(p.width.coerceAtMost(c.maxWidth), (bottom - top).toInt()) { p.place(0, -top.toInt()) }
+                    },
+                )
+            }
         }
     }
 }

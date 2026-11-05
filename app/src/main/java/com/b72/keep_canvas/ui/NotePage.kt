@@ -336,7 +336,7 @@ fun NotePage(
             }
             for (b in note.blocks) {
                 if (b.kind == Kind.Audio) item(key = "au-${b.id}") { AudioPlayer(b, pal, { repo?.removeBlock(note.id, b.id) }, Modifier.padding(bottom = 14.dp)) }
-                else if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w, onLyric = repo?.let { r -> { t: String -> r.setData(note.id, b.id, "lyric", kotlinx.serialization.json.JsonPrimitive(t)) } }, onData = repo?.let { r -> { k: String, v: kotlinx.serialization.json.JsonElement -> r.setData(note.id, b.id, k, v) } }) }
+                else if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w, onLyric = repo?.let { r -> { t: String -> r.setData(note.id, b.id, "lyric", kotlinx.serialization.json.JsonPrimitive(t)) } }, onData = repo?.let { r -> { k: String, v: kotlinx.serialization.json.JsonElement -> r.setData(note.id, b.id, k, v) } }, onCover = repo?.let { r -> { p: String -> r.setCover(note.id, b.id, p) } }) }
                 else if (!hasContent(b, title)) Unit
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }

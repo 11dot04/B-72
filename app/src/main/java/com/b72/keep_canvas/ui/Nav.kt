@@ -156,7 +156,8 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
     }
     fun hueOf(key: String) = hues[key] ?: (com.b72.keep_canvas.data.seedOf(key) % 360).toFloat()
     val mono = androidx.compose.ui.text.font.FontFamily.Monospace
-    val ls = androidx.compose.foundation.lazy.rememberLazyListState()
+    var hubIdx by UiPrefs.hub
+    val ls = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = hubIdx)
     val focus by remember {
         androidx.compose.runtime.derivedStateOf {
             val info = ls.layoutInfo
@@ -164,6 +165,8 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
             info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }?.index ?: 0
         }
     }
+    // where the list was left is kept once it comes to rest
+    androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { ls.isScrollInProgress }.collect { moving -> if (!moving && ls.layoutInfo.visibleItemsInfo.isNotEmpty()) hubIdx = focus } }
     val focusHue = groups.getOrNull(focus)?.let { hueOf(it.key) } ?: 220f
     fun bgOf(h: Float) = if (dark) Color.hsl(h, .5f, .17f) else Color.hsl(h, .55f, .86f)
     val ink = if (dark) Color.hsl(focusHue, .35f, .93f) else Color(0xFF1B1A1F)
@@ -222,10 +225,48 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                 style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = .7f), modifier = Modifier.align(Alignment.Center).padding(32.dp),
             ) else {
                 val cur = groups[focus.coerceIn(0, groups.lastIndex)]
-                // the photos of the tag in the middle, thrown across the page; a tag with none leaves the page clear and no gap in the list
+                val dens = androidx.compose.ui.platform.LocalDensity.current
+                val tmeas = androidx.compose.ui.text.rememberTextMeasurer()
+                val arrowDp = 44f
+                val availDp = maxWidth.value - 40f - arrowDp
+                // every name is measured once, at normal width: the biggest size at which its longest word still fits on a line (so nothing breaks
+                // mid-word), and how tall that makes its row. Rows keep that height whether or not they are the chosen one, so scrolling never
+                // changes a row's size, which is what made the list judder before.
+                class Metric(val sp: Float, val h: Float, val w: Float)
+                val metrics = remember(groups.map { it.key }, availDp) {
+                    val availPx = (availDp * dens.density).toInt()
+                    groups.map { g ->
+                        val name = g.key.replaceFirstChar { it.uppercase() }
+                        val words = name.split(' ').filter { it.isNotEmpty() }
+                        var size = 46f
+                        var lay = tmeas.measure(name, rflexStyle(size.sp, 640, 100f, 1.05f), constraints = androidx.compose.ui.unit.Constraints(maxWidth = availPx))
+                        while (size > 24f) {
+                            val st = rflexStyle(size.sp, 640, 100f, 1.05f)
+                            lay = tmeas.measure(name, st, constraints = androidx.compose.ui.unit.Constraints(maxWidth = availPx))
+                            val longest = words.maxOfOrNull { w -> tmeas.measure(w, st, softWrap = false, maxLines = 1).size.width } ?: 0
+                            if (longest <= availPx && lay.lineCount <= 3) break
+                            size -= 3f
+                        }
+                        Metric(size, lay.size.height / dens.density + 14f, lay.size.width / dens.density)
+                    }
+                }
+                val sel = metrics.getOrNull(focus.coerceIn(0, groups.lastIndex))
+                val cx = maxWidth.value; val cy = maxHeight.value / 2
+                val avoid = remember(sel, cx, cy) {
+                    val rowH = sel?.h ?: 70f
+                    listOf(
+                        androidx.compose.ui.geometry.Rect(0f, cy - rowH / 2 - 6, 20f + arrowDp + (sel?.w ?: 200f) + 14f, cy + rowH / 2 + 6), // the chosen name
+                        androidx.compose.ui.geometry.Rect(cx - 150f, (maxHeight.value + 140f) / 2 - 44f, cx, (maxHeight.value + 140f) / 2 + 44f), // the counts
+                        androidx.compose.ui.geometry.Rect(cx - 130f, 0f, cx, 64f), // 01 / 09
+                        androidx.compose.ui.geometry.Rect(0f, 0f, 270f, 76f), // the page title
+                        androidx.compose.ui.geometry.Rect(cx - 30f, cy - 120f, cx, cy + 120f), // the ticks
+                        androidx.compose.ui.geometry.Rect(0f, maxHeight.value - 96f, cx, maxHeight.value), // under the floating bar
+                    )
+                }
+                // the photos of the tag in the middle, placed round its name and never over it; a tag with none leaves the page clear and no gap in the list
                 androidx.compose.animation.Crossfade(cur.key, Modifier.fillMaxSize(), animationSpec = androidx.compose.animation.core.tween(320), label = "scatter") { k ->
                     val g = groups.firstOrNull { it.key == k }
-                    if (g != null) ScatterPhotos(k, remember(k, g.value) { g.value.flatMap { n -> n.photos.mapNotNull { it.path } }.distinct().take(7) }, if (dark) Color.hsl(focusHue, .6f, .3f) else Color.hsl(focusHue, .7f, .8f), Modifier.fillMaxSize())
+                    if (g != null) ScatterPhotos(k, remember(k, g.value) { g.value.flatMap { n -> n.photos.mapNotNull { it.path } }.distinct().take(7) }, avoid, androidx.compose.ui.geometry.Offset(20f + arrowDp + (sel?.w ?: 200f) / 2, cy), if (dark) Color.hsl(focusHue, .6f, .3f) else Color.hsl(focusHue, .7f, .8f), Modifier.fillMaxSize())
                 }
                 androidx.compose.foundation.lazy.LazyColumn(
                     state = ls,
@@ -243,24 +284,14 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                 ) {
                     itemsIndexed(groups, key = { _, g -> g.key }) { i, g ->
                         val name = remember(g.key) { g.key.replaceFirstChar { it.uppercase() } }
-                        // how near the middle this name is, in 7 steps so fonts are reused
-                        val step by remember(i) {
-                            androidx.compose.runtime.derivedStateOf {
-                                val info = ls.layoutInfo
-                                val me = info.visibleItemsInfo.firstOrNull { it.index == i }
-                                val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-                                val d = if (me == null) 1f else (kotlin.math.abs(me.offset + me.size / 2f - mid) / 140f).coerceIn(0f, 1f)
-                                kotlin.math.round((1f - d) * 6f).toInt()
-                            }
-                        }
-                        // a long name takes a smaller size and a second or third line; it is never cut off
-                        val big = when { name.length <= 10 -> 50f; name.length <= 18 -> 40f; else -> 32f }
-                        val titleStyle = remember(step, big) { flexStyle((26f + (big - 26f) * step / 6f).sp, wght = 480 + step * 38, wdth = 100f, lh = 1.08f) }
-                        val here = step >= 5
-                        val arrow by androidx.compose.animation.core.animateDpAsState(if (here) 44.dp else 0.dp, androidx.compose.animation.core.spring(.7f, 400f), label = "arrow")
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 7.dp)
-                                .graphicsLayer { alpha = .26f + .74f * step / 6f }
+                        val m = metrics.getOrNull(i) ?: return@itemsIndexed
+                        val here = focus == i
+                        // Material 3 Expressive's width axis: the chosen name is set at normal width, the rest are pulled in
+                        val st = remember(m.sp, here) { rflexStyle(m.sp.sp, if (here) 640 else 470, if (here) 100f else 52f, 1.05f) }
+                        val shift by androidx.compose.animation.core.animateFloatAsState(if (here) arrowDp else 0f, androidx.compose.animation.core.spring(.8f, 380f), label = "shift")
+                        val fade by androidx.compose.animation.core.animateFloatAsState(if (here) 1f else .3f, androidx.compose.animation.core.spring(1f, 400f), label = "fade")
+                        Box(
+                            Modifier.fillMaxWidth().height(m.h.dp)
                                 .combinedClickable(
                                     onClickLabel = if (here) "Open the ${g.key} canvas" else "Go to ${g.key}", onLongClickLabel = "Rename or merge",
                                     onLongClick = { newName = g.key; renaming = g.key },
@@ -271,10 +302,9 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                                         if (me != null) ls.animateScrollBy((me.offset + me.size / 2f) - (info.viewportStartOffset + info.viewportEndOffset) / 2f) else ls.animateScrollToItem(i)
                                     }
                                 },
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.width(arrow).clipToBounds()) { Text("\u2192", style = flexStyle(36.sp, wght = 400, lh = 1f), color = ink, maxLines = 1, softWrap = false) }
-                            Text(name, style = titleStyle, color = ink, maxLines = 3, modifier = Modifier.fillMaxWidth(.8f))
+                            Text("\u2192", style = rflexStyle(36.sp, wght = 400, lh = 1f), color = ink, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterStart).graphicsLayer { alpha = (shift / arrowDp).coerceIn(0f, 1f) })
+                            Text(name, style = st, color = ink, modifier = Modifier.align(Alignment.CenterStart).width(availDp.dp).graphicsLayer { translationX = shift * density; alpha = fade })
                         }
                     }
                 }
@@ -307,45 +337,48 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
     }
 }
 
-/** A tag's photos thrown across the page at random, each in its own shape and tilt; the same tag always lands the same way. */
+/**
+ * A tag's photos, as plain rounded cards in a few proportions, placed round the chosen name and never on it, nor on the counts, the page
+ * title or the bar. Each card is the closest free spot to the name out of a handful tried, so they gather round it the way the concept
+ * has them, bleeding off the edges a little. The same tag always lands the same way.
+ */
 @Composable
-private fun ScatterPhotos(key: String, paths: List<String>, accent: Color, modifier: Modifier) {
-    // toShape() is composable, so the shapes are made here and only then put in a list
-    val cookie = MaterialShapes.Cookie6Sided.toShape()
-    val clover = MaterialShapes.Clover4Leaf.toShape()
-    val oval = MaterialShapes.Oval.toShape()
-    val arch = MaterialShapes.Arch.toShape()
-    val shapes = remember(cookie, clover, oval, arch) {
-        listOf<androidx.compose.ui.graphics.Shape>(
-            RoundedCornerShape(30.dp), cookie, clover, oval,
-            RoundedCornerShape(topStart = 90.dp, topEnd = 18.dp, bottomEnd = 90.dp, bottomStart = 18.dp), arch, RoundedCornerShape(50),
-        )
-    }
+private fun ScatterPhotos(key: String, paths: List<String>, avoid: List<androidx.compose.ui.geometry.Rect>, near: Offset, accent: Color, modifier: Modifier) {
     androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
-        val w = maxWidth; val h = maxHeight
-        // the page is cut into eight cells and the photos are dealt into them in a shuffled order, so they spread out instead of piling up
-        class Spot(val x: Float, val y: Float, val size: Int, val rot: Float, val shape: Int)
-        val spots = remember(key, paths.size) {
+        val w = maxWidth.value; val h = maxHeight.value
+        class Spot(val x: Float, val y: Float, val w: Float, val h: Float, val rot: Float, val radius: Int)
+        val spots = remember(key, paths.size, avoid, w, h) {
             val r = kotlin.random.Random(com.b72.keep_canvas.data.seedOf(key))
-            val cells = (0 until 8).shuffled(r)
-            List(paths.size) { i ->
-                val cell = cells[i % 8]
-                Spot(
-                    x = (if (cell % 2 == 0) .34f else .66f) + (r.nextFloat() - .5f) * .2f,
-                    y = ((cell / 2) + .2f + r.nextFloat() * .6f) / 4f,
-                    size = 84 + r.nextInt(100), rot = (r.nextFloat() - .5f) * 26f, shape = r.nextInt(shapes.size),
-                )
+            val ratios = listOf(1f to 1.25f, 1f to 1f, 1.25f to 1f, 1f to 1.15f)
+            val taken = ArrayList<androidx.compose.ui.geometry.Rect>()
+            val out = ArrayList<Spot>()
+            fun area(q: androidx.compose.ui.geometry.Rect) = q.width * q.height
+            for (i in paths.indices) {
+                val base = listOf(176f, 142f, 124f, 112f, 104f, 98f, 92f)[i]
+                val (rw, rh) = ratios[r.nextInt(ratios.size)]
+                val pw = base * rw; val ph = base * rh
+                var best: Spot? = null; var bestD = Float.MAX_VALUE
+                repeat(90) {
+                    val x = -pw * .12f + r.nextFloat() * (w - pw * .76f)
+                    val y = 20f + r.nextFloat() * (h - ph - 20f)
+                    val c = androidx.compose.ui.geometry.Rect(x, y, x + pw, y + ph)
+                    if (avoid.any { it.inflate(8f).overlaps(c) }) return@repeat
+                    if (taken.any { t -> val ov = t.intersect(c); ov.width > 0 && ov.height > 0 && area(ov) > .14f * minOf(area(t), area(c)) }) return@repeat
+                    val d = kotlin.math.hypot(c.center.x - near.x, c.center.y - near.y) + r.nextFloat() * 60f
+                    if (d < bestD) { bestD = d; best = Spot(x, y, pw, ph, (r.nextFloat() - .5f) * 10f, 22 + r.nextInt(10)) }
+                }
+                best?.let { taken.add(androidx.compose.ui.geometry.Rect(it.x, it.y, it.x + it.w, it.y + it.h)); out.add(it) }
             }
+            out
         }
-        paths.forEachIndexed { i, p ->
-            val sp = spots[i]
-            val pop = remember(p) { androidx.compose.animation.core.Animatable(0f) }
-            androidx.compose.runtime.LaunchedEffect(p) { kotlinx.coroutines.delay(70L * i); pop.animateTo(1f, androidx.compose.animation.core.spring(.55f, 280f)) }
+        spots.forEachIndexed { i, sp ->
+            val pop = remember(paths[i]) { androidx.compose.animation.core.Animatable(0f) }
+            androidx.compose.runtime.LaunchedEffect(paths[i]) { kotlinx.coroutines.delay(70L * i); pop.animateTo(1f, androidx.compose.animation.core.spring(.7f, 300f)) }
             PhotoImage(
-                p, 500, false, accent,
-                Modifier.offset(w * sp.x - sp.size.dp / 2, h * sp.y - sp.size.dp / 2).size(sp.size.dp)
-                    .graphicsLayer { val v = pop.value; alpha = v.coerceIn(0f, 1f); scaleX = .6f + .4f * v; scaleY = .6f + .4f * v; rotationZ = sp.rot * v + (1f - v) * 14f }
-                    .clip(shapes[sp.shape]),
+                paths[i], 500, false, accent,
+                Modifier.offset(sp.x.dp, sp.y.dp).width(sp.w.dp).height(sp.h.dp)
+                    .graphicsLayer { val v = pop.value; alpha = v.coerceIn(0f, 1f); scaleX = .7f + .3f * v; scaleY = .7f + .3f * v; rotationZ = sp.rot * v }
+                    .clip(RoundedCornerShape(sp.radius.dp)),
             )
         }
     }

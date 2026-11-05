@@ -12,7 +12,6 @@ import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.padding
 import com.b72.keep_canvas.R
 
 private val families = HashMap<String, FontFamily>()
@@ -36,6 +35,37 @@ fun flex(wght: Int = 400, wdth: Float = 100f, rond: Float = 0f, slnt: Float = 0f
         FontFamily(Font(R.font.googlesansflex, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
     }
 }
+
+/**
+ * Roboto Flex, fetched by CI when it is reachable (the app falls back to Google Sans Flex without it). Thirteen axes; the ones used are
+ * wght, wdth, opsz and GRAD for the usual things, plus XTRA (counter width, so a line can be fitted without thickening strokes) and
+ * YTDE / YTAS (descender depth / ascender height, so a lowercase title can be tightened or given room without changing its size).
+ */
+object Rf {
+    private var id = 0
+    private val cache = HashMap<String, FontFamily>()
+    fun init(ctx: android.content.Context) { if (id == 0) id = ctx.resources.getIdentifier("robotoflex", "font", ctx.packageName) }
+    val ready get() = id != 0
+
+    fun family(wght: Int = 400, wdth: Float = 100f, opsz: Float = 14f, grad: Float = 0f, xtra: Float? = null, ytde: Float? = null, ytas: Float? = null): FontFamily {
+        if (id == 0) return flex(wght, wdth)
+        val key = "$wght|${wdth.toInt()}|${opsz.toInt()}|${grad.toInt()}|${xtra?.toInt()}|${ytde?.toInt()}|${ytas?.toInt()}"
+        return cache.getOrPut(key) {
+            val s = buildList {
+                add(FontVariation.weight(wght)); add(FontVariation.width(wdth.coerceIn(25f, 151f)))
+                add(FontVariation.Setting("opsz", opsz.coerceIn(8f, 144f))); add(FontVariation.Setting("GRAD", grad.coerceIn(-200f, 150f)))
+                xtra?.let { add(FontVariation.Setting("XTRA", it.coerceIn(323f, 603f))) }
+                ytde?.let { add(FontVariation.Setting("YTDE", it.coerceIn(-305f, -98f))) }
+                ytas?.let { add(FontVariation.Setting("YTAS", it.coerceIn(649f, 854f))) }
+            }
+            FontFamily(Font(id, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
+        }
+    }
+}
+
+/** Like [flexStyle], but in Roboto Flex when it is there. Display sizes get the optical size to match. */
+fun rflexStyle(size: TextUnit, wght: Int = 600, wdth: Float = 100f, lh: Float = 1.05f, grad: Float = 0f, ytde: Float? = null) =
+    TextStyle(fontFamily = Rf.family(wght, wdth, size.value.coerceIn(8f, 144f), grad, ytde = ytde), fontSize = size, lineHeight = size * lh, letterSpacing = (-0.01).sp)
 
 /** The script face: Playfair Display Italic at Bold, shipped with the app (the phone's own 'cursive' font is missing on many devices). */
 val Script = FontFamily(Font(R.font.playfair_italic, FontWeight.Bold, FontStyle.Italic, variationSettings = FontVariation.Settings(FontVariation.weight(700))))

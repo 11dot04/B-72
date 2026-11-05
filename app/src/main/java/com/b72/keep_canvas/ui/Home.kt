@@ -170,8 +170,8 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
   val test: (Note) -> Boolean = if (filter.startsWith("#")) { n -> filter.substring(1) in n.tags } else (FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true })
-  var cols by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(2) }
-  var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+  var cols by UiPrefs.cols
+  var sort by UiPrefs.sort
   // notes that mean what the search says, found by the on-device model after a short pause in typing
   val meaning by produceState<List<Note>>(emptyList(), q, loaded?.library) {
     value = emptyList()
@@ -397,7 +397,7 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
 private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val tones = remember(cs) {
-        listOf(cs.primaryContainer to cs.onPrimaryContainer, cs.tertiaryContainer to cs.onTertiaryContainer, cs.secondaryContainer to cs.onSecondaryContainer, cs.primary to cs.onPrimary)
+        listOf(cs.surfaceContainerHigh to cs.onSurface, cs.surfaceContainerHighest to cs.onSurface, cs.surfaceContainer to cs.onSurface)
     }
     val (bg, fg) = tones[seedMod(n.id, tones.size)]
     val path = n.cover?.path
@@ -446,7 +446,7 @@ private val TileShape = RoundedCornerShape(18.dp)
 private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val tones = remember(cs) {
-        listOf(cs.primaryContainer to cs.onPrimaryContainer, cs.secondaryContainer to cs.onSecondaryContainer, cs.tertiaryContainer to cs.onTertiaryContainer)
+        listOf(cs.surfaceContainerHigh to cs.onSurface, cs.surfaceContainerHighest to cs.onSurface, cs.surfaceContainer to cs.onSurface)
     }
     val (bg, fg) = tones[seedMod(n.id, tones.size)]
     val src = remember { MutableInteractionSource() }

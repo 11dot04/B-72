@@ -2,6 +2,7 @@
 
 package com.b72.keep_canvas.ui
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -91,11 +92,15 @@ import java.io.File
 
 private val names = HashMap<String, String>()
 
+/** Bumped each time the assistant finishes naming an artifact, so names on screen are read again. */
+private val aiTick = androidx.compose.runtime.mutableIntStateOf(0)
+
 /** Stamps are the artifacts a photo with no single subject becomes; everything else is a cut-out sticker. */
 private fun isStamp(path: String) = path.substringAfterLast('/').startsWith("st_")
 
 /** What the thing is, from the on-device labeller (nothing leaves the phone): its best label, or a plain word for what it is. */
 private suspend fun nameOf(ctx: android.content.Context, path: String): String {
+    com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.let { return it.name }
     names[path]?.let { return it }
     val fallback = if (isStamp(path)) "Postage stamp" else "Sticker"
     val label = if (isStamp(path)) null else Vision.labels(ctx, path)?.split(',')?.firstOrNull()?.substringBeforeLast(':')?.trim()?.takeIf { it.isNotEmpty() }
@@ -133,7 +138,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
     val snack = remember { SnackbarHostState() }
     var busy by remember { mutableStateOf(false) }
     var view by remember { mutableStateOf<String?>(null) }
-    var tab by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var tab by UiPrefs.artifactTab
     val paths = remember(loaded?.library?.stickers) {
         loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? JsonObject)?.get("p") as? JsonPrimitive)?.content }
     }
@@ -172,6 +177,10 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
         }
     }
     BackHandler(view != null) { view = null }
+    // the assistant, when it is installed, names the artifacts the labeller only has a coarse word for; each name is kept once made
+    LaunchedEffect(stickers.size, com.b72.keep_canvas.data.Assistant.installed) {
+        if (com.b72.keep_canvas.data.Assistant.installed) com.b72.keep_canvas.data.ArtifactAi.run(ctx.applicationContext, stickers) { aiTick.intValue++ }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
@@ -179,10 +188,11 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.secondaryContainer)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             }
             Text("Artifacts", style = flexStyle(52.sp, wght = 760, wdth = 92f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(top = 10.dp))
-            Row(Modifier.padding(top = 14.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(Modifier.padding(top = 14.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 listOf("Stickers" to stickers.size, "Stamps" to stamps.size, "On canvases" to placed.size).forEachIndexed { i, (label, n) ->
                     Row(Modifier.clickable(onClickLabel = label) { tab = i }, verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, style = flexStyle(22.sp, wght = if (tab == i) 600 else 420, lh = 1f), color = if (tab == i) cs.onSurface else cs.onSurface.copy(alpha = .4f))
+                        val wd by androidx.compose.animation.core.animateFloatAsState(if (tab == i) 100f else 52f, androidx.compose.animation.core.spring(.9f, 300f), label = "wdth")
+                        Text(label, maxLines = 1, softWrap = false, style = rflexStyle(22.sp, wght = if (tab == i) 620 else 450, wdth = wd, lh = 1f), color = if (tab == i) cs.onSurface else cs.onSurface.copy(alpha = .4f))
                         Text("$n", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 7.dp, vertical = 2.dp))
                     }
                 }
@@ -215,7 +225,7 @@ private fun ArtifactRow(path: String, tags: List<String>, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val img by produceState<ImageBitmap?>(Images.peek(path, 400), path) { value = Images.load(path, 400) }
-    val name by produceState<String?>(names[path], path) { value = nameOf(ctx, path) }
+    val name by produceState<String?>(names[path], path, aiTick.intValue) { value = nameOf(ctx, path) }
     val facts by produceState<Facts?>(null, path) { value = factsOf(path) }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainer).clickable(onClickLabel = "Open", onClick = onClick).padding(14.dp),
@@ -257,7 +267,7 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val img by produceState<ImageBitmap?>(Images.peek(path, 900), path) { value = Images.load(path, 900) }
-    val name by produceState<String?>(names[path], path) { value = nameOf(ctx, path) }
+    val name by produceState<String?>(names[path], path, aiTick.intValue) { value = nameOf(ctx, path) }
     val facts by produceState<Facts?>(null, path) { value = factsOf(path) }
     val colours by produceState<List<Int>>(emptyList(), path) { value = swatches(path) }
     var confirm by remember { mutableStateOf(false) }
@@ -282,7 +292,17 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
         Text(name ?: " ", style = flexStyle(40.sp, wght = 480, wdth = 96f, lh = 1.08f), color = cs.onSurface, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         facts?.let { Text("Made ${ago(it.made)}", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
 
-        InfoCard("Colours", "from the artifact", Modifier.padding(top = 22.dp)) {
+        val info = aiTick.intValue.let { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path) }
+        if (info != null && (info.facts.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("What it is", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 22.dp)) {
+            info.facts.forEachIndexed { i, (k, v) ->
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .5f)))
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.Top) {
+                    Text(k, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.width(84.dp))
+                    Text(v, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        InfoCard("Colours", "from the artifact", Modifier.padding(top = if (info != null) 12.dp else 22.dp)) {
             if (colours.isEmpty()) Text("Reading its colours…", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
             else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (c in colours) Column(horizontalAlignment = Alignment.CenterHorizontally) {
