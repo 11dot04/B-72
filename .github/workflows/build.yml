@@ -38,11 +38,11 @@ jobs:
           curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
           ls -l $d
 
-      # Optional: the brush script for one-word titles (Mr Dafoe, OFL). If it is not fetched the italic serif stands in.
-      - name: Fetch script font
+      # Optional: Roboto Flex (13 axes, OFL). Without it the app keeps using Google Sans Flex for everything.
+      - name: Fetch Roboto Flex
         run: |
           d=app/src/main/res/font
-          curl -fsSL "https://raw.githubusercontent.com/google/fonts/main/ofl/mrdafoe/MrDafoe-Regular.ttf" -o $d/mrdafoe_regular.ttf || { rm -f $d/mrdafoe_regular.ttf; echo "script font not fetched; continuing"; }
+          curl -fsSL "https://raw.githubusercontent.com/google/fonts/main/ofl/robotoflex/RobotoFlex%5BGRAD%2CXOPQ%2CXTRA%2CYOPQ%2CYTAS%2CYTDE%2CYTFI%2CYTLC%2CYTUC%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/robotoflex.ttf || { rm -f $d/robotoflex.ttf; echo "Roboto Flex not fetched; continuing"; }
           ls -l $d
 
       # Optional: a small sentence-embedding model (about 6 MB) that makes "Related" understand meaning, not just words.
