@@ -53,8 +53,8 @@ enum class Stamp(val label: String, val aspect: Float, val group: String) {
 
 fun stampOf(k: String): Stamp? = if (k.startsWith("x:")) runCatching { Stamp.valueOf(k.substring(2)) }.getOrNull() else null
 
-private val Ink = Color(0xFF15121B)
-private val Paper = Color(0xFFFFFBF2)
+private val StampInk = Color(0xFF15121B)
+private val StampPaper = Color(0xFFFFFBF2)
 
 private fun burst(w: Float, h: Float, n: Int, inner: Float): Path = Path().apply {
     val cx = w / 2; val cy = h / 2; val r = minOf(w, h) / 2
@@ -99,9 +99,10 @@ private fun DrawScope.face(cx: Float, cy: Float, r: Float, c: Color) {
 @Composable
 fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
     val a = MarkColors[c.mod(MarkColors.size)]
-    val onA = if (a.luminance() > .45f) Ink else Paper
+    val onA = if (a.luminance() > .45f) StampInk else StampPaper
     BoxWithConstraints(modifier.aspectRatio(1f / s.aspect), contentAlignment = Alignment.Center) {
         val unit = with(LocalDensity.current) { maxWidth.toSp() }
+        val boxH = maxHeight
         val bw = (maxWidth.value * .035f).coerceAtLeast(1.5f).dp
         /** A line of heavy type that is sized to fit [avail] of the width. */
         @Composable fun t(txt: String, avail: Float, fg: Color, wght: Int = 850, wdth: Float = 100f, mono: Boolean = false, cap: Float = .4f) {
@@ -113,73 +114,73 @@ fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
             )
         }
         when (s) {
-            Stamp.Yes -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(14)).background(Paper).border(bw, Ink, RoundedCornerShape(14)), contentAlignment = Alignment.Center) { t("YES", .78f, a, 900, 110f) }
-            Stamp.NoCap -> Box(Modifier.fillMaxSize().clip(CircleShape).background(Ink).border(bw, a, CircleShape), contentAlignment = Alignment.Center) { t("NO CAP", .74f, a, 800, 90f) }
+            Stamp.Yes -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(14)).background(StampPaper).border(bw, StampInk, RoundedCornerShape(14)), contentAlignment = Alignment.Center) { t("YES", .78f, a, 900, 110f) }
+            Stamp.NoCap -> Box(Modifier.fillMaxSize().clip(CircleShape).background(StampInk).border(bw, a, CircleShape), contentAlignment = Alignment.Center) { t("NO CAP", .74f, a, 800, 90f) }
             Stamp.Omg -> {
-                Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 14, .78f), a); drawPath(burst(size.width, size.height, 14, .78f), Ink, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
+                Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 14, .78f), a); drawPath(burst(size.width, size.height, 14, .78f), StampInk, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
                 t("OMG", .62f, onA, 900)
             }
             Stamp.Ok -> {
                 Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 18, .84f), a) }
                 t("OK!", .5f, onA, 900)
             }
-            Stamp.GoodVibes -> Box(Modifier.fillMaxSize().clip(CircleShape).background(Ink).border(bw, a, CircleShape), contentAlignment = Alignment.Center) {
+            Stamp.GoodVibes -> Box(Modifier.fillMaxSize().clip(CircleShape).background(StampInk).border(bw, a, CircleShape), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { t("good", .5f, a, 800, 100f); t("vibes", .5f, a, 800, 100f) }
             }
-            Stamp.Slaps -> Box(Modifier.fillMaxSize().background(Ink), contentAlignment = Alignment.Center) { t("SLAPS", .8f, a, 900, 120f) }
-            Stamp.VibeCheck -> Box(Modifier.fillMaxSize().clip(CircleShape).background(a).border(bw, Ink, CircleShape), contentAlignment = Alignment.Center) {
+            Stamp.Slaps -> Box(Modifier.fillMaxSize().background(StampInk), contentAlignment = Alignment.Center) { t("SLAPS", .8f, a, 900, 120f) }
+            Stamp.VibeCheck -> Box(Modifier.fillMaxSize().clip(CircleShape).background(a).border(bw, StampInk, CircleShape), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { t("VIBE", .5f, onA, 900); t("CHECK", .56f, onA, 900) }
             }
-            Stamp.Goat -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(8)).background(a).border(bw, Ink, RoundedCornerShape(8)), contentAlignment = Alignment.Center) { t("GOAT", .7f, onA, 900, 110f) }
+            Stamp.Goat -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(8)).background(a).border(bw, StampInk, RoundedCornerShape(8)), contentAlignment = Alignment.Center) { t("GOAT", .7f, onA, 900, 110f) }
             Stamp.Flower -> {
-                Canvas(Modifier.fillMaxSize()) { drawPath(scallop(size.width, size.height, 8), a); face(size.width / 2, size.height / 2, size.width * .36f, Ink) }
+                Canvas(Modifier.fillMaxSize()) { drawPath(scallop(size.width, size.height, 8), a); face(size.width / 2, size.height / 2, size.width * .36f, StampInk) }
             }
             Stamp.HeartFace -> {
-                Canvas(Modifier.fillMaxSize()) { drawPath(heart(size.width, size.height), a); face(size.width / 2, size.height * .46f, size.width * .3f, Ink) }
+                Canvas(Modifier.fillMaxSize()) { drawPath(heart(size.width, size.height), a); face(size.width / 2, size.height * .46f, size.width * .3f, StampInk) }
             }
-            Stamp.Thanks -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(30)).background(Ink), contentAlignment = Alignment.Center) {
+            Stamp.Thanks -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(30)).background(StampInk), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { t("thank", .6f, a, 800); t("you!", .6f, a, 800) }
             }
             Stamp.New -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16)).background(a), contentAlignment = Alignment.Center) {
-                Canvas(Modifier.fillMaxSize()) { drawCircle(Ink, size.width * .07f, Offset(size.width * .14f, size.height / 2)) }
+                Canvas(Modifier.fillMaxSize()) { drawCircle(StampInk, size.width * .07f, Offset(size.width * .14f, size.height / 2)) }
                 Box(Modifier.padding(start = 0.dp)) { t("NEW", .5f, onA, 900) }
             }
-            Stamp.Barcode -> Box(Modifier.fillMaxSize().background(Paper), contentAlignment = Alignment.Center) {
+            Stamp.Barcode -> Box(Modifier.fillMaxSize().background(StampPaper), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
                     val seeded = kotlin.random.Random(seed)
                     var x = size.width * .08f; val end = size.width * .92f
                     while (x < end) {
                         val bar = size.width * (.008f + seeded.nextFloat() * .03f)
-                        drawRect(Ink, Offset(x, size.height * .1f), Size(bar.coerceAtMost(end - x), size.height * .64f))
+                        drawRect(StampInk, Offset(x, size.height * .1f), Size(bar.coerceAtMost(end - x), size.height * .64f))
                         x += bar + size.width * (.008f + seeded.nextFloat() * .026f)
                     }
                 }
-                Box(Modifier.fillMaxSize().padding(top = (maxHeight.value * .8f).dp), contentAlignment = Alignment.TopCenter) { t("0 24563 84926 54 2", .84f, Ink, mono = true, cap = .07f) }
+                Box(Modifier.fillMaxSize().padding(top = (boxH.value * .8f).dp), contentAlignment = Alignment.TopCenter) { t("0 24563 84926 54 2", .84f, StampInk, mono = true, cap = .07f) }
             }
-            Stamp.Label -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(5)).background(a).border(bw, Ink, RoundedCornerShape(5))) {
+            Stamp.Label -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(5)).background(a).border(bw, StampInk, RoundedCornerShape(5))) {
                 Canvas(Modifier.fillMaxSize()) {
                     val seeded = kotlin.random.Random(seed)
-                    drawCircle(Ink, size.width * .1f, Offset(size.width * .2f, size.height * .24f), style = Stroke(bw.toPx()))
-                    face(size.width * .2f, size.height * .24f, size.width * .1f, Ink)
-                    drawLine(Ink, Offset(0f, size.height * .46f), Offset(size.width, size.height * .46f), bw.toPx())
+                    drawCircle(StampInk, size.width * .1f, Offset(size.width * .2f, size.height * .24f), style = Stroke(bw.toPx()))
+                    face(size.width * .2f, size.height * .24f, size.width * .1f, StampInk)
+                    drawLine(StampInk, Offset(0f, size.height * .46f), Offset(size.width, size.height * .46f), bw.toPx())
                     var x = size.width * .08f
-                    while (x < size.width * .92f) { val b = size.width * (.01f + seeded.nextFloat() * .02f); drawRect(Ink, Offset(x, size.height * .54f), Size(b, size.height * .3f)); x += b + size.width * .014f }
-                    for (i in 0..2) drawLine(Ink, Offset(size.width * .42f, size.height * (.12f + i * .1f)), Offset(size.width * (.9f - i * .12f), size.height * (.12f + i * .1f)), bw.toPx() * .8f)
+                    while (x < size.width * .92f) { val b = size.width * (.01f + seeded.nextFloat() * .02f); drawRect(StampInk, Offset(x, size.height * .54f), Size(b, size.height * .3f)); x += b + size.width * .014f }
+                    for (i in 0..2) drawLine(StampInk, Offset(size.width * .42f, size.height * (.12f + i * .1f)), Offset(size.width * (.9f - i * .12f), size.height * (.12f + i * .1f)), bw.toPx() * .8f)
                 }
             }
             Stamp.Globe -> Canvas(Modifier.fillMaxSize()) {
                 val r = size.minDimension / 2 - bw.toPx() / 2
-                drawCircle(a, r, center); drawCircle(Ink, r, center, style = Stroke(bw.toPx()))
-                drawOval(Ink, Offset(center.x - r * .45f, center.y - r), Size(r * .9f, r * 2), style = Stroke(bw.toPx() * .7f))
-                drawLine(Ink, Offset(center.x - r, center.y), Offset(center.x + r, center.y), bw.toPx() * .7f)
-                drawLine(Ink, Offset(center.x, center.y - r), Offset(center.x, center.y + r), bw.toPx() * .7f)
-                drawArc(Ink, 0f, 180f, false, Offset(center.x - r * .86f, center.y - r * .5f), Size(r * 1.72f, r), style = Stroke(bw.toPx() * .7f))
+                drawCircle(a, r, center); drawCircle(StampInk, r, center, style = Stroke(bw.toPx()))
+                drawOval(StampInk, Offset(center.x - r * .45f, center.y - r), Size(r * .9f, r * 2), style = Stroke(bw.toPx() * .7f))
+                drawLine(StampInk, Offset(center.x - r, center.y), Offset(center.x + r, center.y), bw.toPx() * .7f)
+                drawLine(StampInk, Offset(center.x, center.y - r), Offset(center.x, center.y + r), bw.toPx() * .7f)
+                drawArc(StampInk, 0f, 180f, false, Offset(center.x - r * .86f, center.y - r * .5f), Size(r * 1.72f, r), style = Stroke(bw.toPx() * .7f))
             }
-            Stamp.Spark -> Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 8, .3f), a); drawPath(burst(size.width, size.height, 8, .3f), Ink, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
+            Stamp.Spark -> Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 8, .3f), a); drawPath(burst(size.width, size.height, 8, .3f), StampInk, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
             Stamp.BigArrow -> Canvas(Modifier.fillMaxSize()) {
                 val w = size.width; val h = size.height
                 val p = Path().apply { moveTo(w * .05f, h * .36f); lineTo(w * .55f, h * .36f); lineTo(w * .55f, h * .06f); lineTo(w * .96f, h * .5f); lineTo(w * .55f, h * .94f); lineTo(w * .55f, h * .64f); lineTo(w * .05f, h * .64f); close() }
-                drawPath(p, a); drawPath(p, Ink, style = Stroke(bw.toPx(), join = StrokeJoin.Round))
+                drawPath(p, a); drawPath(p, StampInk, style = Stroke(bw.toPx(), join = StrokeJoin.Round))
             }
             Stamp.Tape -> Box(Modifier.fillMaxSize().background(a), contentAlignment = Alignment.Center) { t("SPEC SHEET ✱ SPEC SHEET ✱ SPEC SHEET", .96f, onA, mono = true, cap = .035f) }
             Stamp.Squig -> Canvas(Modifier.fillMaxSize()) {
@@ -198,7 +199,7 @@ fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
             Stamp.Half -> Canvas(Modifier.fillMaxSize()) {
                 val r = size.width / 2
                 drawArc(a, 180f, 180f, true, Offset(0f, size.height - r), Size(size.width, size.width))
-                for (i in 1..3) drawArc(Ink, 180f, 180f, false, Offset(r * i * .22f, size.height - r + r * i * .22f), Size(size.width - r * i * .44f, size.width - r * i * .44f), style = Stroke(bw.toPx() * .8f))
+                for (i in 1..3) drawArc(StampInk, 180f, 180f, false, Offset(r * i * .22f, size.height - r + r * i * .22f), Size(size.width - r * i * .44f, size.width - r * i * .44f), style = Stroke(bw.toPx() * .8f))
             }
         }
     }

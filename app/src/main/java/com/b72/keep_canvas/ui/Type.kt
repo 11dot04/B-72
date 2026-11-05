@@ -1,5 +1,6 @@
 package com.b72.keep_canvas.ui
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
