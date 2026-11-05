@@ -49,6 +49,10 @@ object Ocr {
         return runCatching { tidy(recognizer.process(InputImage.fromFilePath(ctx, Uri.fromFile(File(path)))).await()) }.getOrNull()
     }
 
+    /** The same for a picture that lives in the media store (a screenshot). */
+    suspend fun readUri(ctx: Context, uri: Uri): String? =
+        runCatching { tidy(recognizer.process(InputImage.fromFilePath(ctx, uri)).await()) }.getOrNull()
+
     /** The same for a picture already in memory (a rendered PDF page). */
     suspend fun readBitmap(bmp: android.graphics.Bitmap): String? =
         runCatching { tidy(recognizer.process(InputImage.fromBitmap(bmp, 0)).await()) }.getOrNull()
