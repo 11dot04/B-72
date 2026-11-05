@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.Screenshot
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
@@ -81,6 +82,7 @@ private val DESTS = listOf(
     Dest("Canvas", Icons.Rounded.Dashboard),
     Dest("Library", Icons.Rounded.CollectionsBookmark),
     Dest("Artifacts", Icons.Rounded.EmojiEmotions),
+    Dest("Screens", Icons.Rounded.Screenshot),
 )
 
 /** The three top-level places as one centred tertiary pill. Depth comes from a surface-coloured halo and tone, not a shadow. */

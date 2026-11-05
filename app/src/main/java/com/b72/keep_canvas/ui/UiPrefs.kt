@@ -31,12 +31,13 @@ object UiPrefs {
     val sort = IntPref("sort", 0)
     val boardGrid = IntPref("boardGrid", 1)
     val artifactTab = IntPref("artifactTab", 0)
+    val shotTab = IntPref("shotTab", 0)
 
     fun init(ctx: Context) {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
-        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab).forEach { it.load(p) }
+        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab).forEach { it.load(p) }
     }
     internal fun save(key: String, v: Int) { sp?.edit()?.putInt(key, v)?.apply() }
 }
