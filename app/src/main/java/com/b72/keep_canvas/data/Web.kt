@@ -213,6 +213,41 @@ private suspend fun googleCover(title: String, author: String): String? {
     return null
 }
 
+/** One cover to choose between: where its picture is and who published that edition. */
+class CoverOption(val url: String, val label: String)
+
+private val HOUSES = listOf("penguin", "harpercollins", "harper", "vintage", "faber", "picador", "knopf", "modern library", "everyman", "pan macmillan", "bloomsbury", "oxford", "norton", "new directions", "farrar")
+
+/**
+ * Every English edition's jacket for a book that Open Library and Google Books know of, labelled with its publisher and year, so the
+ * Penguin or HarperCollins edition can be picked out by eye. There is no publisher catalogue to ask directly; these are the sources
+ * that carry their jackets. The big houses come first, and anything that is not shaped like a jacket is left out.
+ */
+suspend fun bookCovers(title: String, author: String): List<CoverOption> {
+    val raw = ArrayList<CoverOption>()
+    val key = (json("https://openlibrary.org/search.json?q=${q("title:\"$title\"" + if (author.isNotEmpty()) " author:\"$author\"" else "")}&limit=3&fields=key") as? JSONObject)
+        ?.optJSONArray("docs")?.objs()?.firstOrNull()?.s("key")?.ifEmpty { null }
+    if (key != null) {
+        val eds = (json("https://openlibrary.org$key/editions.json?limit=60") as? JSONObject)?.optJSONArray("entries")?.objs() ?: emptyList()
+        for (e in eds) {
+            val langs = e.optJSONArray("languages")?.objs()?.map { it.s("key") } ?: emptyList()
+            if (langs.isNotEmpty() && "/languages/eng" !in langs) continue
+            val id = e.optJSONArray("covers")?.optInt(0, 0)?.takeIf { it > 0 } ?: continue
+            val pub = e.optJSONArray("publishers")?.optString(0) ?: ""
+            raw += CoverOption("https://covers.openlibrary.org/b/id/$id-L.jpg", listOf(pub, year(e.s("publish_date").takeLast(4))).filter { it.isNotEmpty() }.joinToString(" · "))
+        }
+    }
+    val qs = "intitle:\"$title\"" + if (author.isNotEmpty()) " inauthor:\"$author\"" else ""
+    val g = json("https://www.googleapis.com/books/v1/volumes?q=${q(qs)}&maxResults=20&langRestrict=en&printType=books") as? JSONObject
+    for (it in g?.optJSONArray("items")?.objs() ?: emptyList()) {
+        val v = it.optJSONObject("volumeInfo") ?: continue
+        val img = v.optJSONObject("imageLinks")?.s("thumbnail")?.ifEmpty { null } ?: continue
+        raw += CoverOption(img.replaceFirst("http://", "https://").replace("&edge=curl", "").replaceFirst("zoom=1", "zoom=2"), listOf(v.s("publisher"), v.s("publishedDate").take(4)).filter { it.isNotEmpty() }.joinToString(" · "))
+    }
+    val ok = coroutineScope { raw.distinctBy { it.url }.take(24).map { c -> async { c.takeIf { jacket(coverShape(c.url.replace("-L.jpg", "-M.jpg"))) } } }.awaitAll().filterNotNull() }
+    return ok.sortedBy { c -> if (HOUSES.any { c.label.lowercase().contains(it) }) 0 else 1 }
+}
+
 /**
  * Books from Open Library, in English where there is an English edition (title and cover are the English edition's). A book known by
  * a foreign title is found through Wikipedia. Of the covers a book has, one shaped like a jacket wins over a photograph or a bad crop,

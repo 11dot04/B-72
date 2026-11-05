@@ -203,6 +203,12 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(data = it.data + (key to value)) else it }))
     }
 
+    /** Gives a book or film a different cover; what was cut out of the old one no longer applies. */
+    fun setCover(noteId: String, blockId: String, path: String) {
+        val n = note(noteId) ?: return
+        upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(path = path, data = it.data.filterKeys { k -> k !in CUT_KEYS }) else it }))
+    }
+
     /** Switches a note's text between plain and smart (poster) layout; the assistant re-reads it so the facts are fresh. */
     fun setSmart(noteId: String, on: Boolean) {
         val n = note(noteId) ?: return

@@ -40,8 +40,12 @@ class AiFact(val label: String, val value: String, val star: Boolean)
  * Without the model file the app works exactly as before, on its built-in readers.
  */
 object Assistant {
-    /** Ungated Qwen2.5 1.5B, 8-bit, in LiteRT-LM format (about 1.6 GB). */
-    const val MODEL_URL = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm"
+    /**
+     * Gemma 3n E2B, 4-bit, in LiteRT-LM format (about 3.4 GB). Google's repository is gated: the licence has to be accepted on its Hugging
+     * Face page once, and a read token from that account is sent with the download. A file already on the phone can be used instead.
+     */
+    const val MODEL_URL = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm"
+    const val MODEL_ID = "gemma-3n-e2b"
 
     var installed by mutableStateOf(false)
         private set
@@ -56,12 +60,25 @@ object Assistant {
 
     private fun file(ctx: Context) = File(ctx.filesDir, "b72/model/assistant.litertlm")
 
-    fun refresh(ctx: Context) { installed = file(ctx).let { it.exists() && it.length() > 50_000_000 } }
+    private fun idFile(ctx: Context) = File(ctx.filesDir, "b72/model/assistant.id")
+
+    fun refresh(ctx: Context) {
+        installed = file(ctx).let { it.exists() && it.length() > 50_000_000 }
+        legacy = installed && runCatching { idFile(ctx).readText().trim() }.getOrNull() != MODEL_ID && !imported
+    }
+
+    /** True while the model on the phone is the old Qwen one, so the dialog can offer the switch to Gemma. */
+    var legacy by mutableStateOf(false)
+        private set
+    private var imported = false
+
+    fun token(ctx: Context): String = ctx.getSharedPreferences("b72_ai", Context.MODE_PRIVATE).getString("hf", "").orEmpty()
+    fun setToken(ctx: Context, t: String) { ctx.getSharedPreferences("b72_ai", Context.MODE_PRIVATE).edit().putString("hf", t.trim()).apply() }
 
     val downloading get() = job?.isActive == true
 
     /** Downloads the model (resuming a partial file). Runs on its own scope so closing the dialog does not stop it. */
-    fun download(ctx: Context, url: String = MODEL_URL) {
+    fun download(ctx: Context, url: String = MODEL_URL, token: String = token(ctx)) {
         if (downloading) return
         val app = ctx.applicationContext
         job = scope.launch {
@@ -74,8 +91,10 @@ object Assistant {
                 val c = (URL(url).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 20_000; readTimeout = 30_000
                     if (have > 0) setRequestProperty("Range", "bytes=$have-")
+                    if (token.isNotBlank()) setRequestProperty("Authorization", "Bearer $token")
                 }
                 val resumed = c.responseCode == 206
+                if (c.responseCode == 401 || c.responseCode == 403) error("Hugging Face refused it: accept the Gemma licence on its page and paste a read token")
                 if (c.responseCode !in 200..299) error("The server answered ${c.responseCode}")
                 val total = (if (resumed) have else 0L) + c.contentLengthLong
                 var got = if (resumed) have else 0L
@@ -91,7 +110,9 @@ object Assistant {
                         }
                     }
                 }
+                if (dest.exists()) dest.delete()
                 if (!part.renameTo(dest)) error("Could not save the model")
+                runCatching { idFile(app).writeText(MODEL_ID) }
                 refresh(app)
                 message = "Assistant ready"
             } catch (e: Throwable) {
@@ -106,6 +127,8 @@ object Assistant {
         runCatching {
             val dest = file(ctx).also { it.parentFile?.mkdirs() }
             ctx.contentResolver.openInputStream(uri)!!.use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
+            imported = true
+            runCatching { idFile(ctx).writeText(MODEL_ID) }
             refresh(ctx)
             installed
         }.getOrDefault(false)
