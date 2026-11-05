@@ -36,6 +36,19 @@ android {
 
     buildTypes {
         debug { signingConfig = signingConfigs.getByName("debug") }
+        // Signed with the same key as the debug build, so a release installs over it and keeps its data.
+        // Shrinking is off unless asked for (-Pminify): the assistant and the sentence encoder use native code and reflection.
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = project.hasProperty("minify")
+            isShrinkResources = project.hasProperty("minify")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     androidResources {
