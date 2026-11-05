@@ -78,6 +78,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.drawscope.translate
@@ -160,6 +161,19 @@ private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Colo
     tc = hsl(hue + 60f, .6f, .8f), onTc = hsl(hue + 60f, .5f, .12f),
     error = error, swatches = sw, blockHue = blockHue,
 )
+
+/** One soft pool of colour in the ground: where it sits (as fractions of the screen), how wide, its colour and strength, and how far it drifts with the pan. */
+private class Pool(val fx: Float, val fy: Float, val rf: Float, val color: Color, val k: Float, val drift: Float)
+
+private fun groundPools(t: Tones, dark: Boolean): List<Pool> {
+    val k = if (dark) .75f else .85f
+    return listOf(
+        Pool(.1f, .15f, 1.1f, t.pc, k, .12f),
+        Pool(.95f, .85f, 1.2f, t.tc, k, .08f),
+        Pool(.95f, .12f, .8f, t.sc, k * .8f, .10f),
+        Pool(.05f, .92f, .9f, t.primary, if (dark) .22f else .3f, .06f),
+    )
+}
 
 suspend fun hueOfPhoto(path: String): Float? {
     val bmp = Images.load(path, 160) ?: return null
@@ -289,16 +303,26 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             }
         }
 
+        val pools = remember(t, isDark) { groundPools(t, isDark) }
+        // the colour of the ground at a point on screen, worked out the same way it is drawn, so a card's ring always matches what is behind it
+        val groundAt: (Offset) -> Color = { at ->
+            var col = t.bg
+            for (p in pools) {
+                val cx = swPx * p.fx + pan.x * p.drift; val cy = shPx * p.fy + pan.y * p.drift
+                val d = kotlin.math.hypot(at.x - cx, at.y - cy) / (swPx * p.rf)
+                val a = p.k * (1f - d).coerceIn(0f, 1f)
+                col = androidx.compose.ui.graphics.lerp(col, p.color.copy(alpha = 1f), a)
+            }
+            col
+        }
         val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
         val origin = { Offset(pan.x, pan.y) }
         Box(
             Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { detectTapGestures(onDoubleTap = { pan.home() }) },
         ) {
-            // two soft pools of the canvas's other colours, drifting a little slower than the cards, so the ground is never one flat tone
+            // soft pools of the canvas's colours, drifting a little slower than the cards, so the ground is never one flat tone
             Canvas(Modifier.fillMaxSize()) {
-                val k = if (isDark) .6f else .75f
-                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(t.pc.copy(alpha = k), Color.Transparent), Offset(size.width * .1f + pan.x * .12f, size.height * .15f + pan.y * .12f), size.width * 1.1f))
-                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(t.tc.copy(alpha = k), Color.Transparent), Offset(size.width * .95f + pan.x * .08f, size.height * .85f + pan.y * .08f), size.width * 1.2f))
+                for (p in pools) drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(p.color.copy(alpha = p.k), p.color.copy(alpha = 0f)), Offset(size.width * p.fx + pan.x * p.drift, size.height * p.fy + pan.y * p.drift), size.width * p.rf))
             }
             if (grid) Canvas(Modifier.fillMaxSize()) {
                 // a dot grid that travels with the canvas
@@ -312,7 +336,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             }
             for (c in ordered) key(c.id) {
                 BoardCard(
-                    c, s, t, topInset, origin,
+                    c, s, t, topInset, origin, groundAt,
                     dragging = dragId == c.id,
                     all = cards,
                     onDragStart = {
@@ -439,7 +463,7 @@ private fun persist(repo: Repo, tag: String, changed: List<Card>) {
 
 @Composable
 private fun BoardCard(
-    c: Card, s: Scale, t: Tones, topInset: Float, origin: () -> Offset,
+    c: Card, s: Scale, t: Tones, topInset: Float, origin: () -> Offset, groundAt: (Offset) -> Color,
     dragging: Boolean, all: List<Card>,
     onDragStart: () -> Unit, onMove: (Float, Float) -> Unit, onFinger: (Offset) -> Unit, onDrop: () -> Unit, onOpen: () -> Unit, onNudge: (Float, Float) -> Unit,
 ) {
@@ -454,7 +478,7 @@ private fun BoardCard(
     val drop by androidx.compose.runtime.rememberUpdatedState(onDrop)
     val fingerCb by androidx.compose.runtime.rememberUpdatedState(onFinger)
     val radius = if (bare) 0f else u * .07f
-    val ringColor = if (bare) (if (bad) t.error.copy(alpha = .28f) else Color.Transparent) else if (bad) t.error else t.bg
+    val bareRing = if (bad) t.error.copy(alpha = .28f) else Color.Transparent
     val pos = animateOffsetAsState(
         Offset(c.x * s.cw, c.y * s.cw + topInset),
         if (dragging) snap<Offset>() else MaterialTheme.motionScheme.defaultSpatialSpec<Offset>(),
@@ -467,7 +491,11 @@ private fun BoardCard(
             .size(s.dp(c.w * s.cw), s.dp(c.h * s.cw))
             .scale(lift)
             .rotate(Math.toDegrees(c.angle.toDouble()).toFloat())
-            .background(ringColor, RoundedCornerShape(s.dp(radius + ring)))
+            .drawBehind {
+                // the ring is the colour of the ground beneath the card, so it reads as a gap whatever the ground is doing there
+                val col = if (bare) bareRing else if (bad) t.error else groundAt(Offset(pos.value.x + origin().x + size.width / 2f, pos.value.y + origin().y + size.height / 2f))
+                drawRoundRect(col, cornerRadius = androidx.compose.ui.geometry.CornerRadius(s.dp(radius + ring).toPx()))
+            }
             .padding(s.dp(ring))
             .clip(RoundedCornerShape(s.dp(radius)))
             .semantics {

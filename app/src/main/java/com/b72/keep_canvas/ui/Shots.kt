@@ -212,15 +212,7 @@ fun ShotsScreen() {
                     Button(onClick = { ask.launch(needsPermission(ctx)) }, modifier = Modifier.padding(top = 20.dp)) { Text("Allow access to screenshots") }
                 }
             } else {
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    listOf("Review" to queue.size, "Kept" to kept.size, "Clean up" to cleanCount).forEachIndexed { i, (label, n) ->
-                        Row(Modifier.clickable(onClickLabel = label) { tab = i }, verticalAlignment = Alignment.CenterVertically) {
-                            val wd by androidx.compose.animation.core.animateFloatAsState(if (tab == i) 100f else 52f, spring(.9f, 300f), label = "wdth")
-                            Text(label, maxLines = 1, softWrap = false, style = rflexStyle(22.sp, wght = if (tab == i) 620 else 450, wdth = wd, lh = 1f), color = if (tab == i) cs.onSurface else cs.onSurface.copy(alpha = .4f))
-                            Text("$n", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 7.dp, vertical = 2.dp))
-                        }
-                    }
-                }
+                FitTabs(listOf("Review", "Kept", "Clean up"), listOf(queue.size, kept.size, cleanCount).map { it.toString() }, tab, { tab = it }, Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
                 reading?.let { (d, t) ->
                     Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         LoadingIndicator(Modifier.size(22.dp))

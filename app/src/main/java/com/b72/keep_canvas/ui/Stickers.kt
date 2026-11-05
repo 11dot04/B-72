@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -184,19 +184,8 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
-            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.secondaryContainer)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-            }
-            Text("Artifacts", style = flexStyle(52.sp, wght = 760, wdth = 92f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(top = 10.dp))
-            Row(Modifier.padding(top = 14.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf("Stickers" to stickers.size, "Stamps" to stamps.size, "On canvases" to placed.size).forEachIndexed { i, (label, n) ->
-                    Row(Modifier.clickable(onClickLabel = label) { tab = i }, verticalAlignment = Alignment.CenterVertically) {
-                        val wd by androidx.compose.animation.core.animateFloatAsState(if (tab == i) 100f else 52f, androidx.compose.animation.core.spring(.9f, 300f), label = "wdth")
-                        Text(label, maxLines = 1, softWrap = false, style = rflexStyle(22.sp, wght = if (tab == i) 620 else 450, wdth = wd, lh = 1f), color = if (tab == i) cs.onSurface else cs.onSurface.copy(alpha = .4f))
-                        Text("$n", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 7.dp, vertical = 2.dp))
-                    }
-                }
-            }
+            TabTitle("Artifacts", null, Modifier.padding(top = 16.dp))
+            FitTabs(listOf("Stickers", "Stamps", "On canvases"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
             if (shown.isEmpty() && !busy) {
                 Text(
                     if (paths.isEmpty()) "Pick some photos. A clear subject becomes a die-cut sticker; a photo without one becomes a postage stamp." else "Nothing here yet.",
@@ -294,12 +283,23 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
 
         val info = aiTick.intValue.let { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path) }
         if (info != null && (info.facts.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("What it is", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 22.dp)) {
-            info.facts.forEachIndexed { i, (k, v) ->
-                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .5f)))
-                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.Top) {
-                    Text(k, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.width(84.dp))
-                    Text(v, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, modifier = Modifier.weight(1f))
+            if (info.facts.isEmpty()) Text("Not enough to say more than that.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            info.facts.chunked(2).forEachIndexed { r, pair ->
+                Row(Modifier.fillMaxWidth().padding(top = if (r > 0) 14.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { (k, v) ->
+                        Column(Modifier.weight(1f)) {
+                            Text(k.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)
+                            Text(v, style = MaterialTheme.typography.titleMedium, color = cs.onSurface, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
+            }
+        }
+        info?.nut?.let { NutritionCard(it, Modifier.padding(top = 12.dp)) }
+        if (info != null && info.text.isNotEmpty()) InfoCard("Printed on it", "${info.text.size}", Modifier.padding(top = 12.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (t in info.text) Text(t, style = MaterialTheme.typography.labelLarge, color = cs.onSecondaryContainer, modifier = Modifier.clip(CircleShape).background(cs.secondaryContainer).padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
         InfoCard("Colours", "from the artifact", Modifier.padding(top = if (info != null) 12.dp else 22.dp)) {
@@ -338,6 +338,46 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
                 }
             }
         }
+    }
+}
+
+/** Per-100 g figures for a packaged food or drink, laid out as negatives (with a traffic light) and positives. */
+@Composable
+private fun NutritionCard(n: com.b72.keep_canvas.data.Nutrition, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    var more by remember { mutableStateOf(false) }
+    fun level(v: Double?, low: Double, high: Double): Color? = v?.let { if (it <= low) Color(0xFF2E9E5B) else if (it <= high) Color(0xFFE0A100) else Color(0xFFD64545) }
+    fun g(v: Double?, unit: String = "g") = v?.let { (if (it >= 10) "%.0f".format(it) else "%.1f".format(it)) + " $unit" }
+    @Composable fun row(label: String, value: String?, dot: Color?, first: Boolean) {
+        if (value == null) return
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .5f)))
+        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface, modifier = Modifier.weight(1f))
+            Text(value, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+            Box(Modifier.padding(start = 10.dp).size(10.dp).clip(CircleShape).background(dot ?: Color.Transparent))
+        }
+    }
+    InfoCard("Nutrition", "per 100 g", modifier) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(listOf(n.match, n.qty).filter { it.isNotBlank() }.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+            if (n.grade.isNotEmpty()) Text("Nutri-Score ${n.grade}", style = MaterialTheme.typography.labelLarge, color = cs.onTertiaryContainer, modifier = Modifier.padding(start = 8.dp).clip(CircleShape).background(cs.tertiaryContainer).padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+        Text("NEGATIVES", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        row("Energy", n.kcal?.let { "%.0f kcal".format(it) }, null, true)
+        row("Fat", g(n.fat), level(n.fat, 3.0, 17.5), false)
+        row("Saturates", g(n.sat), level(n.sat, 1.5, 5.0), false)
+        row("Sugars", g(n.sugar), level(n.sugar, 5.0, 22.5), false)
+        row("Salt", g(n.salt), level(n.salt, .3, 1.5), false)
+        if (n.protein != null || n.fibre != null) {
+            Text("POSITIVES", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+            row("Protein", g(n.protein), null, true)
+            row("Fibre", g(n.fibre), null, n.protein == null)
+        }
+        if (n.ingredients.isNotBlank()) Text(
+            "Ingredients: ${n.ingredients}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = if (more) 20 else 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp).clickable(onClickLabel = "Show more or less") { more = !more },
+        )
+        Text("From Open Food Facts, matched by name. Check the pack.", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant.copy(alpha = .7f), modifier = Modifier.padding(top = 8.dp))
     }
 }
 

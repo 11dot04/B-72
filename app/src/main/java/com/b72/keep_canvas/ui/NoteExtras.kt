@@ -554,6 +554,8 @@ fun LayoutSheet(current: String, onClose: () -> Unit, onPick: (String) -> Unit) 
                     androidx.compose.material3.FilterChip(now == null, { onPick("script"); onClose() }, label = { Text("None") })
                     for (ch in 'A'..'Z') androidx.compose.material3.FilterChip(now == ch.toString(), { onPick("script:$ch"); onClose() }, label = { Text(ch.toString(), style = TextStyle(fontFamily = orn, fontSize = 22.sp)) })
                 }
+            } else {
+                Text("Ornaments need the Playlist Ornament font: put it in app/src/main/assets/fonts (any file name with \"ornament\" in it).", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp))
             }
         }
     }

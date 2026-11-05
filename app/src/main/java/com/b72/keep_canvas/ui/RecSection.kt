@@ -160,7 +160,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 Notes("YOUR THOUGHTS", b.body, fg)
             }
             Kind.Track -> {
-                // after the early Material "top songs" concept: a colour block from the cover, its picture in two tones, a huge condensed title, small mono labels
+                // after an early Material music-card concept: a colour block from the cover, its picture in two tones, a huge condensed title, small mono labels
                 val hue by androidx.compose.runtime.produceState(seedOf(b.id) % 360f, b.path) { b.path?.let { pa -> hueOfPhoto(pa)?.let { value = it } } }
                 val h0 = ((hue % 360f) + 360f) % 360f
                 val dark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -170,8 +170,8 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 val light = androidx.compose.ui.graphics.Color.hsl(h0, .6f, if (dark) .75f else .9f)
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(block).padding(18.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("TOP", style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
-                        Text("SONGS", style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
+                        Text((statusLabels(Kind.Track).getOrNull(STATUS_KEYS.indexOf(v("status"))) ?: "Song").uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
+                        Text(v("src").ifEmpty { v("year") }.uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
                     }
                     if (has) {
                         val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, b.path) { value = com.b72.keep_canvas.data.Images.load(b.path!!, 800) }

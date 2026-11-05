@@ -238,8 +238,8 @@ private fun BookItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, no: Int
 /** How far a card in the fan leans, in degrees. Flip the sign if the cards behind the front one lean the wrong way. */
 private const val FAN_LEAN = -34f
 
-/** In the cube view the posters behind the front one stand almost edge-on, side by side like a block of cards. */
-private const val CUBE_LEAN = -68f
+/** In the cube view the posters are the four faces of a block that turns a quarter at a time; at rest it is turned this far so two faces show. */
+private const val CUBE_REST = -26f
 
 /**
  * The films, as a fan of posters in depth: the one in front stands square, the ones behind it step up and away, each leaning back with
@@ -260,7 +260,7 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
     val near by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.round(pos.value).toInt().coerceIn(0, last) } }
     androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { near }.collect { onIndex(it) } }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val step = with(density) { 110.dp.toPx() }
+    val step = with(density) { (if (cube) 170.dp else 110.dp).toPx() }
     val drag = androidx.compose.foundation.gestures.rememberDraggableState { dx ->
         scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { pos.snapTo((pos.value - dx / step).coerceIn(-.25f, last + .25f)) }
     }
@@ -271,25 +271,27 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
             settle(kotlin.math.round(pos.value - v / step * .3f).toInt())
         }),
     ) {
-        val order = (near - 2..near + 8).filter { it in 0..last }.sortedByDescending { kotlin.math.abs(it - near) }
+        val order = (if (cube) near - 1..near + 1 else near - 2..near + 8).filter { it in 0..last }.sortedByDescending { kotlin.math.abs(it - near) }
         for (i in order) androidx.compose.runtime.key(items[i].second.id) {
             val b = items[i].second
             Box(
-                Modifier.align(Alignment.CenterStart).padding(start = 28.dp).width(w).height(h)
+                Modifier.align(if (cube) Alignment.Center else Alignment.CenterStart).padding(start = if (cube) 0.dp else 28.dp).width(w).height(h)
                     .graphicsLayer {
                         val cubed = cube
                         val d = i - pos.value
-                        cameraDistance = 14f * density.density
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (d >= 0f) 0f else 1f, .5f)
-                        if (d >= 0f && cubed) {
-                            // a block of cards seen from the side: each one a slim face further along
-                            val k = d.coerceAtMost(7f)
-                            val first = d.coerceAtMost(1f)
-                            translationX = first * (w.toPx() + 6.dp.toPx()) + (k - first) * 26.dp.toPx()
-                            rotationY = CUBE_LEAN * first
-                            val sc = 1f - .02f * (k - first); scaleX = sc; scaleY = sc
-                            alpha = 1f - (d - 5f).coerceIn(0f, 1.5f) / 1.5f
+                        if (cubed) {
+                            // a real block: face i stands at (i - pos) quarter turns round a vertical axis through the middle of the block.
+                            // The view is nearly flat-on, so the faces meet exactly along their shared edge.
+                            val th = d * 90f + CUBE_REST
+                            val rad = Math.toRadians(th.toDouble())
+                            cameraDistance = 3000f * density.density
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
+                            rotationY = th
+                            translationX = w.toPx() / 2f * kotlin.math.sin(rad).toFloat()
+                            alpha = if (kotlin.math.cos(rad) <= .02) 0f else 1f
                         } else if (d >= 0f) {
+                            cameraDistance = 14f * density.density
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
                             val k = d.coerceAtMost(4f)
                             translationX = k * 52.dp.toPx() * (1f - .05f * k)
                             translationY = -k * 15.dp.toPx()
@@ -297,13 +299,15 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
                             rotationY = FAN_LEAN * d.coerceAtMost(1f)
                             alpha = 1f - (d - 3f).coerceIn(0f, 1.5f) / 1.5f
                         } else {
+                            cameraDistance = 14f * density.density
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, .5f)
                             val k = -d
                             translationX = -k * 300.dp.toPx()
                             rotationY = -FAN_LEAN * k.coerceAtMost(1f) * 1.2f
                             rotationZ = -5f * k
                             alpha = (1f + d * .55f).coerceIn(0f, 1f)
                         }
-                        shape = RoundedCornerShape(22.dp); clip = true
+                        shape = RoundedCornerShape(if (cubed) 4.dp else 22.dp); clip = true
                     }
                     .background(cs.primaryContainer)
                     .clickable(onClickLabel = "Open") { if (i == near) onOpen(items[i].first.id) else settle(i) },
@@ -312,7 +316,11 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
                 if (b.path != null) PhotoImage(b.path, 700, false, cs.primary, Modifier.fillMaxSize())
                 else Icon(Icons.Rounded.Movie, null, Modifier.size(48.dp), tint = cs.onPrimaryContainer)
                 // depth without a shadow: the further back a poster is, the more it dims
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((i - pos.value).coerceIn(0f, 4f) * .11f) }.background(androidx.compose.ui.graphics.Color.Black))
+                Box(Modifier.fillMaxSize().graphicsLayer {
+                    // the further back a poster is, the more it dims; on the block a face is lit by how squarely it faces you
+                    alpha = if (cube) (1f - kotlin.math.cos(Math.toRadians(((i - pos.value) * 90f + CUBE_REST).toDouble())).toFloat()).coerceIn(0f, 1f) * .6f
+                    else ((i - pos.value).coerceIn(0f, 4f) * .11f)
+                }.background(androidx.compose.ui.graphics.Color.Black))
             }
         }
         androidx.compose.material3.FilledTonalIconButton(onClick = { cubePref = 1 - cubePref }, Modifier.align(Alignment.BottomStart).padding(start = 20.dp)) {
@@ -473,16 +481,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().verticalScroll(page).padding(top = 16.dp)) {
         TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))
         Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            SHELVES.forEachIndexed { i, s ->
-                Row(Modifier.clickable(onClickLabel = s.name) { shelf = i; stage = -1 }, verticalAlignment = Alignment.Top) {
-                    // the chosen shelf is set at normal width, the others are pulled in on the width axis
-                    val wd by animateFloatAsState(if (i == shelf) 100f else 52f, androidx.compose.animation.core.spring(.9f, 300f), label = "wdth")
-                    Text(s.name, style = rflexStyle(22.sp, wght = if (i == shelf) 650 else 450, wdth = wd, lh = 1f), color = if (i == shelf) cs.onSurface else cs.onSurface.copy(alpha = .4f))
-                    Text("${counts[i]}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp), color = if (i == shelf) cs.primary else cs.onSurface.copy(alpha = .35f), modifier = Modifier.padding(start = 2.dp))
-                }
-            }
-        }
+        FitTabs(SHELVES.map { it.name }, counts.map { it.toString() }, shelf, { shelf = it; stage = -1 }, Modifier.padding(horizontal = 20.dp, vertical = 18.dp))
         if (all.isNotEmpty()) {
             Text(stats.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
             val labels = statusLabels(SHELVES[shelf].kind)

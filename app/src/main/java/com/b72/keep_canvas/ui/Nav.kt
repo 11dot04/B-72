@@ -170,7 +170,7 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
     // where the list was left is kept once it comes to rest
     androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { ls.isScrollInProgress }.collect { moving -> if (!moving && ls.layoutInfo.visibleItemsInfo.isNotEmpty()) hubIdx = focus } }
     val focusHue = groups.getOrNull(focus)?.let { hueOf(it.key) } ?: 220f
-    fun bgOf(h: Float) = if (dark) Color.hsl(h, .5f, .17f) else Color.hsl(h, .55f, .86f)
+    fun bgOf(h: Float) = if (dark) Color.hsl(h, .55f, .16f) else Color.hsl(h, .6f, .85f)
     val ink = if (dark) Color.hsl(focusHue, .35f, .93f) else Color(0xFF1B1A1F)
     // the focused tag's colour drains in as a soft gradient edge with a grain along it, rising from the bottom when moving on, falling from the top when going back
     val target = bgOf(focusHue)
@@ -194,12 +194,12 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             drawRect(from)
             val p = prog.value
-            fun glow() = drawRect(
-                androidx.compose.ui.graphics.Brush.radialGradient(
-                    listOf((if (dark) Color.hsl(focusHue, .65f, .3f) else Color.hsl(focusHue, .8f, .93f)).copy(alpha = .75f), Color.Transparent),
-                    center = Offset(size.width * .25f, size.height * .5f), radius = size.width * 1.1f,
-                ),
-            )
+            // three soft pools of neighbouring hues, so the ground has depth instead of one flat tone
+            fun pool(h: Float, fx: Float, fy: Float, rf: Float, a: Float) {
+                val c = if (dark) Color.hsl(h, .7f, .32f) else Color.hsl(h, .85f, .9f)
+                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(c.copy(alpha = a), c.copy(alpha = 0f)), center = Offset(size.width * fx, size.height * fy), radius = size.width * rf))
+            }
+            fun glow() { pool(focusHue, .25f, .5f, 1.15f, .85f); pool(focusHue + 45f, .95f, .08f, .9f, .75f); pool(focusHue - 40f, .05f, .96f, .85f, .7f) }
             if (p >= 1f) { drawRect(to); glow(); return@Canvas }
             val band = size.height * .55f
             // the edge's position: the distance the wash has travelled

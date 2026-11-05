@@ -20,7 +20,6 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
@@ -31,10 +30,10 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-enum class Accent { None, Serif, Flip, Marker, Outline }
+enum class Accent { None, Flip, Marker, Outline }
 
 /** One personality for a title; each note picks one from its id so a grid reads like a magazine rack. */
-class TitleLook(val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None)
+class TitleLook(val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None, val rf: Boolean = false)
 
 private val Looks = listOf(
     TitleLook(800, 100f, 0f),                                   // soft heavy
@@ -42,7 +41,7 @@ private val Looks = listOf(
     TitleLook(300, 0f, 0f, accent = Accent.Flip),               // light, last word heavy
     TitleLook(720, 100f, -10f),                                 // slanted, round
     TitleLook(560, 45f, 0f, accent = Accent.Marker),            // highlighter on the last word
-    TitleLook(880, 0f, 0f, accent = Accent.Serif),              // the one serif-italic look
+    TitleLook(860, 0f, 0f, rf = true),                          // Roboto Flex, heavy and plain
     TitleLook(420, 100f, 0f, upper = true, accent = Accent.Outline), // rounded caps, outlined last word
     TitleLook(650, 0f, -8f),                                    // slanted, sharp
 )
@@ -54,24 +53,37 @@ private val StyleLooks = mapOf(
     "caps" to TitleLook(900, 0f, 0f, upper = true),
     "soft" to TitleLook(800, 100f, 0f),
     "light" to TitleLook(300, 0f, 0f, accent = Accent.Flip),
-    "serif" to TitleLook(880, 0f, 0f, accent = Accent.Serif),
+    "serif" to TitleLook(860, 0f, 0f, rf = true),
     "slant" to TitleLook(720, 100f, -10f),
 )
 
 fun lookFor(seed: String, style: String) = StyleLooks[style] ?: lookFor(seed)
 
 /** The brush script is used when it is asked for, and by Auto for a title that is one short word. */
-fun isScriptTitle(text: String, style: String) = style.startsWith("script") || (style !in StyleLooks && style.isEmpty() && text.trim().let { it.isNotEmpty() && ' ' !in it && it.length <= 14 })
+fun isScriptTitle(text: String, style: String): Boolean {
+    // a script face is for words in lower case; an all-caps title is never set in it
+    if (text.none { it.isLowerCase() }) return false
+    return style.startsWith("script") || (style.isEmpty() && text.trim().let { it.isNotEmpty() && ' ' !in it && it.length <= 14 })
+}
 
 /** The brush-script face, when the build fetched it; the italic serif otherwise. */
-fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily = assetFamily(ctx, "fonts/playlist_script.ttf") ?: Script
+fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily = assetFamily(ctx, "script", "ornament") ?: assetFamily(ctx, "playlist", "ornament") ?: Script
 
 /** Playlist Ornament: a font of little pictures on the letter keys (A is a cup, B a smiley), or null if its file is not in assets/fonts. */
-fun ornamentFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily? = assetFamily(ctx, "fonts/playlist_ornament.ttf")
+fun ornamentFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily? = assetFamily(ctx, "ornament")
 
 private val assetFonts = HashMap<String, androidx.compose.ui.text.font.FontFamily?>()
-private fun assetFamily(ctx: android.content.Context, path: String): androidx.compose.ui.text.font.FontFamily? = assetFonts.getOrPut(path) {
-    runCatching { androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.createFromAsset(ctx.assets, path)) }.getOrNull()
+private val assetMissed = HashSet<String>()
+
+/** The first font file in assets/fonts whose name contains [word] (and none of [not]), .ttf or .otf, whatever its exact spelling. */
+private fun assetFamily(ctx: android.content.Context, word: String, not: String? = null): androidx.compose.ui.text.font.FontFamily? {
+    assetFonts[word]?.let { return it }
+    if (word in assetMissed) return null
+    val names = runCatching { ctx.assets.list("fonts")?.toList() }.getOrNull().orEmpty()
+    val file = names.firstOrNull { n -> val l = n.lowercase(); word in l && (not == null || not !in l) && (l.endsWith(".ttf") || l.endsWith(".otf")) }
+    val fam = file?.let { f -> runCatching { androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/$f")) }.getOrNull() }
+    if (fam == null) assetMissed.add(word) else assetFonts[word] = fam
+    return fam
 }
 
 /** The ornament chosen for a title style ("script:B" -> "B"), or null. */
@@ -113,7 +125,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val t = if (k.upper) line.uppercase() else line
     val sz = with(d) { sPx.toSp() }
     val base = TextStyle(
-        fontFamily = flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
+        fontFamily = if (k.rf) Rf.family(k.wght, wd, (sPx / d.density).coerceIn(8f, 144f), grade) else flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
         // a lowercase line with tails (g, j, p, q, y) needs more room under it than a tight 0.88 leaves, or the tails are cut
         lineHeight = (sz.value * (if (t.any { it in "gjpqy,;" }) (if (t == t.lowercase()) 1.04f else .95f) else .88f)).sp,
@@ -129,8 +141,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val i = t.lastIndexOf(' ')
     if (!accent || i < 0 || k.accent == Accent.None) return Piece(AnnotatedString(t), base)
     val last = when (k.accent) {
-        Accent.Serif -> SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = sz * 1.1f)
-        Accent.Flip -> SpanStyle(fontFamily = flex(if (k.wght < 500) 900 else 200, wd, k.rond, k.slnt, grade, sPx / d.density))
+        Accent.Flip -> SpanStyle(fontFamily = if (k.rf) Rf.family(if (k.wght < 500) 900 else 200, wd, (sPx / d.density).coerceIn(8f, 144f), grade) else flex(if (k.wght < 500) 900 else 200, wd, k.rond, k.slnt, grade, sPx / d.density))
         Accent.Marker -> SpanStyle(background = color.copy(alpha = .22f))
         else -> SpanStyle(drawStyle = Stroke(width = max(1.2f, sPx * .02f)))
     }
@@ -191,7 +202,8 @@ fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, 
     for (line in lines) {
         val acc = k.accent != Accent.None && line === lines.last() && line.contains(' ')
         fun piece(s: Float, x: Float) = mk(line, s, x, k, grade, Color.Unspecified, acc, d)
-        val f = fit({ s, x -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }, w, size, lines.size == 1)
+        // a hair of margin: heavy and slanted letters can overhang their advance width
+        val f = fit({ s, x -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }, w * .975f, size, lines.size == 1)
         sz.add(f.first); wd.add(f.second)
         val p = piece(f.first, f.second)
         hs.add(m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.height.toFloat())
