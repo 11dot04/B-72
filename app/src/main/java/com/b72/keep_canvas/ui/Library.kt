@@ -137,10 +137,27 @@ private fun Vinyl(b: Block, bold: Boolean, modifier: Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val ct = center; val r = size.minDimension / 2
+            val white = androidx.compose.ui.graphics.Color.White
+            val hair = androidx.compose.ui.graphics.drawscope.Stroke(.8.dp.toPx())
             drawCircle(disc, r, ct)
-            // quiet hairline grooves, and a few specks like a pressing mark
-            for (k in 0..3) drawCircle(line, r * (.9f - k * .09f), ct, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-            for ((dx, dy) in listOf(-.52f to -.5f, -.44f to -.56f, -.46f to -.44f, -.36f to -.6f)) drawCircle(deep, 2.6.dp.toPx(), androidx.compose.ui.geometry.Offset(ct.x + dx * r, ct.y + dy * r))
+            // the pressing: a smooth lead-in at the edge, then rings of fine grooves with a few wider gaps where the tracks end
+            val inner = r * .42f * 1.1f; val outer = r * .955f
+            for (k in 0..58) {
+                val rr = inner + (outer - inner) * k / 58f
+                val gap = k % 14 == 0
+                drawCircle(if (gap) deep.copy(alpha = .55f) else line.copy(alpha = .35f + (k * 37 % 7) / 14f), rr, ct, style = if (gap) androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx()) else hair)
+            }
+            // light catching the grooves: two opposite wedges, soft at both sides
+            drawCircle(
+                androidx.compose.ui.graphics.Brush.sweepGradient(
+                    0f to androidx.compose.ui.graphics.Color.Transparent, .07f to white.copy(alpha = .2f), .14f to androidx.compose.ui.graphics.Color.Transparent,
+                    .5f to androidx.compose.ui.graphics.Color.Transparent, .57f to white.copy(alpha = .2f), .64f to androidx.compose.ui.graphics.Color.Transparent,
+                    1f to androidx.compose.ui.graphics.Color.Transparent, center = ct,
+                ), r * .97f, ct,
+            )
+            // the bevelled edge
+            drawCircle(white.copy(alpha = .16f), r - .7.dp.toPx(), ct, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
+            drawCircle(androidx.compose.ui.graphics.Color.Black.copy(alpha = .28f), r * .965f, ct, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
         Box(Modifier.fillMaxSize(.42f).clip(CircleShape).background(paper), contentAlignment = Alignment.Center) {
             if (art != null) {
@@ -148,7 +165,11 @@ private fun Vinyl(b: Block, bold: Boolean, modifier: Modifier) {
                 img?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, colorFilter = duotone(deep, paper)) }
             }
         }
-        Box(Modifier.size(10.dp).clip(CircleShape).background(disc))
+        // the ring the label sits in, and the spindle hole
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize(.44f)) {
+            drawCircle(androidx.compose.ui.graphics.Color.Black.copy(alpha = .3f), size.minDimension / 2, center, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+        }
+        Box(Modifier.size(11.dp).clip(CircleShape).background(disc).border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = .3f), CircleShape))
     }
 }
 
@@ -238,8 +259,13 @@ private fun BookItem(b: Block, p: Float, h: androidx.compose.ui.unit.Dp, no: Int
 /** How far a card in the fan leans, in degrees. Flip the sign if the cards behind the front one lean the wrong way. */
 private const val FAN_LEAN = -34f
 
-/** In the cube view the posters are the four faces of a block that turns a quarter at a time; at rest it is turned this far so two faces show. */
+/**
+ * The cube view is the concept's block of cards: the front poster stands turned a little, and the cards behind it show as a stack of
+ * thin edges down its side, like a deck seen at an angle. Turned this far, the front face and the edges show together.
+ */
 private const val CUBE_REST = -26f
+private const val CUBE_EDGES = 14
+private val CUBE_EDGE_W = 7.dp
 
 /**
  * The films, as a fan of posters in depth: the one in front stands square, the ones behind it step up and away, each leaning back with
@@ -258,6 +284,7 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
     androidx.compose.runtime.LaunchedEffect(n) { pos.snapTo(pos.value.coerceIn(0f, last.toFloat())) }
     // which card is nearest the front changes rarely, so only that is read while composing; the cards are stacked by it
     val near by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.round(pos.value).toInt().coerceIn(0, last) } }
+    val fl by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.floor(pos.value).toInt().coerceIn(0, last) } }
     androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { near }.collect { onIndex(it) } }
     val density = androidx.compose.ui.platform.LocalDensity.current
     val step = with(density) { (if (cube) 170.dp else 110.dp).toPx() }
@@ -271,7 +298,39 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
             settle(kotlin.math.round(pos.value - v / step * .3f).toInt())
         }),
     ) {
-        val order = (if (cube) near - 1..near + 1 else near - 2..near + 8).filter { it in 0..last }.sortedByDescending { kotlin.math.abs(it - near) }
+        val order = if (cube) listOf(fl + 1, fl).filter { it in 0..last } else (near - 2..near + 8).filter { it in 0..last }.sortedByDescending { kotlin.math.abs(it - near) }
+        // the edges of the cards behind the front one, down the side of the block; the stack thins as the cards are used up
+        if (cube) {
+            val edges = ((fl + 2)..(fl + 1 + CUBE_EDGES)).filter { it in 0..last }
+            if (edges.isNotEmpty()) Row(
+                Modifier.align(Alignment.Center).width(CUBE_EDGE_W * CUBE_EDGES).height(h)
+                    .graphicsLayer {
+                        val wPx = w.toPx(); val ePx = CUBE_EDGE_W.toPx() * CUBE_EDGES
+                        val cxf = -(ePx * kotlin.math.cos(Math.toRadians((CUBE_REST + 90f).toDouble())).toFloat()) / 2f
+                        cameraDistance = 3000f * density.density
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                        scaleX = ((last - pos.value - 1f).coerceAtLeast(0f) / CUBE_EDGES).coerceIn(0f, 1f)
+                        rotationY = CUBE_REST + 90f
+                        translationX = cxf + wPx / 2f * kotlin.math.cos(Math.toRadians(CUBE_REST.toDouble())).toFloat() + ePx / 2f
+                        shape = RoundedCornerShape(3.dp); clip = true
+                    },
+            ) {
+                for (e in edges) Box(Modifier.width(CUBE_EDGE_W).fillMaxHeight().background(cs.primaryContainer).border(.5.dp, androidx.compose.ui.graphics.Color.Black.copy(alpha = .4f))) {
+                    items[e].second.path?.let { PhotoImage(it, 120, false, cs.primary, Modifier.fillMaxSize()) }
+                }
+            }
+            if (edges.isNotEmpty()) Box(Modifier.align(Alignment.Center).width(CUBE_EDGE_W * CUBE_EDGES).height(h).graphicsLayer {
+                val wPx = w.toPx(); val ePx = CUBE_EDGE_W.toPx() * CUBE_EDGES
+                val cxf = -(ePx * kotlin.math.cos(Math.toRadians((CUBE_REST + 90f).toDouble())).toFloat()) / 2f
+                cameraDistance = 3000f * density.density
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                scaleX = ((last - pos.value - 1f).coerceAtLeast(0f) / CUBE_EDGES).coerceIn(0f, 1f)
+                rotationY = CUBE_REST + 90f
+                translationX = cxf + wPx / 2f * kotlin.math.cos(Math.toRadians(CUBE_REST.toDouble())).toFloat() + ePx / 2f
+                shape = RoundedCornerShape(3.dp); clip = true
+                alpha = .42f
+            }.background(androidx.compose.ui.graphics.Color.Black))
+        }
         for (i in order) androidx.compose.runtime.key(items[i].second.id) {
             val b = items[i].second
             Box(
@@ -280,15 +339,14 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
                         val cubed = cube
                         val d = i - pos.value
                         if (cubed) {
-                            // a real block: face i stands at (i - pos) quarter turns round a vertical axis through the middle of the block.
-                            // The view is nearly flat-on, so the faces meet exactly along their shared edge.
-                            val th = d * 90f + CUBE_REST
-                            val rad = Math.toRadians(th.toDouble())
+                            // the front card stands at rest turned a little; one that is used leaves to the left, turning edge-on as it goes
+                            val ePx = CUBE_EDGE_W.toPx() * CUBE_EDGES
+                            val cxf = -(ePx * kotlin.math.cos(Math.toRadians((CUBE_REST + 90f).toDouble())).toFloat()) / 2f
                             cameraDistance = 3000f * density.density
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
-                            rotationY = th
-                            translationX = w.toPx() / 2f * kotlin.math.sin(rad).toFloat()
-                            alpha = if (kotlin.math.cos(rad) <= .02) 0f else 1f
+                            rotationY = if (d >= 0f) CUBE_REST else CUBE_REST + d.coerceAtLeast(-1.2f) * 60f
+                            translationX = if (d >= 0f) cxf else cxf + d * w.toPx() * .95f
+                            alpha = if (d >= 0f) 1f else (1f + d * 1.1f).coerceIn(0f, 1f)
                         } else if (d >= 0f) {
                             cameraDistance = 14f * density.density
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
@@ -307,7 +365,7 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
                             rotationZ = -5f * k
                             alpha = (1f + d * .55f).coerceIn(0f, 1f)
                         }
-                        shape = RoundedCornerShape(if (cubed) 4.dp else 22.dp); clip = true
+                        shape = RoundedCornerShape(if (cubed) 6.dp else 22.dp); clip = true
                     }
                     .background(cs.primaryContainer)
                     .clickable(onClickLabel = "Open") { if (i == near) onOpen(items[i].first.id) else settle(i) },
@@ -318,7 +376,7 @@ private fun FilmFan(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int) -
                 // depth without a shadow: the further back a poster is, the more it dims
                 Box(Modifier.fillMaxSize().graphicsLayer {
                     // the further back a poster is, the more it dims; on the block a face is lit by how squarely it faces you
-                    alpha = if (cube) (1f - kotlin.math.cos(Math.toRadians(((i - pos.value) * 90f + CUBE_REST).toDouble())).toFloat()).coerceIn(0f, 1f) * .6f
+                    alpha = if (cube) (i - pos.value).coerceIn(0f, 1f) * .5f
                     else ((i - pos.value).coerceIn(0f, 4f) * .11f)
                 }.background(androidx.compose.ui.graphics.Color.Black))
             }
@@ -351,6 +409,7 @@ private fun BookShelf(items: List<Pair<Note, Block>>, index: Int, onIndex: (Int)
     val pos = remember { androidx.compose.animation.core.Animatable(index.coerceIn(0, last).toFloat()) }
     androidx.compose.runtime.LaunchedEffect(n) { pos.snapTo(pos.value.coerceIn(0f, last.toFloat())) }
     val near by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.round(pos.value).toInt().coerceIn(0, last) } }
+    val fl by remember { androidx.compose.runtime.derivedStateOf { kotlin.math.floor(pos.value).toInt().coerceIn(0, last) } }
     androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { near }.collect { onIndex(it) } }
     val density = androidx.compose.ui.platform.LocalDensity.current
     val step = with(density) { 84.dp.toPx() }
@@ -540,19 +599,29 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
                 Modifier.padding(horizontal = 16.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(cs.surfaceContainerHigh)
                     .clickable(onClickLabel = "Open the note") { onOpen(note.id) }.padding(20.dp),
             ) {
+                // what it is, then what it is about (and, under that, what you made of it), as the concept's panel has it
+                val blk = cur.second
+                val about = blk.field("overview").ifBlank { blk.field("desc") }
+                val label = when (blk.kind) {
+                    Kind.Film -> listOf(blk.field("genre"), blk.field("runtime").takeIf { it.isNotEmpty() }?.let { "$it min" } ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
+                    Kind.Book -> listOf(blk.field("publisher"), blk.field("pages").takeIf { it.isNotEmpty() && it != "0" }?.let { "$it pages" } ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
+                    else -> blk.field("genre")
+                }.ifBlank { (note.tags.firstOrNull() ?: "saved") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        (note.tags.firstOrNull() ?: "saved").uppercase(),
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant,
-                    )
+                    Text(label.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
                 }
-                val said = cur.second.body.ifBlank { note.snippet(140) }
-                Text(
-                    said.ifBlank { "Open it to add your thoughts." }, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(fontFamily = Serif, fontSize = 18.sp, lineHeight = 24.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic), color = cs.onSurface,
+                if (about.isNotBlank()) Text(
+                    about, maxLines = 5, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 23.sp), color = cs.onSurface,
                     modifier = Modifier.padding(top = 10.dp),
                 )
+                val said = blk.body.ifBlank { note.snippet(140) }
+                if (said.isNotBlank()) Text(
+                    said, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(fontFamily = Serif, fontSize = 17.sp, lineHeight = 23.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic), color = if (about.isBlank()) cs.onSurface else cs.onSurfaceVariant,
+                    modifier = Modifier.padding(top = if (about.isBlank()) 10.dp else 12.dp),
+                ) else if (about.isBlank()) Text("Open it to add your thoughts.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp))
             }
         }
         // room below the last thing, so it can be scrolled clear of the floating bar

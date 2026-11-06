@@ -64,7 +64,11 @@ val LAYOUTS = listOf(
     PageLayout("caps", "Poster caps", "Heavy capitals"),
     PageLayout("soft", "Soft and heavy", "Round, fat letters"),
     PageLayout("light", "Light, last word bold", "A fine title with its last word heavy"),
-    PageLayout("serif", "Roboto Flex", "Heavy and plain, in Roboto Flex"),
+    PageLayout("serif", "Roboto Flex, heavy", "Heavy and plain"),
+    PageLayout("tall", "Roboto Flex, tall", "Tall lowercase and long ascenders, open counters"),
+    PageLayout("contrast", "Roboto Flex, contrast", "Thick stems, hairline bars; the last word reverses them"),
+    PageLayout("figure", "Roboto Flex, figures", "Tall capitals and figures, short tails"),
+    PageLayout("long", "Roboto Flex, long tails", "Light, small lowercase, long ascenders and descenders"),
     PageLayout("slant", "Slanted", "Round and leaning"),
 )
 

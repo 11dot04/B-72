@@ -30,20 +30,32 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-enum class Accent { None, Flip, Marker, Outline }
+/** The last word of a title may change with a second setting of the same typeface: [Flip] swaps the weight, [Axes] swaps the parametric axes. */
+enum class Accent { None, Flip, Axes }
 
-/** One personality for a title; each note picks one from its id so a grid reads like a magazine rack. */
-class TitleLook(val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None, val rf: Boolean = false)
+/**
+ * One personality for a title; each note picks one from its id so a grid reads like a magazine rack. Nothing here is drawn on top of the
+ * letters: every difference comes from the variable font's own axes. [ax] are Roboto Flex's parametric axes (stroke thickness, x-height,
+ * ascender, descender, figure height); [ax2] is the second setting the last word takes with [Accent.Axes].
+ */
+class TitleLook(
+    val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None, val rf: Boolean = false,
+    val ax: Map<String, Float>? = null, val ax2: Map<String, Float>? = null,
+)
 
 private val Looks = listOf(
-    TitleLook(800, 100f, 0f),                                   // soft heavy
-    TitleLook(900, 0f, 0f, upper = true),                       // hard poster caps
-    TitleLook(300, 0f, 0f, accent = Accent.Flip),               // light, last word heavy
-    TitleLook(720, 100f, -10f),                                 // slanted, round
-    TitleLook(560, 45f, 0f, accent = Accent.Marker),            // highlighter on the last word
-    TitleLook(860, 0f, 0f, rf = true),                          // Roboto Flex, heavy and plain
-    TitleLook(420, 100f, 0f, upper = true, accent = Accent.Outline), // rounded caps, outlined last word
-    TitleLook(650, 0f, -8f),                                    // slanted, sharp
+    TitleLook(800, 100f, 0f),                                              // soft heavy
+    TitleLook(900, 0f, 0f, upper = true),                                  // hard poster caps
+    TitleLook(300, 0f, 0f, accent = Accent.Flip),                          // light, last word heavy
+    TitleLook(720, 100f, -10f),                                            // slanted, round
+    TitleLook(560, 45f, 0f, accent = Accent.Flip),                         // medium, last word hairline
+    TitleLook(820, 0f, 0f, rf = true, ax = mapOf("YTLC" to 566f, "YTAS" to 800f, "XTRA" to 500f)),            // tall x-height, open counters
+    TitleLook(420, 100f, 0f, upper = true, accent = Accent.Flip),          // rounded caps, last word heavy
+    TitleLook(650, 0f, -8f),                                               // slanted, sharp
+    TitleLook(560, 0f, 0f, rf = true, ax = mapOf("XOPQ" to 150f, "YOPQ" to 36f), accent = Accent.Axes,
+        ax2 = mapOf("XOPQ" to 40f, "YOPQ" to 128f)),                       // thick stems and hairline bars; the last word reverses it
+    TitleLook(700, 0f, 0f, rf = true, ax = mapOf("YTUC" to 756f, "YTFI" to 788f, "YTDE" to -120f, "XTRA" to 560f)), // tall capitals and figures, short tails
+    TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -270f), accent = Accent.Flip), // small x-height, long ascenders and tails
 )
 
 fun lookFor(seed: String) = Looks[seedOf(seed) % Looks.size]
@@ -54,6 +66,10 @@ private val StyleLooks = mapOf(
     "soft" to TitleLook(800, 100f, 0f),
     "light" to TitleLook(300, 0f, 0f, accent = Accent.Flip),
     "serif" to TitleLook(860, 0f, 0f, rf = true),
+    "tall" to TitleLook(820, 0f, 0f, rf = true, ax = mapOf("YTLC" to 566f, "YTAS" to 800f, "XTRA" to 500f)),
+    "contrast" to TitleLook(560, 0f, 0f, rf = true, ax = mapOf("XOPQ" to 150f, "YOPQ" to 36f), accent = Accent.Axes, ax2 = mapOf("XOPQ" to 40f, "YOPQ" to 128f)),
+    "figure" to TitleLook(700, 0f, 0f, rf = true, ax = mapOf("YTUC" to 756f, "YTFI" to 788f, "YTDE" to -120f, "XTRA" to 560f)),
+    "long" to TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -270f), accent = Accent.Flip),
     "slant" to TitleLook(720, 100f, -10f),
 )
 
@@ -125,7 +141,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val t = if (k.upper) line.uppercase() else line
     val sz = with(d) { sPx.toSp() }
     val base = TextStyle(
-        fontFamily = if (k.rf) Rf.family(k.wght, wd, (sPx / d.density).coerceIn(8f, 144f), grade) else flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
+        fontFamily = if (k.rf) Rf.family(k.wght, wd, (sPx / d.density).coerceIn(8f, 144f), grade, axes = k.ax) else flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
         // a lowercase line with tails (g, j, p, q, y) needs more room under it than a tight 0.88 leaves, or the tails are cut
         lineHeight = (sz.value * (if (t.any { it in "gjpqy,;" }) (if (t == t.lowercase()) 1.04f else .95f) else .88f)).sp,
@@ -140,10 +156,13 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     )
     val i = t.lastIndexOf(' ')
     if (!accent || i < 0 || k.accent == Accent.None) return Piece(AnnotatedString(t), base)
+    val od = (sPx / d.density).coerceIn(8f, 144f)
     val last = when (k.accent) {
-        Accent.Flip -> SpanStyle(fontFamily = if (k.rf) Rf.family(if (k.wght < 500) 900 else 200, wd, (sPx / d.density).coerceIn(8f, 144f), grade) else flex(if (k.wght < 500) 900 else 200, wd, k.rond, k.slnt, grade, sPx / d.density))
-        Accent.Marker -> SpanStyle(background = color.copy(alpha = .22f))
-        else -> SpanStyle(drawStyle = Stroke(width = max(1.2f, sPx * .02f)))
+        Accent.Axes -> SpanStyle(fontFamily = Rf.family(k.wght, wd, od, grade, axes = k.ax2 ?: k.ax))
+        else -> {
+            val w2 = if (k.wght < 500) 900 else 200
+            SpanStyle(fontFamily = if (k.rf) Rf.family(w2, wd, od, grade, axes = k.ax) else flex(w2, wd, k.rond, k.slnt, grade, sPx / d.density))
+        }
     }
     val text = buildAnnotatedString {
         append(t.substring(0, i + 1))
@@ -179,6 +198,9 @@ class TitleLay(
 ) {
     fun accentAt(i: Int) = look.accent != Accent.None && i == lines.lastIndex && lines[i].contains(' ')
 
+    /** One line at an explicit size and width axis, for the move between a tile's title and the page's. */
+    fun pieceAt(i: Int, color: Color, size: Float, wdth: Float): Piece = mk(lines[i], size, (wdth / 3).roundToInt() * 3f, look, grade, color, accentAt(i), density)
+
     /** [flex] 0..1 animates the width axis from condensed to the full-width fit. Steps are quantised so fonts are reused. */
     fun piece(i: Int, color: Color, flex: Float): Piece {
         val f = flex.coerceIn(0f, 1f)
@@ -203,9 +225,21 @@ fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, 
         val acc = k.accent != Accent.None && line === lines.last() && line.contains(' ')
         fun piece(s: Float, x: Float) = mk(line, s, x, k, grade, Color.Unspecified, acc, d)
         // a hair of margin: heavy and slanted letters can overhang their advance width
-        val f = fit({ s, x -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }, w * .975f, size, lines.size == 1)
-        sz.add(f.first); wd.add(f.second)
-        val p = piece(f.first, f.second)
+        val width = { s: Float, x: Float -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }
+        val target = w * .975f
+        val f = fit(width, target, size, lines.size == 1)
+        // at either end of the width axis the size is what is left to change, and the optical-size axis moves with it, so the width does not
+        // scale in step with the size: measure again and correct until the line really fits (this is what left a line a few pixels too wide)
+        var fs = f.first
+        for (n in 0 until 6) {
+            val cur = width(fs, f.second)
+            val atLimit = f.second <= 25f || f.second >= 151f
+            if (cur > target) fs *= target / cur * .995f
+            else if (atLimit && f.second >= 151f && lines.size == 1 && cur < target * .96f && fs < size * 2.4f) fs = minOf(fs * target / cur, size * 2.4f)
+            else break
+        }
+        sz.add(fs); wd.add(f.second)
+        val p = piece(fs, f.second)
         hs.add(m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.height.toFloat())
     }
     return TitleLay(k, lines, sz, wd, hs, grade, d).also {
@@ -222,23 +256,48 @@ fun rememberTitleLay(text: String, wPx: Float, seed: String, maxLines: Int = 3, 
     return remember(text, wPx, seed, maxLines, grade, d.density, style) { titleLay(text, wPx, seed, maxLines, grade, m, d, style) }
 }
 
-/** A title that always fills its width. [flex] (0..1) is read per frame; the layout itself is computed once. */
+/** Where a note's title is shown as a tile and as a page, so the title can change its size and width axis on the way from one to the other. */
+class Morph(val ctx: SharedCtx, val tile: Boolean)
+
+private object MorphWidths { val tile = HashMap<String, Float>(); val page = HashMap<String, Float>() }
+
+/**
+ * A title that always fills its width. [flex] (0..1) is read per frame; the layout itself is computed once. With a [morph] the title is
+ * laid out at the tile's width and at the page's, and while the shared bounds travel between the two it takes every size and width axis
+ * between them, so the letters reshape on the way instead of only being scaled.
+ */
 @Composable
-fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modifier, maxLines: Int = 3, flex: () -> Float = { 1f }, style: String = "") {
+fun FitTitle(text: String, color: Color, seed: String, modifier: Modifier = Modifier, maxLines: Int = 3, flex: () -> Float = { 1f }, style: String = "", morph: Morph? = null) {
     if (isScriptTitle(text, style)) { ScriptFit(text, color, seed, modifier, ornamentOf(style)); return }
+    val m = rememberTextMeasurer()
+    val dens = LocalDensity.current
+    val grade = if (isSystemInDarkTheme()) -25f else 0f
+    val screenW = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toFloat()
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val lay = rememberTitleLay(text, constraints.maxWidth.toFloat(), seed, maxLines, style)
+        val w = constraints.maxWidth.toFloat()
+        val moving = morph != null && morph.ctx.st.isTransitionActive
+        if (morph != null && !moving) androidx.compose.runtime.SideEffect { (if (morph.tile) MorphWidths.tile else MorphWidths.page)[seed] = w }
+        val tw = MorphWidths.tile[seed]
+        val pw = MorphWidths.page[seed] ?: (screenW - with(dens) { 32.dp.toPx() })
+        val between = morph != null && moving && tw != null && kotlin.math.abs(pw - tw) > 40f
+        val lay = remember(text, w, seed, maxLines, grade, dens.density, style, between) {
+            titleLay(text, if (between) pw else w, seed, maxLines, grade, m, dens, style)
+        }
+        val from = if (between) remember(text, tw, seed, maxLines, grade, dens.density, style) { titleLay(text, tw!!, seed, maxLines, grade, m, dens, style) } else null
+        val t = if (between && from != null && tw != null) ((w - tw) / (pw - tw)).coerceIn(0f, 1f) else 1f
         val f = flex()
         Column {
             for (i in lay.lines.indices) {
-                val p = lay.piece(i, color, f)
-                // each line gets a box of its own height, centred on the glyphs, whatever the font's metrics say
+                val sz = if (from != null) from.sizes[i] + (lay.sizes[i] - from.sizes[i]) * t else lay.sizes[i]
+                val p = if (from != null) lay.pieceAt(i, color, sz, from.wdths[i] + (lay.wdths[i] - from.wdths[i]) * t) else lay.piece(i, color, f)
+                // each line gets a box of its own height, centred on the glyphs, whatever the font's metrics say; it is measured without a width
+                // limit and never clipped, so a letter that overhangs by a pixel is drawn, not cut
                 Text(
-                    p.text, style = p.style, maxLines = 1, softWrap = false,
-                    modifier = Modifier.layout { m, c ->
-                        val pl = m.measure(c)
-                        val h = (lay.sizes[i] * .9f).toInt()
-                        layout(pl.width, h) { pl.place(0, (h - pl.height) / 2) }
+                    p.text, style = p.style, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
+                    modifier = Modifier.layout { mm, c ->
+                        val pl = mm.measure(c.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
+                        val h = (sz * .9f).toInt()
+                        layout(pl.width.coerceAtMost(c.maxWidth), h) { pl.place(0, (h - pl.height) / 2) }
                     },
                 )
             }

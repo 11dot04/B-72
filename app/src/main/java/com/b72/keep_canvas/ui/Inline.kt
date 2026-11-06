@@ -102,9 +102,25 @@ fun InlineBody(
     val saved = body + "\u0001" + spans + "\u0001" + indent
     val latest by rememberUpdatedState(st)
     val cb by rememberUpdatedState(onChange)
-    LaunchedEffect(sig) { if (sig != saved) { delay(700); cb(latest.tv.text, spansToString(latest.spans), latest.indentOn) } }
-    DisposableEffect(Unit) { onDispose { if (latest.tv.text + "\u0001" + spansToString(latest.spans) + "\u0001" + latest.indentOn != saved) cb(latest.tv.text, spansToString(latest.spans), latest.indentOn) } }
-    LaunchedEffect(body) { if (!focused && st.tv.text != body) { st.tv = TextFieldValue(body, TextRange(body.length)); st.spans = parseSpans(spans) } }
+    // what this field last handed to the note: a change that is not that came from outside (undo, redo, an idea appended) and is taken in
+    // even while the cursor is here; without this the field kept its own text and wrote it back over the undo
+    val pushedText = remember { arrayOf(body) }
+    val pushedSpans = remember { arrayOf(spans) }
+    fun push() {
+        pushedText[0] = latest.tv.text; pushedSpans[0] = spansToString(latest.spans)
+        cb(latest.tv.text, spansToString(latest.spans), latest.indentOn)
+    }
+    LaunchedEffect(sig) { if (sig != saved) { delay(700); push() } }
+    DisposableEffect(Unit) { onDispose { if (latest.tv.text + "\u0001" + spansToString(latest.spans) + "\u0001" + latest.indentOn != saved) push() } }
+    LaunchedEffect(body, spans, indent) {
+        val outside = body != pushedText[0] || spans != pushedSpans[0]
+        val differs = st.tv.text != body || spansToString(st.spans) != spans
+        if (differs && (outside || !focused)) {
+            val at = if (focused) st.tv.selection.start.coerceAtMost(body.length) else body.length
+            st.tv = TextFieldValue(body, TextRange(at)); st.spans = parseSpans(spans); st.indentOn = indent
+            pushedText[0] = body; pushedSpans[0] = spans
+        }
+    }
     LaunchedEffect(Unit) { if (focus) runCatching { fr.requestFocus() } }
     LaunchedEffect(editing) { if (editing && links && !focused) runCatching { fr.requestFocus() } }
     val base = (if (compact) androidx.compose.ui.text.TextStyle(fontFamily = if (serif) Serif else MaterialTheme.typography.bodyLarge.fontFamily, fontSize = 15.sp, lineHeight = 22.sp) else if (serif) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 19.sp, lineHeight = 29.sp) else MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)).copy(color = pal.fg)
@@ -124,7 +140,7 @@ fun InlineBody(
             val shown = remember(linked, st.spans) {
                 if (linked.text != st.tv.text) linked else androidx.compose.ui.text.buildAnnotatedString {
                     append(linked)
-                    for (sp in st.spans) styleOf(sp.c, 18f)?.let { addStyle(it, sp.s.coerceIn(0, length), sp.e.coerceIn(0, length)) }
+                    applyFormats(this, linked.text, st.spans, 18f)
                 }
             }
             Text(shown, style = style, modifier = Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = true })
@@ -149,7 +165,13 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed
     val items = remember { mutableStateListOf<String>().also { it.addAll(items0.ifEmpty { listOf("") }) } }
     val saved = remember(items0) { items0.joinToString("\n") }
     val now = items.filter { it.isNotBlank() }.joinToString("\n")
-    SaveSoon(now, saved, ms = 500) { onItems(items.toList()) }
+    val pushed = remember { arrayOf(items0.joinToString("\n")) }
+    SaveSoon(now, saved, ms = 500) { pushed[0] = items.filter { it.isNotBlank() }.joinToString("\n"); onItems(items.toList()) }
+    // undo and redo hand the list back from outside
+    LaunchedEffect(items0) {
+        val j = items0.joinToString("\n")
+        if (j != pushed[0] && j != now) { items.clear(); items.addAll(items0.ifEmpty { listOf("") }); pushed[0] = j }
+    }
     val focusers = remember { mutableMapOf<Int, FocusRequester>() }
     var want by remember { mutableStateOf<Int?>(if (focus) 0 else null) }
     LaunchedEffect(want) {
@@ -160,10 +182,14 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed
     }
     val style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = pal.fg)
     Column(Modifier.fillMaxWidth()) {
-        if (items.any { it.startsWith("x ") }) androidx.compose.material3.TextButton(
-            onClick = { items.removeAll { it.startsWith("x ") }; if (items.isEmpty()) items.add("") },
-            modifier = Modifier.align(Alignment.End),
-        ) { Text("Clear ticked", color = pal.primary) }
+        val total = items.count { it.isNotBlank() }
+        if (total > 0) Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChecklistRing(items.count { it.startsWith("x ") }, total, pal.primary, 48.dp)
+            Text("of $total done", style = MaterialTheme.typography.labelLarge, color = pal.fg.copy(alpha = .75f), modifier = Modifier.padding(start = 10.dp).weight(1f))
+            if (items.any { it.startsWith("x ") }) androidx.compose.material3.TextButton(
+                onClick = { items.removeAll { it.startsWith("x ") }; if (items.isEmpty()) items.add("") },
+            ) { Text("Clear ticked", color = pal.primary) }
+        }
         items.forEachIndexed { i, s ->
             val done = s.startsWith("x ")
             val fr = focusers.getOrPut(i) { FocusRequester() }

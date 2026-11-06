@@ -77,6 +77,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         if (start != null) {
             start.openId?.let { open = it; board = null }
             start.newKind?.let { begin(it, null) }
+            start.tab?.let { tab = it; open = null; board = null }
             onLaunchHandled()
         }
     }
@@ -173,7 +174,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeIn(fx),
             exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeOut(fx),
-        ) { FloatingNav(tab, { tab = it }, Modifier.navigationBarsPadding().padding(bottom = 14.dp)) }
+        ) { FloatingNav(tab, { tab = it }, Modifier.navigationBarsPadding().padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) }
         androidx.compose.material3.SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
       }
     }

@@ -162,19 +162,6 @@ private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Colo
     error = error, swatches = sw, blockHue = blockHue,
 )
 
-/** One soft pool of colour in the ground: where it sits (as fractions of the screen), how wide, its colour and strength, and how far it drifts with the pan. */
-private class Pool(val fx: Float, val fy: Float, val rf: Float, val color: Color, val k: Float, val drift: Float)
-
-private fun groundPools(t: Tones, dark: Boolean): List<Pool> {
-    val k = if (dark) .75f else .85f
-    return listOf(
-        Pool(.1f, .15f, 1.1f, t.pc, k, .12f),
-        Pool(.95f, .85f, 1.2f, t.tc, k, .08f),
-        Pool(.95f, .12f, .8f, t.sc, k * .8f, .10f),
-        Pool(.05f, .92f, .9f, t.primary, if (dark) .22f else .3f, .06f),
-    )
-}
-
 suspend fun hueOfPhoto(path: String): Float? {
     val bmp = Images.load(path, 160) ?: return null
     val rgbs = withContext(Dispatchers.Default) {
@@ -303,27 +290,13 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             }
         }
 
-        val pools = remember(t, isDark) { groundPools(t, isDark) }
-        // the colour of the ground at a point on screen, worked out the same way it is drawn, so a card's ring always matches what is behind it
-        val groundAt: (Offset) -> Color = { at ->
-            var col = t.bg
-            for (p in pools) {
-                val cx = swPx * p.fx + pan.x * p.drift; val cy = shPx * p.fy + pan.y * p.drift
-                val d = kotlin.math.hypot(at.x - cx, at.y - cy) / (swPx * p.rf)
-                val a = p.k * (1f - d).coerceIn(0f, 1f)
-                col = androidx.compose.ui.graphics.lerp(col, p.color.copy(alpha = 1f), a)
-            }
-            col
-        }
+        // the ground is one flat tone, so a card's ring (the same tone) always reads as a clean gap
+        val groundAt: (Offset) -> Color = { t.bg }
         val ordered = liftTick.let { cards }.sortedWith(compareBy<Card> { com.b72.keep_canvas.ui.board.zKey(it) })
         val origin = { Offset(pan.x, pan.y) }
         Box(
             Modifier.fillMaxSize().panning(pan).pointerInput(Unit) { detectTapGestures(onDoubleTap = { pan.home() }) },
         ) {
-            // soft pools of the canvas's colours, drifting a little slower than the cards, so the ground is never one flat tone
-            Canvas(Modifier.fillMaxSize()) {
-                for (p in pools) drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(p.color.copy(alpha = p.k), p.color.copy(alpha = 0f)), Offset(size.width * p.fx + pan.x * p.drift, size.height * p.fy + pan.y * p.drift), size.width * p.rf))
-            }
             if (grid) Canvas(Modifier.fillMaxSize()) {
                 // a dot grid that travels with the canvas
                 val step = 26.dp.toPx()
@@ -389,10 +362,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         if (trayMode != 0) PlacedTray(
             marks = trayMode == 2,
             stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
-            onStamp = { m, c ->
+            onStamp = { key, c ->
                 trayMode = 0
-                val w = .3f
-                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", "x:${m.name}", centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w * m.aspect), w, ((placed.items.size % 5) - 2) * 4f, c, w * m.aspect))
+                val w = .22f
+                placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", key, centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f, c, w))
             },
             onSticker = { p ->
                 trayMode = 0

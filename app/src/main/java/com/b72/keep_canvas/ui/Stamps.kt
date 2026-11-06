@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -202,5 +205,72 @@ fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
                 for (i in 1..3) drawArc(StampInk, 180f, 180f, false, Offset(r * i * .22f, size.height - r + r * i * .22f), Size(size.width - r * i * .44f, size.width - r * i * .44f), style = Stroke(bw.toPx() * .8f))
             }
         }
+    }
+}
+
+
+/** One printer's-ornament stamp: a glyph from the phone's own symbol fonts (dingbats and symbols), set in a badge. */
+class Ding(val cp: Int, val name: String, val group: String)
+
+val Dings = listOf(
+    Ding(0x2714, "Tick", "Marks"), Ding(0x2718, "Cross", "Marks"), Ding(0x2605, "Star", "Marks"), Ding(0x2726, "Spark", "Marks"),
+    Ding(0x2727, "Twinkle", "Marks"), Ding(0x2756, "Diamond", "Marks"), Ding(0x2731, "Asterisk", "Marks"), Ding(0x2736, "Six-point star", "Marks"),
+    Ding(0x2764, "Heart", "Marks"), Ding(0x2691, "Flag", "Marks"), Ding(0x270E, "Pencil", "Marks"), Ding(0x2702, "Scissors", "Marks"),
+    Ding(0x2709, "Letter", "Marks"), Ding(0x2708, "Plane", "Marks"), Ding(0x260E, "Telephone", "Marks"),
+    Ding(0x2600, "Sun", "Nature"), Ding(0x263E, "Moon", "Nature"), Ding(0x2601, "Cloud", "Nature"), Ding(0x2602, "Umbrella", "Nature"),
+    Ding(0x2744, "Snowflake", "Nature"), Ding(0x273F, "Flower", "Nature"), Ding(0x2740, "Blossom", "Nature"), Ding(0x2743, "Pinwheel", "Nature"),
+    Ding(0x2618, "Clover", "Nature"), Ding(0x2766, "Floral heart", "Nature"),
+    Ding(0x266A, "Note", "Play"), Ding(0x266B, "Notes", "Play"), Ding(0x263A, "Smile", "Play"), Ding(0x2620, "Skull", "Play"),
+    Ding(0x262E, "Peace", "Play"), Ding(0x26A1, "Bolt", "Play"), Ding(0x2693, "Anchor", "Play"), Ding(0x2699, "Gear", "Play"),
+    Ding(0x265B, "Queen", "Play"), Ding(0x2660, "Spade", "Play"), Ding(0x2663, "Club", "Play"), Ding(0x2665, "Hearts", "Play"), Ding(0x2666, "Diamonds", "Play"),
+)
+
+fun dingGlyph(cp: Int) = String(Character.toChars(cp)) + "\uFE0E"   // the text form, never the coloured emoji
+
+/** The ones this phone has a glyph for, so the tray never offers an empty box. */
+fun availableDings(): List<Ding> {
+    val p = android.graphics.Paint()
+    return Dings.filter { p.hasGlyph(String(Character.toChars(it.cp))) }
+}
+
+/** "d:2714:1" is the tick in the second badge shape. */
+fun dingOf(k: String): Pair<Int, Int>? {
+    if (!k.startsWith("d:")) return null
+    val p = k.split(':')
+    return (p.getOrNull(1)?.toIntOrNull(16) ?: return null) to (p.getOrNull(2)?.toIntOrNull() ?: 0)
+}
+
+/** A glyph in a badge: scalloped, round, rounded square or burst; the pen colour fills it, with an ink outline and a hard shadow. */
+@Composable
+fun DingView(cp: Int, shape: Int, c: Int, modifier: Modifier = Modifier) {
+    val a = MarkColors[c.mod(MarkColors.size)]
+    val onA = if (a.luminance() > .45f) StampInk else StampPaper
+    BoxWithConstraints(modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
+        val unit = with(LocalDensity.current) { maxWidth.toSp() }
+        val bw = (maxWidth.value * .028f).coerceAtLeast(1.5f)
+        Canvas(Modifier.fillMaxSize()) {
+            val d = size.width * .05f
+            val w = size.width - d - bw.dp.toPx()
+            val p = when (shape.mod(4)) {
+                0 -> scallop(w, w, 12)
+                1 -> Path().apply { addOval(Rect(0f, 0f, w, w)) }
+                2 -> Path().apply { addRoundRect(RoundRect(0f, 0f, w, w, CornerRadius(w * .28f))) }
+                else -> burst(w, w, 16, .88f)
+            }
+            translate(bw.dp.toPx() / 2, bw.dp.toPx() / 2) {
+                translate(d, d) { drawPath(p, StampInk) }
+                drawPath(p, a)
+                drawPath(p, StampInk, style = Stroke(bw.dp.toPx(), join = StrokeJoin.Round))
+            }
+        }
+        BasicText(
+            dingGlyph(cp), maxLines = 1, softWrap = false,
+            modifier = Modifier.padding(end = (maxWidth.value * .05f).dp, bottom = (maxWidth.value * .05f).dp),
+            style = TextStyle(
+                fontSize = unit * .5f, lineHeight = unit * .5f, color = onA, textAlign = TextAlign.Center,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both),
+            ),
+        )
     }
 }

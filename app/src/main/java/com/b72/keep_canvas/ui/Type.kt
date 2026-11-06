@@ -48,9 +48,13 @@ object Rf {
     fun init(ctx: android.content.Context) { if (id == 0) id = ctx.resources.getIdentifier("robotoflex", "font", ctx.packageName) }
     val ready get() = id != 0
 
-    fun family(wght: Int = 400, wdth: Float = 100f, opsz: Float = 14f, grad: Float = 0f, xtra: Float? = null, ytde: Float? = null, ytas: Float? = null): FontFamily {
+    /**
+     * [axes] are the parametric axes by name: XOPQ (thickness of vertical strokes), YOPQ (thickness of horizontal strokes), YTLC (lowercase
+     * height), YTUC (capital height), YTAS (ascender), YTDE (descender), YTFI (figure height), XTRA (counter width).
+     */
+    fun family(wght: Int = 400, wdth: Float = 100f, opsz: Float = 14f, grad: Float = 0f, xtra: Float? = null, ytde: Float? = null, ytas: Float? = null, axes: Map<String, Float>? = null): FontFamily {
         if (id == 0) return flex(wght, wdth)
-        val key = "$wght|${wdth.toInt()}|${opsz.toInt()}|${grad.toInt()}|${xtra?.toInt()}|${ytde?.toInt()}|${ytas?.toInt()}"
+        val key = "$wght|${wdth.toInt()}|${opsz.toInt()}|${grad.toInt()}|${xtra?.toInt()}|${ytde?.toInt()}|${ytas?.toInt()}|${axes?.toSortedMap()}"
         return cache.getOrPut(key) {
             val s = buildList {
                 add(FontVariation.weight(wght)); add(FontVariation.width(wdth.coerceIn(25f, 151f)))
@@ -58,10 +62,19 @@ object Rf {
                 xtra?.let { add(FontVariation.Setting("XTRA", it.coerceIn(323f, 603f))) }
                 ytde?.let { add(FontVariation.Setting("YTDE", it.coerceIn(-305f, -98f))) }
                 ytas?.let { add(FontVariation.Setting("YTAS", it.coerceIn(649f, 854f))) }
+                axes?.forEach { (k, v) ->
+                    val r = RANGE[k] ?: return@forEach
+                    add(FontVariation.Setting(k, v.coerceIn(r.first, r.second)))
+                }
             }
             FontFamily(Font(id, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
         }
     }
+
+    private val RANGE = mapOf(
+        "XOPQ" to (27f to 175f), "YOPQ" to (25f to 135f), "YTLC" to (416f to 570f), "YTUC" to (528f to 760f),
+        "YTAS" to (649f to 854f), "YTDE" to (-305f to -98f), "YTFI" to (560f to 788f), "XTRA" to (323f to 603f),
+    )
 }
 
 /** Like [flexStyle], but in Roboto Flex when it is there. Display sizes get the optical size to match. */

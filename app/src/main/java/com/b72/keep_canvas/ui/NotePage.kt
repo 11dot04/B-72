@@ -126,6 +126,22 @@ private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
  * The reading view. The title flexes out to full width when the page opens and shrinks into the top bar as
  * you scroll; one photo with one clear subject sits in a Material shape and the subject breaks out at the top.
  */
+/** Scrolls so that what is being typed sits a little above the middle; a large thing (a photo, a card) uses the usual least-scroll rule. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private val typingSpec = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val trailing = offset + size
+        if (size > containerSize * .4f) return when {
+            offset >= 0 && trailing <= containerSize -> 0f
+            offset < 0 && trailing > containerSize -> 0f
+            kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
+            else -> trailing - containerSize
+        }
+        val want = containerSize * .4f - size / 2f
+        return if (kotlin.math.abs(offset - want) < size * .6f) 0f else offset - want
+    }
+}
+
 @Composable
 fun NotePage(
     note: Note, shared: SharedCtx, onBack: () -> Unit, onEdit: () -> Unit, onTag: (String) -> Unit = {},
@@ -178,10 +194,12 @@ fun NotePage(
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
 
+        // the line being typed is kept near the middle, so neither the keyboard nor the formatting strip ever covers it
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides typingSpec) {
         LazyColumn(
             state = ls,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 72.dp, bottom = bottom + 112.dp),
+            modifier = Modifier.fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 72.dp, bottom = bottom + (maxHeight * .5f).coerceAtLeast(112.dp)),
         ) {
             // the title is a field when there is none yet (or after a tap); otherwise it is the big flexing title
             val explicit = note.blocks.firstOrNull { it.kind != Kind.Checklist && it.title.isNotBlank() }?.title.orEmpty()
@@ -212,7 +230,7 @@ fun NotePage(
             } else if (lay != null && !coverMode) item(key = "title-big") {
                 FitTitle(
                     title, pal.fg, note.id, style = note.layout,
-                    modifier = Modifier.shared(shared, "title-${note.id}", text = true).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
+                    morph = Morph(shared, false), modifier = Modifier.shared(shared, "title-${note.id}", text = true, remeasure = UiPrefs.titleMorph == 1).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                 )
             }
@@ -234,7 +252,9 @@ fun NotePage(
                     val frame = com.b72.keep_canvas.ui.popFrame(hero, wPx, hPx)
                     val s = com.b72.keep_canvas.ui.subjectIn(hero, wPx, hPx)
                     val last = lay?.heights?.lastOrNull() ?: 0f
-                    val lift = if (lay == null) (s?.top ?: frame.top) * .6f else ((s?.top ?: frame.top) + last * .12f).coerceIn(0f, hPx * .5f)
+                    // the highest point of anything drawn (the shape's edge can sit above the subject) may rise into the title by a sliver of its last line, no more
+                    val highest = minOf(frame.top, s?.top ?: frame.top)
+                    val lift = if (lay == null) highest * .6f else (highest + last * .14f).coerceIn(0f, hPx * .5f)
                     val bottomPx = max(frame.bottom, s?.bottom ?: 0f) + with(density) { 12.dp.toPx() }
                     Box(Modifier.fillMaxWidth().height(with(density) { (bottomPx - lift).toDp() })) {
                         PopOut(
@@ -354,6 +374,7 @@ fun NotePage(
                 Text("$words words · ${max(1, words / 200)} min read", style = MaterialTheme.typography.labelMedium, color = pal.fg.copy(alpha = .5f), modifier = Modifier.padding(top = 10.dp, start = 4.dp))
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
+        }
         }
 
         // Material's own top app bar: transparent over the big title, the page colour once content scrolls under it

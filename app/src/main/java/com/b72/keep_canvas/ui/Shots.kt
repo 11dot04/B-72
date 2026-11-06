@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -266,14 +267,14 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
             // the next card, waiting
             shown.getOrNull(1)?.let { nx ->
-                ShotImage(nx, 900, Modifier.fillMaxHeight().aspectRatio(nx.w.toFloat() / nx.h.coerceAtLeast(1), matchHeightConstraintsFirst = true).graphicsLayer {
+                ShotImage(nx, 900, Modifier.fillMaxHeight().aspectRatio(cardAspect(nx), matchHeightConstraintsFirst = true).graphicsLayer {
                     val k = (abs(x.value) / thr).coerceIn(0f, 1f); scaleX = .93f + .07f * k; scaleY = .93f + .07f * k; alpha = .7f + .3f * k
-                }.clip(RoundedCornerShape(28.dp)))
+                }.clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHighest), if (fitsCard(nx)) ContentScale.Crop else ContentScale.Fit)
             }
             Box(
-                Modifier.fillMaxHeight().aspectRatio(top.w.toFloat() / top.h.coerceAtLeast(1), matchHeightConstraintsFirst = true)
+                Modifier.fillMaxHeight().aspectRatio(cardAspect(top), matchHeightConstraintsFirst = true)
                     .graphicsLayer { translationX = x.value; rotationZ = x.value / wPx * 14f }
-                    .clip(RoundedCornerShape(28.dp))
+                    .clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHighest)
                     .pointerInput(top.id) {
                         detectDragGestures(
                             onDrag = { c, d -> c.consume(); scope.launch(start = CoroutineStart.UNDISPATCHED) { x.snapTo(x.value + d.x) } },
@@ -282,7 +283,7 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
                         )
                     },
             ) {
-                ShotImage(top, 1400, Modifier.fillMaxSize())
+                ShotImage(top, 1400, Modifier.fillMaxSize(), if (fitsCard(top)) ContentScale.Crop else ContentScale.Fit)
                 // what the phone made of it, over the foot of the picture
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = .55f)).padding(14.dp)) {
                     if (info != null) {
@@ -295,8 +296,8 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
                     }
                 }
                 // the verdict, fading in as the card is pulled
-                Text("KEEP", style = flexStyle(34.sp, wght = 800, lh = 1f), color = cs.primary, modifier = Modifier.align(Alignment.TopStart).padding(22.dp).graphicsLayer { alpha = (x.value / thr).coerceIn(0f, 1f); rotationZ = -10f }.border(3.dp, cs.primary, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 2.dp))
-                Text("DELETE", style = flexStyle(34.sp, wght = 800, lh = 1f), color = cs.error, modifier = Modifier.align(Alignment.TopEnd).padding(22.dp).graphicsLayer { alpha = (-x.value / thr).coerceIn(0f, 1f); rotationZ = 10f }.border(3.dp, cs.error, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 2.dp))
+                Text("KEEP", maxLines = 1, softWrap = false, style = flexStyle(30.sp, wght = 800, lh = 1f), color = cs.primary, modifier = Modifier.align(Alignment.TopStart).padding(22.dp).graphicsLayer { alpha = (x.value / thr).coerceIn(0f, 1f); rotationZ = -10f }.border(3.dp, cs.primary, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 2.dp))
+                Text("DELETE", maxLines = 1, softWrap = false, style = flexStyle(30.sp, wght = 800, lh = 1f), color = cs.error, modifier = Modifier.align(Alignment.TopEnd).padding(22.dp).graphicsLayer { alpha = (-x.value / thr).coerceIn(0f, 1f); rotationZ = 10f }.border(3.dp, cs.error, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 2.dp))
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 118.dp), horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
@@ -306,6 +307,10 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
         }
     }
 }
+
+/** A screenshot's card keeps phone-like proportions however odd the picture is: a very wide or very tall one is shown whole inside it, not stretched across the screen. */
+private fun cardAspect(s: Shot) = (s.w.toFloat() / s.h.coerceAtLeast(1)).coerceIn(.46f, .75f)
+private fun fitsCard(s: Shot): Boolean { val a = s.w.toFloat() / s.h.coerceAtLeast(1); return a in .46f..0.75f }
 
 /** The ones kept: a grid that can be searched by anything written in the screenshot, its title or its tags. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -342,11 +347,26 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Sh
         val ctx = LocalContext.current
         ModalBottomSheet(onDismissRequest = { open = null }) {
             Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
-                ShotImage(s, 1400, Modifier.fillMaxWidth().aspectRatio(s.w.toFloat() / s.h.coerceAtLeast(1)).clip(RoundedCornerShape(24.dp)), ContentScale.Fit)
+                Box(Modifier.fillMaxWidth().heightIn(max = 380.dp).clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+                    ShotImage(s, 1400, Modifier.fillMaxWidth().heightIn(max = 380.dp), ContentScale.Fit)
+                }
                 Text(i?.title.orEmpty(), style = flexStyle(26.sp, wght = 700, lh = 1.1f), modifier = Modifier.padding(top = 14.dp))
                 if (!i?.summary.isNullOrEmpty()) Text(i!!.summary, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { i?.tags?.forEach { Text("#$it", style = MaterialTheme.typography.labelMedium, modifier = Modifier.clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 10.dp, vertical = 4.dp)) } }
-                if (!i?.text.isNullOrBlank()) androidx.compose.foundation.text.selection.SelectionContainer { Text(i!!.text, style = MaterialTheme.typography.bodySmall, color = cs.onSurface, modifier = Modifier.padding(top = 14.dp)) }
+                FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (i != null) Text(categoryLabel(i.category), style = MaterialTheme.typography.labelLarge, color = cs.onSecondaryContainer, modifier = Modifier.clip(CircleShape).background(cs.secondaryContainer).padding(horizontal = 12.dp, vertical = 5.dp))
+                    if (i?.oneTime == true) Text("Probably only needed once", style = MaterialTheme.typography.labelLarge, color = cs.onTertiaryContainer, modifier = Modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(horizontal = 12.dp, vertical = 5.dp))
+                    i?.tags?.forEach { Text("#$it", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 5.dp)) }
+                }
+                // everything the phone read in it is kept for search, but it is not laid out here unless asked for
+                var showText by remember(s.id) { mutableStateOf(false) }
+                if (!i?.text.isNullOrBlank()) {
+                    TextButton(onClick = { showText = !showText }, Modifier.padding(top = 6.dp)) { Text(if (showText) "Hide the text in it" else "Show the text in it") }
+                    androidx.compose.animation.AnimatedVisibility(showText) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(i!!.text, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(14.dp))
+                        }
+                    }
+                }
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.OutlinedButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(s.uri, "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } }) { Text("Open") }
                     androidx.compose.material3.OutlinedButton(onClick = { onBackToReview(s); open = null }) { Text("Review again") }

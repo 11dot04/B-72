@@ -22,11 +22,11 @@ class SharedCtx(val st: SharedTransitionScope, val av: AnimatedVisibilityScope)
  */
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun Modifier.shared(ctx: SharedCtx, key: String, text: Boolean = false): Modifier {
+fun Modifier.shared(ctx: SharedCtx, key: String, text: Boolean = false, remeasure: Boolean = false): Modifier {
     val spec = MaterialTheme.motionScheme.defaultSpatialSpec<Rect>()
     val bounds = BoundsTransform { _, _ -> spec }
     return with(ctx.st) {
-        if (text) {
+        if (text && !remeasure) {
             sharedBounds(
                 rememberSharedContentState(key), ctx.av,
                 enter = fadeIn(), exit = fadeOut(),

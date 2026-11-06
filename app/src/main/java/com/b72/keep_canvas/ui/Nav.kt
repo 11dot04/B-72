@@ -91,7 +91,7 @@ fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Row(
         modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         DESTS.forEachIndexed { i, d ->
             val on = tab == i
@@ -101,7 +101,7 @@ fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
                 Modifier.clip(CircleShape).background(bg)
                     .clickable(role = Role.Tab, onClickLabel = d.label) { onTab(i) }
                     .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
-                    .padding(horizontal = if (on) 18.dp else 14.dp, vertical = 12.dp),
+                    .padding(horizontal = if (on) 16.dp else 11.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = fg)
@@ -148,15 +148,6 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
         loaded?.library?.notes.orEmpty().flatMap { n -> n.tags.map { it to n } }
             .groupBy({ it.first }, { it.second }).entries.sortedByDescending { it.value.size }
     }
-    // each tag's colour is the main hue of its first photo (the tag's own name picks one until that is read)
-    val hues by androidx.compose.runtime.produceState<Map<String, Float>>(emptyMap(), groups.map { it.key }) {
-        val out = HashMap<String, Float>()
-        for (g in groups) {
-            val p = g.value.firstNotNullOfOrNull { it.cover?.path } ?: continue
-            hueOfPhoto(p)?.let { out[g.key] = it; value = HashMap(out) }
-        }
-    }
-    fun hueOf(key: String) = hues[key] ?: (com.b72.keep_canvas.data.seedOf(key) % 360).toFloat()
     val mono = androidx.compose.ui.text.font.FontFamily.Monospace
     var hubIdx by UiPrefs.hub
     val ls = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = hubIdx)
@@ -169,56 +160,9 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
     }
     // where the list was left is kept once it comes to rest
     androidx.compose.runtime.LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { ls.isScrollInProgress }.collect { moving -> if (!moving && ls.layoutInfo.visibleItemsInfo.isNotEmpty()) hubIdx = focus } }
-    val focusHue = groups.getOrNull(focus)?.let { hueOf(it.key) } ?: 220f
-    fun bgOf(h: Float) = if (dark) Color.hsl(h, .55f, .16f) else Color.hsl(h, .6f, .85f)
-    val ink = if (dark) Color.hsl(focusHue, .35f, .93f) else Color(0xFF1B1A1F)
-    // the focused tag's colour drains in as a soft gradient edge with a grain along it, rising from the bottom when moving on, falling from the top when going back
-    val target = bgOf(focusHue)
-    var from by remember { androidx.compose.runtime.mutableStateOf(target) }
-    var to by remember { androidx.compose.runtime.mutableStateOf(target) }
-    var rising by remember { androidx.compose.runtime.mutableStateOf(true) }
-    var lastFocus by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val prog = remember { androidx.compose.animation.core.Animatable(1f) }
-    androidx.compose.runtime.LaunchedEffect(target) {
-        if (target != to) {
-            from = if (prog.value >= 1f) to else androidx.compose.ui.graphics.lerp(from, to, prog.value)
-            to = target
-            rising = focus >= lastFocus
-            prog.snapTo(0f)
-            prog.animateTo(1f, androidx.compose.animation.core.tween(1100, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)))
-        }
-        lastFocus = focus
-    }
-    val dots = remember { val r = kotlin.random.Random(72); List(1500) { Triple(r.nextFloat(), r.nextFloat(), r.nextFloat()) } }
-    Box(Modifier.fillMaxSize()) {
-        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-            drawRect(from)
-            val p = prog.value
-            // three soft pools of neighbouring hues, so the ground has depth instead of one flat tone
-            fun pool(h: Float, fx: Float, fy: Float, rf: Float, a: Float) {
-                val c = if (dark) Color.hsl(h, .7f, .32f) else Color.hsl(h, .85f, .9f)
-                drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(c.copy(alpha = a), c.copy(alpha = 0f)), center = Offset(size.width * fx, size.height * fy), radius = size.width * rf))
-            }
-            fun glow() { pool(focusHue, .25f, .5f, 1.15f, .85f); pool(focusHue + 45f, .95f, .08f, .9f, .75f); pool(focusHue - 40f, .05f, .96f, .85f, .7f) }
-            if (p >= 1f) { drawRect(to); glow(); return@Canvas }
-            val band = size.height * .55f
-            // the edge's position: the distance the wash has travelled
-            val edge = if (rising) size.height - p * (size.height + band) else -band + p * (size.height + band)
-            val top = if (rising) edge else edge
-            val brush = if (rising) androidx.compose.ui.graphics.Brush.verticalGradient(0f to to.copy(alpha = 0f), 1f to to, startY = top, endY = top + band)
-            else androidx.compose.ui.graphics.Brush.verticalGradient(0f to to, 1f to to.copy(alpha = 0f), startY = top, endY = top + band)
-            drawRect(brush)
-            glow()
-            // grain: specks of the new colour ahead of the edge and of the old one behind it
-            val px = 2.2.dp.toPx()
-            for ((rx, ry, rr) in dots) {
-                val y = top - band * .25f + ry * band * 1.5f
-                val t = ((y - top) / band).coerceIn(0f, 1f)
-                val coverage = if (rising) t else 1f - t
-                val smooth = coverage * coverage * (3 - 2 * coverage)
-                drawRect(if (rr < smooth) to else from, Offset(rx * size.width, y), androidx.compose.ui.geometry.Size(px, px), alpha = (1f - kotlin.math.abs(smooth - .5f) * 1.6f).coerceIn(0f, .9f))
-            }
-        }
+    // the page is Material You's own surface, nothing tinted: the colour comes from the theme and the photos
+    val ink = cs.onSurface
+    Box(Modifier.fillMaxSize().background(cs.surface)) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
             val pad = ((maxHeight - 96.dp) / 2).coerceAtLeast(60.dp)
             val hubScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -268,7 +212,7 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                 // the photos of the tag in the middle, placed round its name and never over it; a tag with none leaves the page clear and no gap in the list
                 androidx.compose.animation.Crossfade(cur.key, Modifier.fillMaxSize(), animationSpec = androidx.compose.animation.core.tween(320), label = "scatter") { k ->
                     val g = groups.firstOrNull { it.key == k }
-                    if (g != null) ScatterPhotos(k, remember(k, g.value) { g.value.flatMap { n -> n.photos.mapNotNull { it.path } }.distinct().take(7) }, avoid, androidx.compose.ui.geometry.Offset(20f + arrowDp + (sel?.w ?: 200f) / 2, cy), if (dark) Color.hsl(focusHue, .6f, .3f) else Color.hsl(focusHue, .7f, .8f), Modifier.fillMaxSize())
+                    if (g != null) ScatterPhotos(k, remember(k, g.value) { g.value.flatMap { n -> n.photos.mapNotNull { it.path } }.distinct().take(7) }, avoid, androidx.compose.ui.geometry.Offset(20f + arrowDp + (sel?.w ?: 200f) / 2, cy), cs.secondaryContainer, Modifier.fillMaxSize())
                 }
                 androidx.compose.foundation.lazy.LazyColumn(
                     state = ls,
@@ -305,20 +249,22 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                                     }
                                 },
                         ) {
-                            Text("\u2192", style = rflexStyle(36.sp, wght = 400, lh = 1f), color = ink, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterStart).graphicsLayer { alpha = (shift / arrowDp).coerceIn(0f, 1f) })
+                            Text("\u2192", style = rflexStyle(36.sp, wght = 400, lh = 1f), color = cs.primary, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterStart).graphicsLayer { alpha = (shift / arrowDp).coerceIn(0f, 1f) })
                             Text(name, style = st, color = ink, modifier = Modifier.align(Alignment.CenterStart).width(availDp.dp).graphicsLayer { translationX = shift * density; alpha = fade })
                         }
                     }
                 }
-                // what the tag in the middle holds
-                Column(Modifier.align(Alignment.CenterEnd).padding(end = 22.dp, top = 140.dp), horizontalAlignment = Alignment.End) {
-                    val st = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 11.sp, letterSpacing = .6.sp, color = ink.copy(alpha = .75f))
-                    Text("NOTES: ${cur.value.size}", style = st)
-                    Text("PHOTOS: ${cur.value.sumOf { it.photos.size }}", style = st)
+                // what the tag in the middle holds, as tonal chips
+                Column(Modifier.align(Alignment.CenterEnd).padding(end = 22.dp, top = 150.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    fun chip(t: String, bgc: Color, fgc: Color) = @Composable { Text(t, style = MaterialTheme.typography.labelLarge, color = fgc, modifier = Modifier.clip(CircleShape).background(bgc).padding(horizontal = 12.dp, vertical = 5.dp)) }
+                    val notesN = cur.value.size
+                    chip("$notesN note${if (notesN == 1) "" else "s"}", cs.primaryContainer, cs.onPrimaryContainer)()
+                    val ph = cur.value.sumOf { it.photos.size }
+                    if (ph > 0) chip("$ph photo${if (ph == 1) "" else "s"}", cs.secondaryContainer, cs.onSecondaryContainer)()
                     val stars = cur.value.count { it.starred }
-                    if (stars > 0) Text("STARRED: $stars", style = st)
+                    if (stars > 0) chip("$stars starred", cs.tertiaryContainer, cs.onTertiaryContainer)()
                     val pl = cur.value.flatMap { it.places.keys }.distinct().size
-                    if (pl > 0) Text("PLACES: $pl", style = st)
+                    if (pl > 0) chip("$pl place${if (pl == 1) "" else "s"}", cs.surfaceContainerHighest, cs.onSurface)()
                 }
             }
             // where you are in the list: a tick per tag, the current one long
@@ -326,15 +272,15 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                 val lo = (focus - 6).coerceAtLeast(0); val hi = (focus + 6).coerceAtMost(groups.lastIndex)
                 for (k in lo..hi) {
                     val wTick by androidx.compose.animation.core.animateDpAsState(if (k == focus) 18.dp else 7.dp, androidx.compose.animation.core.spring(.6f, 400f), label = "tick")
-                    Box(Modifier.width(wTick).height(2.dp).clip(CircleShape).background(ink.copy(alpha = if (k == focus) .9f else .35f)))
+                    Box(Modifier.width(wTick).height(3.dp).clip(CircleShape).background(if (k == focus) cs.primary else cs.outlineVariant))
                 }
             }
             if (groups.isNotEmpty()) Text(
                 "%02d / %02d".format(focus + 1, groups.size),
-                style = androidx.compose.ui.text.TextStyle(fontFamily = mono, fontSize = 12.sp, letterSpacing = .8.sp, color = ink.copy(alpha = .7f)),
-                modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 28.dp),
+                style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 24.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 6.dp),
             )
-            TabTitle("Canvases", null, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp), ink)
+            TabTitle("Canvases", null, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp).statusBarsPadding(), ink)
         }
     }
 }

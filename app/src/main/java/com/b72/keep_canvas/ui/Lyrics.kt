@@ -55,10 +55,10 @@ fun LyricsCard(text: String, title: String, artist: String, seed: String, modifi
     val (bg, ink) = when (style) { 0 -> swatchOf(h, true); 1 -> swatchOf(h, false); else -> androidx.compose.ui.graphics.Color(0xFF17151B) to swatchOf(h, true).first }
     val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp, color = ink.copy(alpha = .75f))
     val lines = text.lines().filter { it.isNotBlank() }
-    val fs = when { text.length < 60 -> 34.sp; text.length < 130 -> 28.sp; else -> 22.sp }
+    val fs = when { text.length < 60 -> 42.sp; text.length < 130 -> 33.sp; else -> 26.sp }
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(bg).let { m -> if (onEdit != null) m.clickable(onClickLabel = "Edit the lyrics card") { onEdit() } else m }.padding(24.dp)) {
-        Text("“", style = TextStyle(fontFamily = Script, fontSize = 72.sp, lineHeight = 56.sp, color = ink.copy(alpha = .35f)))
-        for (l in lines) Text(l, style = TextStyle(fontFamily = Script, fontSize = fs, lineHeight = fs * 1.2f, color = ink))
+        Text("“", style = TextStyle(fontFamily = Serif, fontSize = 88.sp, lineHeight = 64.sp, color = ink.copy(alpha = .35f)))
+        for (l in lines) Text(l, style = TextStyle(fontFamily = Serif, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = fs, lineHeight = fs * 1.12f, color = ink))
         Spacer(Modifier.height(20.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.GraphicEq, null, Modifier.size(16.dp), tint = ink.copy(alpha = .75f))

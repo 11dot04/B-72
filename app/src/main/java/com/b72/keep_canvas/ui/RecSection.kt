@@ -128,6 +128,15 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
     val has = b.path != null
     fun v(k: String) = b.field(k)
     val rating = b.dbl("rating")?.roundToInt() ?: 0
+    // a book saved before its English details were fetched (an author in Japanese, no description) is brought up to date once
+    androidx.compose.runtime.LaunchedEffect(b.id, v("author"), v("overview")) {
+        if (b.kind != Kind.Book || onData == null) return@LaunchedEffect
+        if (isLatin(v("author")) && v("overview").isNotEmpty()) return@LaunchedEffect
+        val gb = com.b72.keep_canvas.data.googleBook(b.title.ifBlank { noteTitle }, v("author")) ?: return@LaunchedEffect
+        if (!isLatin(v("author")) && gb.author.isNotEmpty()) onData("author", kotlinx.serialization.json.JsonPrimitive(gb.author))
+        if (v("overview").isEmpty() && gb.desc.isNotEmpty()) onData("overview", kotlinx.serialization.json.JsonPrimitive(gb.desc))
+        if (v("pages").isEmpty() && gb.pages.isNotEmpty()) onData("pages", kotlinx.serialization.json.JsonPrimitive(gb.pages))
+    }
     Column(modifier.padding(bottom = 26.dp)) {
         if (onData != null && b.kind != Kind.Link) Tracker(b, fg, onData)
         when (b.kind) {
@@ -146,7 +155,6 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                         Spacer(Modifier.height(8.dp))
                         Text(meta.filter { it.isNotEmpty() }.joinToString(" · "), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp), color = fg.copy(alpha = .78f))
                         if (by.isNotEmpty()) Text(by, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp), color = fg, modifier = Modifier.padding(top = 6.dp))
-                        if (rating > 0) Box(Modifier.padding(top = 12.dp)) { Stars(rating, fg, 26.dp) }
                         if (book && onCover != null) androidx.compose.material3.AssistChip(
                             onClick = { pickCover = true }, label = { Text("Change cover") },
                             modifier = Modifier.padding(top = 12.dp),
@@ -156,7 +164,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                     }
                 }
                 if (pickCover && onCover != null) CoverPicker(b.title.ifBlank { noteTitle }, v("author"), onPick = onCover, onDismiss = { pickCover = false })
-                if (!book && v("overview").isNotEmpty()) Text(v("overview"), maxLines = 6, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .78f), modifier = Modifier.padding(top = 16.dp))
+                if (v("overview").isNotEmpty()) Text(v("overview"), maxLines = if (book) 8 else 6, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .78f), modifier = Modifier.padding(top = 16.dp))
                 Notes("YOUR THOUGHTS", b.body, fg)
             }
             Kind.Track -> {
@@ -171,7 +179,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(block).padding(18.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text((statusLabels(Kind.Track).getOrNull(STATUS_KEYS.indexOf(v("status"))) ?: "Song").uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
-                        Text(v("src").ifEmpty { v("year") }.uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
+                        Text(v("src").uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = ink.copy(alpha = .8f))
                     }
                     if (has) {
                         val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, b.path) { value = com.b72.keep_canvas.data.Images.load(b.path!!, 800) }

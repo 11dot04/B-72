@@ -17,7 +17,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FormatBold
+import androidx.compose.material.icons.rounded.FormatIndentDecrease
 import androidx.compose.material.icons.rounded.FormatIndentIncrease
+import androidx.compose.material.icons.rounded.FormatAlignCenter
+import androidx.compose.material.icons.rounded.FormatAlignJustify
+import androidx.compose.material.icons.rounded.FormatAlignLeft
+import androidx.compose.material.icons.rounded.FormatAlignRight
+import androidx.compose.material.icons.rounded.FormatListNumbered
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.HorizontalRule
+import androidx.compose.material.icons.rounded.KeyboardTab
+import androidx.compose.material.icons.rounded.Subscript
+import androidx.compose.material.icons.rounded.Superscript
 import androidx.compose.material.icons.rounded.FormatItalic
 import androidx.compose.material.icons.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.FormatStrikethrough
@@ -36,6 +47,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -102,13 +118,65 @@ fun styleOf(code: String, base: Float = 18f): SpanStyle? = when (code) {
     "s" -> SpanStyle(textDecoration = TextDecoration.LineThrough)
     "hl" -> SpanStyle(background = Color(0x66FFC928))
     "h1" -> SpanStyle(fontSize = (base * 1.45f).sp, fontWeight = FontWeight.Bold)
+    "h2" -> SpanStyle(fontSize = (base * 1.2f).sp, fontWeight = FontWeight.SemiBold)
     "cur" -> SpanStyle(fontFamily = Script, fontSize = (base * 1.45f).sp)
+    "sup" -> SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = (base * .72f).sp)
+    "sub" -> SpanStyle(baselineShift = BaselineShift.Subscript, fontSize = (base * .72f).sp)
+    "trk" -> SpanStyle(letterSpacing = 1.6.sp, fontSize = (base * .84f).sp, fontWeight = FontWeight.Medium)
     else -> null
+}
+
+/** Codes that format a whole line (quote, indent, alignment...) rather than a stretch of letters. */
+fun isPara(code: String) = code.length in 2..3 && code[0] == 'p'
+
+private val NUM = Regex("^(\\d{1,3})\\. ")
+
+/** Width, in the text's own size, that a list line's marker takes: the wrapped lines hang under the words, not under the marker. */
+private fun hangOf(line: String, base: Float): Float = when {
+    line.startsWith("\u2022 ") -> base * .66f
+    else -> NUM.find(line)?.let { (it.groupValues[1].length * .56f + .55f) * base } ?: 0f
+}
+
+private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphStyle? {
+    val lvl = codes.firstNotNullOfOrNull { c -> if (c.startsWith("pi")) c.drop(2).toIntOrNull() else null } ?: 0
+    var left = lvl * 26f
+    if ("pq" in codes) left += 18f
+    val pull = "pp" in codes
+    var first = left
+    var rest = left + hang
+    if ("ph" in codes) rest += 24f
+    if ("pf" in codes) first += 28f
+    val align = when {
+        pull || "pc" in codes -> TextAlign.Center
+        "pr" in codes -> TextAlign.End
+        "pj" in codes -> TextAlign.Justify
+        else -> TextAlign.Unspecified
+    }
+    if (first == 0f && rest == 0f && align == TextAlign.Unspecified && !pull) return null
+    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.5f * 1.22f).sp else TextUnit.Unspecified)
+}
+
+/** Letter formats first, then one paragraph style per line that has a code, a list marker or both. */
+fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, base: Float) {
+    for (sp in spans) if (!isPara(sp.c)) styleOf(sp.c, base)?.let { b.addStyle(it, sp.s.coerceIn(0, text.length), sp.e.coerceIn(0, text.length)) }
+    var pos = 0
+    while (pos < text.length) {
+        val nl = text.indexOf('\n', pos)
+        val end = if (nl < 0) text.length else nl + 1
+        val lineEnd = if (nl < 0) text.length else nl
+        val codes = spans.filter { isPara(it.c) && it.s < end && it.e > pos }.map { it.c }.toSet()
+        paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base)?.let { b.addStyle(it, pos, end) }
+        if (lineEnd > pos) {
+            if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
+            if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.5f).sp), pos, lineEnd)
+        }
+        pos = end
+    }
 }
 
 fun styled(text: String, spans: List<Span>, base: Float = 18f): AnnotatedString = buildAnnotatedString {
     append(text)
-    for (sp in spans) styleOf(sp.c, base)?.let { addStyle(it, sp.s.coerceIn(0, text.length), sp.e.coerceIn(0, text.length)) }
+    applyFormats(this, text, spans, base)
 }
 
 /** The text being edited plus its formatting. [active] are the formats the next typed letter gets. */
@@ -119,35 +187,176 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
     var indentOn by mutableStateOf(indent)
 
     fun edit(v: TextFieldValue) {
-        if (v.text != tv.text) { spans = adjustSpans(spans, tv.text, v.text, active); tv = v }
-        else { tv = v; if (v.selection.collapsed) active = spans.filter { it.s < v.selection.start && v.selection.start <= it.e }.map { it.c }.toSet() }
+        if (v.text != tv.text) {
+            val old = tv.text
+            spans = adjustSpans(spans, old, v.text, active); tv = v
+            if (v.text.length == old.length + 1) continueList()
+            if (v.text.count { it == '\n' } != old.count { it == '\n' }) renumber()
+        } else { tv = v; if (v.selection.collapsed) active = spans.filter { it.s < v.selection.start && v.selection.start <= it.e }.map { it.c }.toSet() }
     }
 
     fun has(code: String): Boolean {
+        if (isPara(code)) return paraOn(code)
         val sel = tv.selection
         return if (sel.collapsed) code in active
         else spans.any { it.c == code && it.s <= sel.min && it.e >= sel.max }
     }
 
-    fun toggle(code: String) {
-        val sel = tv.selection
-        if (sel.collapsed) { active = if (code in active) active - code else active + code; return }
-        spans = if (has(code)) tidy(spans.flatMap { sp ->
-            if (sp.c != code || sp.e <= sel.min || sp.s >= sel.max) listOf(sp)
-            else listOfNotNull(sp.takeIf { it.s < sel.min }?.copy(e = sel.min), sp.takeIf { it.e > sel.max }?.copy(s = sel.max))
-        }, tv.text.length) else tidy(spans + Span(sel.min, sel.max, code), tv.text.length)
+    private fun cut(code: String, a: Int, b: Int, from: List<Span> = spans) = from.flatMap { sp ->
+        if (sp.c != code || sp.e <= a || sp.s >= b) listOf(sp)
+        else listOfNotNull(sp.takeIf { it.s < a }?.copy(e = a), sp.takeIf { it.e > b }?.copy(s = b))
     }
 
-    /** Puts a bullet at the start of the line the cursor is on, or takes it off. */
-    fun bullet() {
-        val t = tv.text; val at = tv.selection.min
-        val ls = t.lastIndexOf('\n', at - 1) + 1
-        val has = t.startsWith("• ", ls)
-        val nt = if (has) t.removeRange(ls, ls + 2) else t.substring(0, ls) + "• " + t.substring(ls)
-        val d = if (has) -2 else 2
-        spans = adjustSpans(spans, t, nt, emptySet())
-        tv = TextFieldValue(nt, TextRange((tv.selection.start + d).coerceIn(0, nt.length), (tv.selection.end + d).coerceIn(0, nt.length)))
+    fun toggle(code: String) {
+        val sel = tv.selection
+        val other = EXCLUSIVE[code]
+        if (sel.collapsed) { active = if (code in active) active - code else (active + code).let { a -> if (other != null) a - other else a }; return }
+        var base = spans
+        if (other != null) base = cut(other, sel.min, sel.max, base)
+        spans = if (has(code)) tidy(cut(code, sel.min, sel.max, base), tv.text.length) else tidy(base + Span(sel.min, sel.max, code), tv.text.length)
     }
+
+    // ---- lines -----------------------------------------------------------------------------------------------------------------------
+
+    private fun lineEnd(t: String, ls: Int) = t.indexOf('\n', ls).let { if (it < 0) t.length else it }
+
+    /** Start offsets of the lines the selection touches. */
+    private fun selectedLines(): List<Int> {
+        val t = tv.text; val a = tv.selection.min; val b = tv.selection.max
+        val first = t.lastIndexOf('\n', a - 1) + 1
+        val out = arrayListOf(first)
+        var nl = t.indexOf('\n', first)
+        val stop = if (b > a && t[b - 1] == '\n') b - 1 else b
+        while (nl in 0 until stop) { out += nl + 1; nl = t.indexOf('\n', nl + 1) }
+        return out
+    }
+
+    /** One edit made by the app (a list marker, a rule): the formatting is carried through it and the cursor follows. */
+    private fun replaceRange(at: Int, remove: Int, insert: String, caretAfter: Boolean = false) {
+        val t = tv.text
+        val nt = t.substring(0, at) + insert + t.substring(at + remove)
+        spans = adjustSpans(spans, t, nt, emptySet())
+        fun m(x: Int, end: Boolean) = when {
+            x >= at + remove && !(x == at && remove == 0 && !caretAfter) -> x + insert.length - remove
+            x > at -> at + insert.length
+            else -> x
+        }
+        tv = TextFieldValue(nt, TextRange(m(tv.selection.start, false).coerceIn(0, nt.length), m(tv.selection.end, true).coerceIn(0, nt.length)))
+    }
+
+    private fun markerLen(line: String) = when {
+        line.startsWith("\u2022 ") -> 2
+        else -> NUM.find(line)?.value?.length ?: 0
+    }
+
+    /** A bullet, or a number, at the start of every selected line; a second tap takes it off. */
+    fun list(numbered: Boolean) {
+        val starts = selectedLines()
+        val t0 = tv.text
+        val want = { ls: Int -> val l = t0.substring(ls, lineEnd(t0, ls)); if (numbered) NUM.containsMatchIn(l) else l.startsWith("\u2022 ") }
+        val off = starts.all(want)
+        for (ls in starts.reversed()) {
+            val t = tv.text
+            val l = t.substring(ls, lineEnd(t, ls))
+            replaceRange(ls, markerLen(l), if (off) "" else if (numbered) "1. " else "\u2022 ")
+        }
+        renumber()
+    }
+
+    fun bullet() = list(false)
+
+    /** After Enter on a list line the next line starts with the next marker; Enter on an empty marker ends the list. */
+    private fun continueList() {
+        val t = tv.text; val caret = tv.selection.start
+        if (!tv.selection.collapsed || caret < 1 || t[caret - 1] != '\n') return
+        val ps = t.lastIndexOf('\n', caret - 2) + 1
+        val prev = t.substring(ps, caret - 1)
+        val n = NUM.find(prev)
+        when {
+            prev == "\u2022 " || (n != null && prev == n.value) -> replaceRange(ps, caret - ps, "")
+            prev.startsWith("\u2022 ") -> replaceRange(caret, 0, "\u2022 ", caretAfter = true)
+            n != null -> replaceRange(caret, 0, "${n.groupValues[1].toInt() + 1}. ", caretAfter = true)
+        }
+    }
+
+    /** Numbered runs count on from their first line, so a deleted or inserted line never leaves a gap. */
+    private fun renumber() {
+        var pos = 0; var prev = 0
+        while (pos <= tv.text.length) {
+            val t = tv.text
+            val end = lineEnd(t, pos)
+            val m = NUM.find(t.substring(pos, end))
+            if (m != null) {
+                val n = if (prev > 0) prev + 1 else m.groupValues[1].toInt()
+                if (m.groupValues[1].toInt() != n) replaceRange(pos, m.value.length, "$n. ")
+                prev = n
+            } else prev = 0
+            pos = lineEnd(tv.text, pos) + 1
+        }
+    }
+
+    // ---- paragraph formats -----------------------------------------------------------------------------------------------------------
+
+    private fun covers(code: String, ls: Int, t: String): Boolean {
+        val le = lineEnd(t, ls) + 1
+        return spans.any { it.c == code && it.s < le && it.e > ls }
+    }
+
+    private fun paraOn(code: String): Boolean {
+        val t = tv.text
+        val starts = selectedLines()
+        return if (starts.size == 1 && lineEnd(t, starts[0]) == starts[0]) code in active else starts.all { covers(code, it, t) }
+    }
+
+    private fun apply(code: String, on: Boolean, group: List<String> = emptyList()) {
+        val t = tv.text
+        val starts = selectedLines()
+        val a = starts.first(); val b = minOf(lineEnd(t, starts.last()) + 1, t.length)
+        if (b <= a) { active = if (on) (active - group.toSet()) + code else active - code - group.toSet(); return }
+        var l = spans
+        for (g in group) l = cut(g, a, b, l)
+        l = cut(code, a, b, l)
+        spans = tidy(if (on) l + Span(a, b, code) else l, t.length)
+    }
+
+    /** Switches a line format on for the selected lines, or off when they all have it. [group] are formats it replaces (alignments). */
+    fun para(code: String, group: List<String> = emptyList()) = apply(code, !paraOn(code), group)
+
+    fun align(): String = when { paraOn("pc") -> "pc"; paraOn("pr") -> "pr"; paraOn("pj") -> "pj"; else -> "" }
+
+    fun cycleAlign() {
+        val g = listOf("pc", "pr", "pj")
+        when (align()) {
+            "" -> apply("pc", true, g)
+            "pc" -> apply("pr", true, g)
+            "pr" -> apply("pj", true, g)
+            else -> apply("pj", false, g)
+        }
+    }
+
+    fun indentLevel(): Int = (1..4).lastOrNull { paraOn("pi$it") } ?: 0
+
+    /** Pushes the selected lines in from the left, a step at a time (up to four). */
+    fun indentBy(d: Int) {
+        val n = (indentLevel() + d).coerceIn(0, 4)
+        val all = (1..4).map { "pi$it" }
+        if (n == 0) { for (c in all) apply(c, false) } else apply("pi$n", true, all)
+    }
+
+    /** A centred rule of asterisks on its own line, the way a book marks a break in the text. */
+    fun rule() {
+        val t = tv.text
+        val at = tv.selection.max
+        val ls = t.lastIndexOf('\n', at - 1) + 1
+        val lead = if (at == ls) "" else "\n"
+        val ins = lead + "* * *\n"
+        replaceRange(at, 0, ins, caretAfter = true)
+        val t2 = tv.text
+        val rs = at + lead.length
+        spans = tidy(spans + Span(rs, minOf(rs + 6, t2.length), "pc"), t2.length)
+    }
+
+    companion object { private val EXCLUSIVE = mapOf("sup" to "sub", "sub" to "sup", "h1" to "h2", "h2" to "h1") }
 }
 
 fun richTransformation(spans: List<Span>, base: Float) = VisualTransformation { t -> TransformedText(styled(t.text, spans, base), OffsetMapping.Identity) }
@@ -165,6 +374,7 @@ fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) 
             else Text(label, color = if (on) cs.tertiary else cs.onTertiary, style = if (script) androidx.compose.ui.text.TextStyle(fontFamily = Script, fontSize = 26.sp) else MaterialTheme.typography.titleMedium)
         }
     }
+    @Composable fun gap() { Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(22.dp).background(cs.onTertiary.copy(alpha = .28f))) }
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiary).padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -177,11 +387,28 @@ fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) 
             btn(Icons.Rounded.FormatItalic, "Italic", st.has("i")) { st.toggle("i") }
             btn(Icons.Rounded.FormatUnderlined, "Underline", st.has("u")) { st.toggle("u") }
             btn(Icons.Rounded.FormatStrikethrough, "Strike", st.has("s")) { st.toggle("s") }
+            gap()
             btn(Icons.Rounded.Highlight, "Highlight", st.has("hl")) { st.toggle("hl") }
             btn(null, "H", st.has("h1")) { st.toggle("h1") }
+            btn(null, "h", st.has("h2")) { st.toggle("h2") }
             btn(null, "A", st.has("cur"), script = true) { st.toggle("cur") }
-            btn(Icons.Rounded.FormatListBulleted, "Bullet", false) { st.bullet() }
-            btn(Icons.Rounded.FormatIndentIncrease, "Indent first lines", st.indentOn) { st.indentOn = !st.indentOn }
+            btn(Icons.Rounded.Superscript, "Superscript", st.has("sup")) { st.toggle("sup") }
+            btn(Icons.Rounded.Subscript, "Subscript", st.has("sub")) { st.toggle("sub") }
+            btn(null, "AA", st.has("trk")) { st.toggle("trk") }
+            gap()
+            btn(Icons.Rounded.FormatListBulleted, "Bullets", false) { st.list(false) }
+            btn(Icons.Rounded.FormatListNumbered, "Numbered list", false) { st.list(true) }
+            btn(Icons.Rounded.FormatQuote, "Quote", st.has("pq")) { st.para("pq", listOf("pp")) }
+            btn(null, "\u201C", st.has("pp")) { st.para("pp", listOf("pq")) }
+            gap()
+            btn(Icons.Rounded.FormatIndentDecrease, "Indent less", false) { st.indentBy(-1) }
+            btn(Icons.Rounded.FormatIndentIncrease, "Indent more", st.indentLevel() > 0) { st.indentBy(1) }
+            btn(Icons.Rounded.KeyboardTab, "First-line indent", st.indentOn) { st.indentOn = !st.indentOn }
+            btn(
+                when (st.align()) { "pc" -> Icons.Rounded.FormatAlignCenter; "pr" -> Icons.Rounded.FormatAlignRight; "pj" -> Icons.Rounded.FormatAlignJustify; else -> Icons.Rounded.FormatAlignLeft },
+                "Alignment", st.align() != "",
+            ) { st.cycleAlign() }
+            btn(Icons.Rounded.HorizontalRule, "Break", false) { st.rule() }
         }
         Spacer(Modifier.width(6.dp))
         Box(Modifier.size(42.dp).clip(CircleShape).background(cs.onTertiary).clickable(onClickLabel = "Done", onClick = onDone), contentAlignment = Alignment.Center) {

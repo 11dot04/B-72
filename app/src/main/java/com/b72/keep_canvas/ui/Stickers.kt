@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -102,7 +104,7 @@ private fun isStamp(path: String) = path.substringAfterLast('/').startsWith("st_
 private suspend fun nameOf(ctx: android.content.Context, path: String): String {
     com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.let { return it.name }
     names[path]?.let { return it }
-    val fallback = if (isStamp(path)) "Postage stamp" else "Sticker"
+    val fallback = if (isStamp(path)) "Stamp" else "Sticker"
     val label = if (isStamp(path)) null else Vision.labels(ctx, path)?.split(',')?.firstOrNull()?.substringBeforeLast(':')?.trim()?.takeIf { it.isNotEmpty() }
     return (label?.replaceFirstChar { it.uppercase() } ?: fallback).also { names[path] = it }
 }
@@ -152,8 +154,9 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
     val stamps = remember(paths) { paths.filter { isStamp(it) } }
     val placed = remember(paths, onCanvases) { paths.filter { onCanvases[it].orEmpty().isNotEmpty() } }
     val shown = when (tab) { 1 -> stamps; 2 -> placed; else -> stickers }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        if (uris.isNotEmpty()) scope.launch {
+    fun make(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        scope.launch {
             busy = true
             var made = 0
             var unavailable = false
@@ -176,6 +179,20 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
             )
         }
     }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> make(uris) }
+    var shot by remember { mutableStateOf<File?>(null) }
+    val cam = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = shot
+        if (ok && f != null && f.length() > 0) {
+            if (UiPrefs.saveShots.value == 1) scope.launch { keepInGallery(ctx, f) }
+            make(listOf(androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)))
+        }
+    }
+    fun takePhoto() {
+        val f = File(File(ctx.cacheDir, "scans").apply { mkdirs() }, "a${System.nanoTime()}.jpg")
+        shot = f
+        cam.launch(androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f))
+    }
     BackHandler(view != null) { view = null }
     // the assistant, when it is installed, names the artifacts the labeller only has a coarse word for; each name is kept once made
     LaunchedEffect(stickers.size, com.b72.keep_canvas.data.Assistant.installed) {
@@ -188,7 +205,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
             FitTabs(listOf("Stickers", "Stamps", "On canvases"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
             if (shown.isEmpty() && !busy) {
                 Text(
-                    if (paths.isEmpty()) "Pick some photos. A clear subject becomes a die-cut sticker; a photo without one becomes a postage stamp." else "Nothing here yet.",
+                    if (paths.isEmpty()) "Pick some photos or take one. A clear subject becomes a die-cut sticker; a photo without one becomes a die-cut stamp of the whole picture." else "Nothing here yet.",
                     style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp),
                 )
             }
@@ -196,12 +213,14 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 itemsIndexed(shown, key = { _, p -> p }) { _, p -> ArtifactRow(p, onCanvases[p].orEmpty()) { view = p } }
             }
         }
-        ExtendedFloatingActionButton(
-            onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            icon = { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Icon(Icons.Rounded.AutoAwesome, null) },
-            text = { Text(if (busy) "Making artifacts…" else "Make artifacts") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp),
-        )
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SmallFloatingActionButton(onClick = { if (!busy) takePhoto() }, containerColor = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) { Icon(Icons.Rounded.PhotoCamera, "Take a photo") }
+            ExtendedFloatingActionButton(
+                onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                icon = { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Icon(Icons.Rounded.AutoAwesome, null) },
+                text = { Text(if (busy) "Making artifacts…" else "Make artifacts") },
+            )
+        }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp, start = 16.dp, end = 16.dp))
         view?.let { p ->
             ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = { repo.removeSticker(p); view = null })
@@ -270,7 +289,7 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Text(
-                if (isStamp(path)) "Postage stamp" else "Sticker", style = MaterialTheme.typography.titleMedium, color = cs.onSurface,
+                if (isStamp(path)) "Stamp" else "Sticker", style = MaterialTheme.typography.titleMedium, color = cs.onSurface,
                 modifier = Modifier.clip(CircleShape).background(cs.surface).padding(horizontal = 16.dp, vertical = 8.dp),
             )
             IconButton(onClick = { confirm = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.Delete, "Delete") }
@@ -325,7 +344,7 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
         InfoCard("Details", "", Modifier.padding(top = 12.dp)) {
             val f = facts
             val rows = listOfNotNull(
-                "Kind" to (if (isStamp(path)) "Postage stamp: a photo with no single subject" else "Die-cut sticker with an outline"),
+                "Kind" to (if (isStamp(path)) "Stamp: a whole photo with no single subject" else "Die-cut sticker with an outline"),
                 f?.let { "Size" to "${it.w} \u00d7 ${it.h} px" },
                 f?.let { "File" to (if (it.bytes >= 1_048_576) "%.1f MB".format(it.bytes / 1_048_576.0) else "${it.bytes / 1024} KB") },
                 f?.let { "Made" to java.time.Instant.ofEpochMilli(it.made).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", java.util.Locale.ENGLISH)) },
@@ -390,5 +409,24 @@ private fun InfoCard(title: String, note: String, modifier: Modifier = Modifier,
             if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 10.dp, vertical = 4.dp))
         }
         content()
+    }
+}
+
+
+/** A copy of a photo taken for an artifact, in the gallery under Pictures/B-72 (Android 10 and up needs no permission for this). */
+private suspend fun keepInGallery(ctx: android.content.Context, f: File) = withContext(Dispatchers.IO) {
+    runCatching {
+        if (android.os.Build.VERSION.SDK_INT < 29) return@runCatching
+        val v = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "B-72_${System.currentTimeMillis()}.jpg")
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/B-72")
+            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val r = ctx.contentResolver
+        val u = r.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v) ?: return@runCatching
+        r.openOutputStream(u)?.use { o -> f.inputStream().use { it.copyTo(o) } }
+        v.clear(); v.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+        r.update(u, v, null, null)
     }
 }

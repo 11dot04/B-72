@@ -101,6 +101,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
     val density = androidx.compose.ui.platform.LocalDensity.current
     val mark = markOf(s.k)
     val stamp = stampOf(s.k)
+    val ding = dingOf(s.k)
     val isText = s.k.startsWith("t:")
     val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: stamp?.aspect ?: 1f
     val wPx = s.w * cw
@@ -129,6 +130,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
                 color = if (s.c == 3) ink else MarkColors[s.c.mod(MarkColors.size)],
             ),
         )
+        else if (ding != null) DingView(ding.first, ding.second, s.c, Modifier.fillMaxWidth())
         else if (stamp != null) StampView(stamp, s.c, s.id.hashCode(), Modifier.fillMaxWidth())
         else if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
         else {
@@ -144,7 +146,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
 fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val sel = st.items.firstOrNull { it.id == st.selected } ?: return
-    val isMark = sel.k.startsWith("m:") || sel.k.startsWith("x:")
+    val isMark = sel.k.startsWith("m:") || sel.k.startsWith("x:") || sel.k.startsWith("d:")
     Row(
         modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -165,7 +167,7 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -
 
 /** The tray: either the stamps, in the pen colour you pick, or your artifacts. A tap puts the item in the middle of what you are looking at. */
 @Composable
-fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (Stamp, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
+fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (String, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var color by remember { mutableStateOf(0) }
     ModalBottomSheet(onClose) {
@@ -178,16 +180,21 @@ fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (Stamp, Int) -> 
                             .clickable(onClickLabel = "Stamp colour") { color = i },
                     )
                 }
-                LazyVerticalGrid(GridCells.Fixed(3), Modifier.height(420.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for (g in listOf("Lingo", "Brutalist", "Postmodern")) {
+                val dings = remember { availableDings() }
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.height(420.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (g in listOf("Marks", "Nature", "Play")) {
+                        val of = dings.filter { it.group == g }
+                        if (of.isEmpty()) continue
                         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                             Text(g.uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                         }
-                        items(Stamp.entries.filter { it.group == g }) { m ->
+                        items(of.size) { i ->
+                            val m = of[i]
+                            val shape = (m.cp + i).mod(4)
                             Box(
-                                Modifier.aspectRatio(1.15f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.label) { onStamp(m, color) }.padding(14.dp),
+                                Modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = m.name) { onStamp("d:${Integer.toHexString(m.cp)}:$shape", color) }.padding(10.dp),
                                 contentAlignment = Alignment.Center,
-                            ) { StampView(m, color, m.ordinal * 7, if (m.aspect > 1.1f / 1.15f) Modifier.fillMaxHeight(.9f) else Modifier.fillMaxWidth()) }
+                            ) { DingView(m.cp, shape, color, Modifier.fillMaxWidth()) }
                         }
                     }
                 }

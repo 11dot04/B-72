@@ -10,6 +10,7 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.blur.BlurRadiusSpec
 import androidx.compose.ui.graphics.blur.BlurStop
 import androidx.compose.material.icons.rounded.ArrowOutward
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import com.b72.keep_canvas.data.Repo
@@ -421,7 +423,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = Color.White)
                 }
                 if (t.isNotEmpty()) Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 }
             }
         } else {
@@ -431,7 +433,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = fg)
                 }
                 Column(Modifier.padding(top = 28.dp)) {
-                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
+                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                     Spacer(Modifier.height(12.dp))
                     Preview(n, fg)
                 }
@@ -482,7 +484,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
                 Column {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 }
             }
             if (hasList || hasTrip) Box(
@@ -491,11 +493,23 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true), maxLines = 3, style = n.layout)
+                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 Spacer(Modifier.height(10.dp))
                 Preview(n, fg)
             }
         }
+    }
+}
+
+/** Progress through a list as Material 3 Expressive draws it: a wavy ring that fills, with the number done in the middle. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ChecklistRing(done: Int, total: Int, color: Color, size: androidx.compose.ui.unit.Dp) {
+    val target = if (total == 0) 0f else done.toFloat() / total
+    val p by androidx.compose.animation.core.animateFloatAsState(target, androidx.compose.animation.core.spring(.8f, 200f), label = "ring")
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.CircularWavyProgressIndicator(progress = { p }, modifier = Modifier.fillMaxSize(), color = color, trackColor = color.copy(alpha = .2f))
+        Text("$done", style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
@@ -520,13 +534,10 @@ private fun Preview(n: Note, fg: Color) {
                 }
             }
             if (items.size > 4) Text("+ ${items.size - 4} more", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = .65f))
-            if (items.isNotEmpty()) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    progress = { done.toFloat() / items.size }, modifier = Modifier.size(26.dp),
-                    color = fg, trackColor = fg.copy(alpha = .18f), strokeWidth = 4.dp, gapSize = 0.dp,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("$done of ${items.size}", style = MaterialTheme.typography.labelMedium, color = fg.copy(alpha = .75f))
+            if (items.isNotEmpty()) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                ChecklistRing(done, items.size, fg, 44.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("of ${items.size}", style = MaterialTheme.typography.labelMedium, color = fg.copy(alpha = .75f))
             }
         }
         return
@@ -592,35 +603,62 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
     var digestOn by remember { mutableStateOf(com.b72.keep_canvas.data.Digest.enabled(ctx)) }
     var lockOn by remember { mutableStateOf(com.b72.keep_canvas.data.AppLock.enabled(ctx)) }
     val cs = MaterialTheme.colorScheme
+    // one entry: what it is, its icon, and (for a setting that is on or off) its state, shown as a switch
+    class Entry(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val on: Boolean? = null, val keepOpen: Boolean = false, val go: () -> Unit)
+    // a group is a run of entries in one container: rounded hard at its two ends, only slightly between neighbours, as Material 3 Expressive lists are
     @Composable
-    fun Item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean? = null, go: () -> Unit) = androidx.compose.material3.NavigationDrawerItem(
-        label = { Text(label) }, selected = false, onClick = { onClose(); go() }, icon = { Icon(icon, null) },
-        badge = if (on == true) ({ Icon(Icons.Rounded.Check, "On") }) else null,
-        modifier = Modifier.padding(horizontal = 12.dp),
-    )
-    @Composable
-    fun Head(t: String) = Text(t.uppercase(), style = MaterialTheme.typography.labelMedium, color = cs.primary, modifier = Modifier.padding(start = 28.dp, top = 18.dp, bottom = 6.dp))
-    androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = cs.surfaceContainerLow) {
-        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-            Text("B-72", style = flexStyle(34.sp, wght = 700, lh = 1f), color = cs.onSurface, modifier = Modifier.statusBarsPadding().padding(start = 28.dp, top = 24.dp))
-            Text("Settings and your data", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 2.dp))
-            Head("On this phone")
-            Item("On-device assistant", Icons.Rounded.AutoAwesome) { assistant = true }
-            Item("Connected apps", Icons.Rounded.Extension) { services = true }
-            Item("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } }
-            Item("Weekly digest", Icons.Rounded.Notifications, digestOn) { digestOn = !digestOn; com.b72.keep_canvas.data.Digest.setEnabled(ctx, digestOn); say(if (digestOn) "Sunday digest on" else "Sunday digest off") }
-            Head("Privacy")
-            Item("Lock the app", Icons.Rounded.Lock, lockOn) {
-                val on = !lockOn
-                if (com.b72.keep_canvas.data.AppLock.set(ctx, on)) { lockOn = on; say(if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") } else say("Set a screen lock on the phone first")
+    fun Group(title: String, entries: List<Entry>) {
+        Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = cs.primary, modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 8.dp))
+        Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            entries.forEachIndexed { i, e ->
+                val big = 24.dp; val small = 6.dp
+                val shape = RoundedCornerShape(topStart = if (i == 0) big else small, topEnd = if (i == 0) big else small, bottomStart = if (i == entries.lastIndex) big else small, bottomEnd = if (i == entries.lastIndex) big else small)
+                Row(
+                    Modifier.fillMaxWidth().clip(shape).background(cs.surfaceContainerHigh).clickable(onClickLabel = e.label) { if (!e.keepOpen) onClose(); e.go() }.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(if (e.on == true) cs.primaryContainer else cs.secondaryContainer), contentAlignment = Alignment.Center) {
+                        Icon(e.icon, null, Modifier.size(22.dp), tint = if (e.on == true) cs.onPrimaryContainer else cs.onSecondaryContainer)
+                    }
+                    Text(e.label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
+                    if (e.on != null) androidx.compose.material3.Switch(e.on, null)
+                }
             }
-            Item("Archive & trash", Icons.Rounded.Archive) { trash = true }
-            Head("Backup")
-            Item("Back up to Google Drive", Icons.Rounded.CloudUpload) { drive = true }
-            Item("Export backup", Icons.Rounded.Save) { save.launch("b72-backup.zip") }
-            Item("Restore backup", Icons.Rounded.Restore) { load.launch(arrayOf("application/zip", "application/octet-stream")) }
-            Head("Bring notes in")
-            Item("Import from Google Keep", Icons.Rounded.Notes) { keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) }
+        }
+    }
+    androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = cs.surface) {
+        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            Column(Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(cs.primaryContainer).statusBarsPadding().padding(horizontal = 20.dp, vertical = 20.dp)) {
+                Text("B-72", style = flexStyle(40.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onPrimaryContainer)
+                Text("Settings and your data. All of it stays on this phone unless you back it up.", style = MaterialTheme.typography.bodyMedium, color = cs.onPrimaryContainer.copy(alpha = .8f), modifier = Modifier.padding(top = 6.dp))
+            }
+            Group("On this phone", listOf(
+                Entry("On-device assistant", Icons.Rounded.AutoAwesome) { assistant = true },
+                Entry("Connected apps", Icons.Rounded.Extension) { services = true },
+                Entry("Weekly digest", Icons.Rounded.Notifications, digestOn, keepOpen = true) { digestOn = !digestOn; com.b72.keep_canvas.data.Digest.setEnabled(ctx, digestOn); say(if (digestOn) "Sunday digest on" else "Sunday digest off") },
+                Entry("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } },
+            ))
+            var morph by UiPrefs.titleMorph
+            var saveShots by UiPrefs.saveShots
+            Group("Look and feel", listOf(
+                Entry("Titles reshape between tile and note", Icons.Rounded.TextFields, morph == 1, keepOpen = true) { morph = 1 - morph },
+                Entry("Keep artifact photos in the gallery", Icons.Rounded.PhotoLibrary, saveShots == 1, keepOpen = true) { saveShots = 1 - saveShots },
+            ))
+            Group("Privacy", listOf(
+                Entry("Lock the app", Icons.Rounded.Lock, lockOn, keepOpen = true) {
+                    val on = !lockOn
+                    if (com.b72.keep_canvas.data.AppLock.set(ctx, on)) { lockOn = on; say(if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") } else say("Set a screen lock on the phone first")
+                },
+                Entry("Archive & trash", Icons.Rounded.Archive) { trash = true },
+            ))
+            Group("Backup", listOf(
+                Entry("Back up to Google Drive", Icons.Rounded.CloudUpload) { drive = true },
+                Entry("Export backup", Icons.Rounded.Save) { save.launch("b72-backup.zip") },
+                Entry("Restore backup", Icons.Rounded.Restore) { load.launch(arrayOf("application/zip", "application/octet-stream")) },
+            ))
+            Group("Bring notes in", listOf(
+                Entry("Import from Google Keep", Icons.Rounded.Notes) { keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
+            ))
         }
     }
 }
