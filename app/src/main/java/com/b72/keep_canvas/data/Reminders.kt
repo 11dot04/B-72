@@ -94,12 +94,15 @@ class BootReceiver : BroadcastReceiver() {
 }
 
 /** What a launcher shortcut or a reminder notification asks the app to do. */
-class Launch(val openId: String?, val newKind: Kind?, val token: Long = System.nanoTime())
+class Launch(val openId: String?, val newKind: Kind?, val token: Long = System.nanoTime(), val tab: Int? = null)
+
+const val TAB_KEY = "b72.tab"
 
 fun Intent.toLaunch(): Launch? {
     val id = getStringExtra(OPEN_KEY)
     val kind = getStringExtra(NEW_KEY)?.let { k -> Kind.entries.firstOrNull { it.name == k } }
-    return if (id == null && kind == null) null else Launch(id, kind)
+    val tab = getIntExtra(TAB_KEY, -1).takeIf { it >= 0 }
+    return if (id == null && kind == null && tab == null) null else Launch(id, kind, tab = tab)
 }
 
 /**

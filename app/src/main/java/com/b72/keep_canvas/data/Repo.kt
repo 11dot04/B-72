@@ -464,7 +464,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     private fun commit(lib: Library) {
         loaded = Loaded(lib, Source.Own)
-        scope.launch { Store.save(ctx, lib); com.b72.keep_canvas.widget.TripWidget.refresh(ctx) }
+        scope.launch { Store.save(ctx, lib); com.b72.keep_canvas.widget.TripWidget.refresh(ctx); com.b72.keep_canvas.widget.ArtifactWidget.refresh(ctx) }
     }
 
     /** Copies a picked photo into our own folder and measures it (height / width, clamped like the old cards). */

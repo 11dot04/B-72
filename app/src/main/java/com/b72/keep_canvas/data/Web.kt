@@ -213,6 +213,26 @@ private suspend fun googleCover(title: String, author: String): String? {
     return null
 }
 
+/** True for a name written in a Latin script (Western names, with their accents); false for Japanese, Chinese, Korean, Cyrillic and the like. */
+fun isLatin(s: String) = s.none { it.isLetter() && it.code > 0x24F && it.code !in 0x1E00..0x1EFF }
+
+/** What Google Books says about the English edition of a book: the author as written in English, a description, publisher and page count. */
+class GBook(val author: String, val desc: String, val pages: String, val publisher: String, val year: String, val genre: String)
+
+private fun stripTags(t: String) = t.replace(Regex("<[^>]*>"), " ").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace(Regex("\\s+"), " ").trim()
+
+suspend fun googleBook(title: String, author: String): GBook? {
+    val qs = "intitle:\"$title\"" + if (author.isNotEmpty() && isLatin(author)) " inauthor:\"$author\"" else ""
+    val g = json("https://www.googleapis.com/books/v1/volumes?q=${q(qs)}&maxResults=6&langRestrict=en&printType=books") as? JSONObject ?: return null
+    val vols = g.optJSONArray("items")?.objs()?.mapNotNull { it.optJSONObject("volumeInfo") } ?: return null
+    // the first edition that has an English description, else the first at all
+    val v = vols.firstOrNull { it.s("description").isNotEmpty() && isLatin(it.optJSONArray("authors")?.optString(0) ?: "") } ?: vols.firstOrNull { isLatin(it.optJSONArray("authors")?.optString(0) ?: "x") } ?: return null
+    return GBook(
+        v.optJSONArray("authors")?.optString(0) ?: "", stripTags(v.s("description")).take(700), v.s("pageCount").takeIf { it != "0" } ?: "",
+        v.s("publisher"), year(v.s("publishedDate")), v.optJSONArray("categories")?.optString(0) ?: "",
+    )
+}
+
 /** One cover to choose between: where its picture is and who published that edition. */
 class CoverOption(val url: String, val label: String)
 
@@ -270,15 +290,18 @@ suspend fun searchBooks(query: String): List<Cand> {
                 val ed = d.optJSONObject("editions")?.optJSONArray("docs")?.objs()?.firstOrNull()
                 val english = ed?.optJSONArray("language")?.let { a -> (0 until a.length()).any { a.optString(it) == "eng" } } == true
                 val title = if (english && ed?.s("title")?.isNotEmpty() == true) ed.s("title") else d.s("title")
-                val au = d.optJSONArray("author_name")?.optString(0) ?: ""
+                var au = d.optJSONArray("author_name")?.optString(0) ?: ""
                 val yr = d.s("first_publish_year")
+                // the English edition's details: the author's name in Latin letters, and what the book is about
+                val gb = runCatching { googleBook(title, au) }.getOrNull()
+                if (!isLatin(au) && gb != null && gb.author.isNotEmpty()) au = gb.author
                 val ids = listOfNotNull(ed?.s("cover_i")?.ifEmpty { null }, d.s("cover_i").ifEmpty { null }).distinct()
                 var cover: String? = null
                 for (id in ids) { if (jacket(coverShape("https://covers.openlibrary.org/b/id/$id-M.jpg?default=false"))) { cover = "https://covers.openlibrary.org/b/id/$id-L.jpg"; break } }
                 if (cover == null) cover = googleCover(title, au)
                 if (cover == null && ids.isNotEmpty()) cover = "https://covers.openlibrary.org/b/id/${ids.first()}-L.jpg"
                 val pages = ed?.s("number_of_pages")?.ifEmpty { null } ?: d.s("number_of_pages_median")
-                Cand(title, "$au · $yr", cover, mapOf("author" to au, "year" to yr, "pages" to pages, "genre" to (d.optJSONArray("subject")?.optString(0) ?: "")))
+                Cand(title, "$au · $yr", cover, mapOf("author" to au, "year" to yr, "pages" to pages.ifEmpty { gb?.pages ?: "" }, "genre" to (d.optJSONArray("subject")?.optString(0) ?: gb?.genre ?: ""), "overview" to (gb?.desc ?: ""), "publisher" to (gb?.publisher ?: "")))
             } }.awaitAll()
         }
         // books with a cover first, keeping the relevance order otherwise
@@ -292,7 +315,7 @@ suspend fun searchBooks(query: String): List<Cand> {
         val au = v.optJSONArray("authors")?.optString(0) ?: ""
         val img = v.optJSONObject("imageLinks")?.s("thumbnail")?.replaceFirst("http://", "https://")?.replace("&edge=curl", "")?.replaceFirst("zoom=1", "zoom=2")?.ifEmpty { null }
         out += Cand(v.s("title"), "$au · ${year(v.s("publishedDate"))}", img,
-            mapOf("author" to au, "year" to year(v.s("publishedDate")), "pages" to v.s("pageCount"), "genre" to (v.optJSONArray("categories")?.optString(0) ?: "")))
+            mapOf("author" to au, "year" to year(v.s("publishedDate")), "pages" to v.s("pageCount"), "genre" to (v.optJSONArray("categories")?.optString(0) ?: ""), "overview" to stripTags(v.s("description")).take(700), "publisher" to v.s("publisher")))
     }
     return out
 }

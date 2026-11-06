@@ -209,12 +209,38 @@ private fun distance(fg: ByteArray, w: Int, h: Int): FloatArray {
     return d
 }
 
+/**
+ * A subject is a sticker only if it is one clear thing standing in the photo. A mask that is most of the picture, runs off most of its edges,
+ * is scattered or unsure is a scene, not a subject, and the photo becomes a stamp instead.
+ */
+private fun worthASticker(up: Upright, s: Subj): Boolean {
+    val full = FloatArray(up.w * up.h)
+    var n = 0
+    for (y in 0 until s.h) {
+        val gy = s.y + y
+        if (gy < 0 || gy >= up.h) continue
+        for (x in 0 until s.w) {
+            val gx = s.x + x
+            if (gx < 0 || gx >= up.w) continue
+            val v = s.mask[y * s.w + x]
+            full[gy * up.w + gx] = v
+            if (v > .5f) n++
+        }
+    }
+    val frac = n.toDouble() / (up.w * up.h)
+    if (frac < .02 || frac > .6) return false
+    if (s.w > up.w * .88f && s.h > up.h * .93f) return false
+    val q = judge(full, up.w, up.h)
+    return q.why !in setOf("subject fills the photo", "subject spans the whole width", "subject runs off the edges", "subject is thin or scattered", "edges are uncertain")
+}
+
 /** One die-cut sticker (the subject plus a white outline) per subject found in the photo; null if the model could not run. */
 suspend fun makeStickers(src: String, dir: File): List<String>? = withContext(Dispatchers.Default) {
     val up = Seg.run(src) ?: return@withContext null
     val out = mutableListOf<String>()
     for (s in up.subjects) {
         if (s.w < 24 || s.h < 24) continue
+        if (!worthASticker(up, s)) continue
         val r = max(5, (min(s.w, s.h) * .045f).roundToInt())
         val pad = r + 2
         val sw = s.w + 2 * pad
@@ -249,7 +275,10 @@ suspend fun makeStickers(src: String, dir: File): List<String>? = withContext(Di
     out
 }
 
-/** A postage-stamp print of a whole photo (paper border, perforated edge): the artifact for a photo with no single subject. */
+/**
+ * A stamp is the artifact for a photo with no single subject: the whole picture die-cut like a sticker, in a shape of its own (a scalloped
+ * seal, a squircle or a ticket with bites out of its sides) with the same white border.
+ */
 suspend fun makeStamp(src: String, dir: File): String? = withContext(Dispatchers.Default) {
     runCatching {
         val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -257,30 +286,52 @@ suspend fun makeStamp(src: String, dir: File): String? = withContext(Dispatchers
         var ss = 1
         while (max(o.outWidth, o.outHeight) / ss > 1400) ss *= 2
         val bm = android.graphics.BitmapFactory.decodeFile(src, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss }) ?: return@runCatching null
+        val kind = ((System.nanoTime() / 7) % 3).toInt()
         val pw = 640
-        val ph = (pw * bm.height.toFloat() / bm.width).coerceIn(pw * .8f, pw * 1.25f).toInt()
-        val b = 46
+        val ph = if (kind == 0) pw else (pw * bm.height.toFloat() / bm.width).coerceIn(pw * .8f, pw * 1.25f).toInt()
+        val b = 34
         val w = pw + 2 * b
         val h = ph + 2 * b
-        val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-        val c = android.graphics.Canvas(out)
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), android.graphics.Paint().apply { color = 0xFFFBF7EE.toInt() })
+        fun shape(inset: Float): android.graphics.Path {
+            val l = inset; val t = inset; val r = w - inset; val bt = h - inset
+            val path = android.graphics.Path()
+            when (kind) {
+                0 -> {
+                    val rad = min(r - l, bt - t) / 2f
+                    for (i in 0..240) {
+                        val a = i * 2 * Math.PI.toFloat() / 240
+                        val rr = rad * (.93f + .07f * kotlin.math.cos(14 * a))
+                        val x = w / 2f + rr * kotlin.math.cos(a); val y = h / 2f + rr * kotlin.math.sin(a)
+                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    path.close()
+                }
+                1 -> path.addRoundRect(android.graphics.RectF(l, t, r, bt), (r - l) * .2f, (r - l) * .2f, android.graphics.Path.Direction.CW)
+                else -> {
+                    path.addRoundRect(android.graphics.RectF(l, t, r, bt), 36f, 36f, android.graphics.Path.Direction.CW)
+                    val bite = android.graphics.Path().apply { addCircle(l, h / 2f, 42f, android.graphics.Path.Direction.CW); addCircle(r, h / 2f, 42f, android.graphics.Path.Direction.CW) }
+                    path.op(bite, android.graphics.Path.Op.DIFFERENCE)
+                }
+            }
+            return path
+        }
+        // the photo, cut to the inner shape with a soft edge
+        val layer = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val lc = android.graphics.Canvas(layer)
         val sc = max(pw.toFloat() / bm.width, ph.toFloat() / bm.height)
         val sw = pw / sc
         val sh = ph / sc
-        c.drawBitmap(
+        lc.drawBitmap(
             bm,
             android.graphics.Rect(((bm.width - sw) / 2).toInt(), ((bm.height - sh) / 2).toInt(), ((bm.width + sw) / 2).toInt(), ((bm.height + sh) / 2).toInt()),
             android.graphics.RectF(b.toFloat(), b.toFloat(), (b + pw).toFloat(), (b + ph).toFloat()),
             android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
         )
-        val hole = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
-        val nx = 14
-        val px = w / nx.toFloat()
-        val ny = (h / px).roundToInt().coerceAtLeast(2)
-        val py = h / ny.toFloat()
-        for (i in 0..nx) { c.drawCircle(i * px, 0f, 15f, hole); c.drawCircle(i * px, h.toFloat(), 15f, hole) }
-        for (j in 0..ny) { c.drawCircle(0f, j * py, 15f, hole); c.drawCircle(w.toFloat(), j * py, 15f, hole) }
+        lc.drawPath(shape(b.toFloat()), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN) })
+        val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        c.drawPath(shape(0f), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+        c.drawBitmap(layer, 0f, 0f, null)
         val f = File(dir, "st_${System.nanoTime()}.png")
         f.outputStream().use { out.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         f.absolutePath
