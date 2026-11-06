@@ -10,6 +10,7 @@
     <string name="sc_link_long">Save a link</string>
     <string name="widget_trip_desc">What matters now: a close trip, a due reminder, a starred note, an unfinished list or an old note to revisit</string>
     <string name="widget_small_desc">The same, in a small square</string>
+    <string name="widget_artifact_desc">One of your artifacts, with nothing behind it</string>
     <string name="widget_quick_desc">Four buttons: a new note, list, photo note or voice note</string>
     <string name="tile_label">New note</string>
 </resources>
