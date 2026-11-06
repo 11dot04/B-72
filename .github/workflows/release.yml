@@ -1,0 +1,66 @@
+name: Release
+
+# Push a tag such as v2.0.0 and this builds the release APK and publishes it as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+
+      - name: Fetch fonts
+        run: |
+          set -e
+          d=app/src/main/res/font
+          mkdir -p $d
+          B=https://raw.githubusercontent.com/google/fonts/main/ofl
+          curl -fsSL "$B/instrumentserif/InstrumentSerif-Regular.ttf" -o $d/instrumentserif_regular.ttf
+          curl -fsSL "$B/instrumentserif/InstrumentSerif-Italic.ttf" -o $d/instrumentserif_italic.ttf
+          curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
+          curl -fsSL "$B/robotoflex/RobotoFlex%5BGRAD%2CXOPQ%2CXTRA%2CYOPQ%2CYTAS%2CYTDE%2CYTFI%2CYTLC%2CYTUC%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/robotoflex.ttf || rm -f $d/robotoflex.ttf
+
+      - name: Fetch language model
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL "https://storage.googleapis.com/mediapipe-models/text_embedder/universal_sentence_encoder/float32/latest/universal_sentence_encoder.tflite" -o app/src/main/assets/sentence_encoder.tflite || echo "model not fetched; continuing"
+
+      - name: Build
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Name the file and pick the notes
+        run: |
+          v="${GITHUB_REF_NAME}"
+          cp app/build/outputs/apk/release/app-release.apk "B-72-${v}.apk"
+          # the notes are the CHANGELOG section for this version, or generated from commits when there is none
+          awk -v v="${v#v}" '$0 ~ "^## " v "$" {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "" > notes.md; fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: B-72-${{ github.ref_name }}.apk
+          body_path: notes.md
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
