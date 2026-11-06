@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="4dp">
+
+    <ImageView
+        android:id="@+id/art"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/widget_artifact_desc"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="Artifacts you make in B-72 show up here"
+        android:textColor="@color/b72_wacc"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+</FrameLayout>
