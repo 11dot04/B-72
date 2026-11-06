@@ -5,6 +5,7 @@ package com.b72.keep_canvas.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.b72.keep_canvas.data.str
+import com.b72.keep_canvas.data.isLatin
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column

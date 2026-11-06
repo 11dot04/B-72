@@ -423,7 +423,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = Color.White)
                 }
                 if (t.isNotEmpty()) Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 }
             }
         } else {
@@ -433,7 +433,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = fg)
                 }
                 Column(Modifier.padding(top = 28.dp)) {
-                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                     Spacer(Modifier.height(12.dp))
                     Preview(n, fg)
                 }
@@ -484,7 +484,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
                 Column {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 }
             }
             if (hasList || hasTrip) Box(
@@ -493,7 +493,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
                 Spacer(Modifier.height(10.dp))
                 Preview(n, fg)
             }

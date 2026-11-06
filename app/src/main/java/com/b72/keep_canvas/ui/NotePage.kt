@@ -230,7 +230,7 @@ fun NotePage(
             } else if (lay != null && !coverMode) item(key = "title-big") {
                 FitTitle(
                     title, pal.fg, note.id, style = note.layout,
-                    morph = Morph(shared, false), modifier = Modifier.shared(shared, "title-${note.id}", text = true, remeasure = UiPrefs.titleMorph == 1).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
+                    morph = Morph(shared, false), modifier = Modifier.shared(shared, "title-${note.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                 )
             }
