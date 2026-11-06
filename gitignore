@@ -1,0 +1,12 @@
+build/
+.gradle/
+local.properties
+app/src/main/res/font/*.ttf
+# your own licensed fonts and the model fetched by CI
+app/src/main/assets/fonts/
+app/src/main/assets/sentence_encoder.tflite
+*.apk
+*.aab
+.idea/
+*.iml
+.DS_Store
