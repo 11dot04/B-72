@@ -67,6 +67,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.Screenshot
+import androidx.compose.material.icons.outlined.StickyNote2
+import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Screenshot
+import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,14 +85,15 @@ import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Loaded
 import com.b72.keep_canvas.data.Note
 
-private class Dest(val label: String, val icon: ImageVector)
+/** [icon] is the resting outline, [selected] the filled one that takes its place on the open tab. */
+private class Dest(val label: String, val icon: ImageVector, val selected: ImageVector)
 
 private val DESTS = listOf(
-    Dest("Notes", Icons.Rounded.StickyNote2),
-    Dest("Canvas", Icons.Rounded.Dashboard),
-    Dest("Library", Icons.Rounded.CollectionsBookmark),
-    Dest("Artifacts", Icons.Rounded.EmojiEmotions),
-    Dest("Screens", Icons.Rounded.Screenshot),
+    Dest("Notes", androidx.compose.material.icons.Icons.Outlined.StickyNote2, androidx.compose.material.icons.Icons.Filled.StickyNote2),
+    Dest("Canvas", androidx.compose.material.icons.Icons.Outlined.Dashboard, androidx.compose.material.icons.Icons.Filled.Dashboard),
+    Dest("Library", androidx.compose.material.icons.Icons.Outlined.CollectionsBookmark, androidx.compose.material.icons.Icons.Filled.CollectionsBookmark),
+    Dest("Artifacts", androidx.compose.material.icons.Icons.Outlined.EmojiEmotions, androidx.compose.material.icons.Icons.Filled.EmojiEmotions),
+    Dest("Screens", androidx.compose.material.icons.Icons.Outlined.Screenshot, androidx.compose.material.icons.Icons.Filled.Screenshot),
 )
 
 /** The three top-level places as one centred tertiary pill. Depth comes from a surface-coloured halo and tone, not a shadow. */
@@ -104,7 +115,7 @@ fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
                     .padding(horizontal = if (on) 16.dp else 11.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = fg)
+                Icon(if (on) d.selected else d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = fg)
                 AnimatedVisibility(on) {
                     Row {
                         Spacer(Modifier.width(8.dp))
@@ -238,6 +249,7 @@ fun CanvasHub(loaded: Loaded?, onRename: (String, String) -> Unit = { _, _ -> },
                         val fade by androidx.compose.animation.core.animateFloatAsState(if (here) 1f else .3f, androidx.compose.animation.core.spring(1f, 400f), label = "fade")
                         Box(
                             Modifier.fillMaxWidth().height(m.h.dp)
+                                .then(if (here) Modifier.keyContainer("board-${g.key}", 28.dp) else Modifier)
                                 .combinedClickable(
                                     onClickLabel = if (here) "Open the ${g.key} canvas" else "Go to ${g.key}", onLongClickLabel = "Rename or merge",
                                     onLongClick = { newName = g.key; renaming = g.key },

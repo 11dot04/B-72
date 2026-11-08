@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -14,11 +14,15 @@ import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Train
@@ -169,6 +173,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var dismissed by remember { mutableStateOf<String?>(null) }
   var menu by remember { mutableStateOf(false) }
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+  var searching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
   val test: (Note) -> Boolean = if (filter.startsWith("#")) { n -> filter.substring(1) in n.tags } else (FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true })
@@ -196,6 +201,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var asking by remember { mutableStateOf<String?>(null) }
   asking?.let { AskSheet(repo, it, onOpen) { asking = null } }
   BackHandler(menu) { menu = false }
+  BackHandler(searching) { searching = false }
   val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
   val drawerScope = androidx.compose.runtime.rememberCoroutineScope()
   BackHandler(drawer.isOpen) { drawerScope.launch { drawer.close() } }
@@ -280,23 +286,26 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                         Spacer(Modifier.width(6.dp))
                         Text("STARRED", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = cs.onSurfaceVariant)
                     }
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(starred, key = { it.id }) { n ->
-                            val cover = n.cover?.path
-                            val i = starred.indexOf(n)
-                            val bg = if (i % 2 == 0) cs.tertiaryContainer else cs.secondaryContainer
-                            val fg = if (i % 2 == 0) cs.onTertiaryContainer else cs.onSecondaryContainer
-                            Box(Modifier.width(168.dp).height(132.dp).clip(RoundedCornerShape(28.dp)).background(bg).clickable(onClickLabel = "Open") { onOpen(n.id) }) {
-                                if (cover != null) {
-                                    PhotoImage(cover, 400, false, cs.primary, Modifier.fillMaxSize())
-                                    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .62f)))))
-                                }
-                                Text(
-                                    n.title.ifBlank { n.snippet(60) }.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.titleMedium, color = if (cover != null) Color.White else fg,
-                                    modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
-                                )
+                    // a multi-browse carousel: one big card, smaller ones trailing off the edge
+                    androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel(
+                        state = androidx.compose.material3.carousel.rememberCarouselState { starred.size },
+                        preferredItemWidth = 190.dp, itemSpacing = 8.dp,
+                        modifier = Modifier.fillMaxWidth().height(148.dp),
+                    ) { i ->
+                        val n = starred[i]
+                        val cover = n.cover?.path
+                        val bg = if (i % 2 == 0) cs.tertiaryContainer else cs.secondaryContainer
+                        val fg = if (i % 2 == 0) cs.onTertiaryContainer else cs.onSecondaryContainer
+                        Box(Modifier.fillMaxSize().maskClip(RoundedCornerShape(28.dp)).noteContainer(n.id, 28.dp).background(bg).clickable(onClickLabel = "Open") { onOpen(n.id) }) {
+                            if (cover != null) {
+                                PhotoImage(cover, 400, false, cs.primary, Modifier.fillMaxSize())
+                                Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .62f)))))
                             }
+                            Text(
+                                n.title.ifBlank { n.snippet(60) }.ifBlank { "Untitled" }, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.titleMedium, color = if (cover != null) Color.White else fg,
+                                modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
+                            )
                         }
                     }
                 }
@@ -315,7 +324,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 }, onSkip = { com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId })
             } else if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
-                items(shown, key = { it.id }) { n -> Box(Modifier.animateItem()) { if (cols == 1) FeatureTile(n, shared) { onOpen(n.id) } else Tile(n, shared) { onOpen(n.id) } } }
+                items(shown, key = { it.id }) { n -> Box(Modifier.animateItem()) { if (cols == 1) FeatureTile(n, shared, grow = !searching) { onOpen(n.id) } else Tile(n, shared, grow = !searching) { onOpen(n.id) } } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
                     Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
                 }
@@ -323,12 +332,23 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         }
     }
 
-    KeepBar(
-        q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
-        count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
-        menu = { androidx.compose.material3.IconButton({ drawerScope.launch { drawer.open() } }) { Icon(Icons.Rounded.Menu, "Menu") } },
-        modifier = Modifier.align(Alignment.TopCenter),
-    )
+    // the pill is the container the search page grows out of; while the page is open the pill steps aside
+    androidx.compose.animation.AnimatedVisibility(
+        visible = !searching, modifier = Modifier.align(Alignment.TopCenter),
+        enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
+    ) {
+        KeepBar(
+            q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
+            count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
+            menu = { androidx.compose.material3.IconButton({ drawerScope.launch { drawer.open() } }) { Icon(Icons.Rounded.Menu, "Menu") } },
+            onSearch = { searching = true }, container = Modifier.container(SharedCtx(shared.st, this), "search", 28.dp),
+        )
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = searching, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
+    ) {
+        SearchPage(q, { q = it }, if (q.isBlank()) emptyList() else shown, { searching = false }, onOpen, Modifier.container(SharedCtx(shared.st, this), "search", 28.dp))
+    }
     if (menu) Box(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .32f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = false },
@@ -396,7 +416,7 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
  * bottom, where the title sits large; without one, a colour card with the title big and a few lines beneath.
  */
 @Composable
-private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
+private fun FeatureTile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val tones = remember(cs) {
         listOf(cs.surfaceContainerHigh to cs.onSurface, cs.surfaceContainerHighest to cs.onSurface, cs.surfaceContainer to cs.onSurface)
@@ -406,7 +426,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
     val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 900) }, n.id) { value = path?.let { Images.load(it, 900) } }
     val shape = RoundedCornerShape(36.dp)
     val t = n.title
-    Box(Modifier.fillMaxWidth().clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = onClick)) {
+    Box(Modifier.fillMaxWidth().then(if (grow) Modifier.container(shared, "card-${n.id}", 36.dp) else Modifier).clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = onClick)) {
         if (img != null) {
             Box(Modifier.fillMaxWidth().aspectRatio(.92f)) {
                 Image(
@@ -423,7 +443,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = Color.White)
                 }
                 if (t.isNotEmpty()) Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    FitTitle(t, Color.White, n.id, Modifier, maxLines = 3, style = n.layout)
                 }
             }
         } else {
@@ -433,7 +453,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
                     Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(20.dp), tint = fg)
                 }
                 Column(Modifier.padding(top = 28.dp)) {
-                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier, maxLines = 3, style = n.layout)
                     Spacer(Modifier.height(12.dp))
                     Preview(n, fg)
                 }
@@ -445,7 +465,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
 private val TileShape = RoundedCornerShape(18.dp)
 
 @Composable
-private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
+private fun Tile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val tones = remember(cs) {
         listOf(cs.surfaceContainerHigh to cs.onSurface, cs.surfaceContainerHighest to cs.onSurface, cs.surfaceContainer to cs.onSurface)
@@ -467,6 +487,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             .scale(press)
             .graphicsLayer { rotationZ = if (n.starred) (seedMod(n.id, 5) - 2) * 1.1f + 1.4f else 0f }
             .aspectRatio((1 / ratio).toFloat())
+            .then(if (grow) Modifier.container(shared, "card-${n.id}", 18.dp) else Modifier)
             .clip(TileShape)
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
@@ -484,7 +505,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) {
                 // every title fills its tile's width in its own look; the same title flexes on the note page
                 Column {
-                    FitTitle(t, Color.White, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                    FitTitle(t, Color.White, n.id, Modifier, maxLines = 3, style = n.layout)
                 }
             }
             if (hasList || hasTrip) Box(
@@ -493,7 +514,7 @@ private fun Tile(n: Note, shared: SharedCtx, onClick: () -> Unit) {
             ) { Icon(if (hasTrip) Icons.Rounded.Train else Icons.Rounded.Checklist, null, Modifier.size(16.dp), tint = cs.onSurface) }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier.shared(shared, "title-${n.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1), maxLines = 3, style = n.layout, morph = Morph(shared, true))
+                if (t.isNotEmpty()) FitTitle(t, fg, n.id, Modifier, maxLines = 3, style = n.layout)
                 Spacer(Modifier.height(10.dp))
                 Preview(n, fg)
             }
@@ -626,6 +647,26 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
             }
         }
     }
+    // one setting, laid out as pills with their icons: the chosen one is wider and takes the colour
+    @Composable
+    fun Choice(title: String, options: List<Pair<String, androidx.compose.ui.graphics.vector.ImageVector>>, selected: Int, onSelect: (Int) -> Unit) {
+        Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = cs.primary, modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 8.dp))
+        Row(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerHigh).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            options.forEachIndexed { i, (label, icon) ->
+                val on = i == selected
+                val w by androidx.compose.animation.core.animateFloatAsState(if (on) 1.7f else 1f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "choice")
+                val bg by androidx.compose.animation.animateColorAsState(if (on) cs.primary else cs.secondaryContainer, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "choicebg")
+                Row(
+                    Modifier.weight(w).clip(CircleShape).background(bg).clickable(onClickLabel = label) { onSelect(i) }.padding(vertical = 14.dp),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = if (on) cs.onPrimary else cs.onSecondaryContainer)
+                    Spacer(Modifier.width(8.dp))
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) cs.onPrimary else cs.onSecondaryContainer, maxLines = 1)
+                }
+            }
+        }
+    }
     androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = cs.surface) {
         Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Column(Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(cs.primaryContainer).statusBarsPadding().padding(horizontal = 20.dp, vertical = 20.dp)) {
@@ -638,12 +679,12 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
                 Entry("Weekly digest", Icons.Rounded.Notifications, digestOn, keepOpen = true) { digestOn = !digestOn; com.b72.keep_canvas.data.Digest.setEnabled(ctx, digestOn); say(if (digestOn) "Sunday digest on" else "Sunday digest off") },
                 Entry("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } },
             ))
-            var morph by UiPrefs.titleMorph
             var saveShots by UiPrefs.saveShots
             Group("Look and feel", listOf(
-                Entry("Titles reshape between tile and note", Icons.Rounded.TextFields, morph == 1, keepOpen = true) { morph = 1 - morph },
                 Entry("Keep artifact photos in the gallery", Icons.Rounded.PhotoLibrary, saveShots == 1, keepOpen = true) { saveShots = 1 - saveShots },
             ))
+            var duo by UiPrefs.duotone
+            Choice("Photos on a note page", listOf("As taken" to Icons.Rounded.Image, "Duotone" to Icons.Rounded.Contrast), duo) { duo = it }
             Group("Privacy", listOf(
                 Entry("Lock the app", Icons.Rounded.Lock, lockOn, keepOpen = true) {
                     val on = !lockOn
@@ -663,41 +704,78 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
     }
 }
 
+/** The page the search pill opens into: the field at the top, the notes that match under it. */
+@Composable
+private fun SearchPage(q: String, onQ: (String) -> Unit, results: List<Note>, onBack: () -> Unit, onOpen: (String) -> Unit, container: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Column(container.fillMaxSize().background(cs.surface).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(56.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainerHigh).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Close search") }
+            Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
+                if (q.isEmpty()) Text("Search your notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
+                androidx.compose.foundation.text.BasicTextField(
+                    q, onQ, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(cs.primary),
+                )
+            }
+            if (q.isNotEmpty()) androidx.compose.material3.IconButton({ onQ("") }) { Icon(Icons.Rounded.Close, "Clear") }
+        }
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (q.isNotBlank() && results.isEmpty()) item { Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(20.dp)) }
+            items(results, key = { it.id }) { n ->
+                Column(
+                    Modifier.fillMaxWidth().noteContainer(n.id, 20.dp).clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerHigh)
+                        .clickable(onClickLabel = "Open note") { onOpen(n.id) }.padding(horizontal = 18.dp, vertical = 14.dp),
+                ) {
+                    Text(n.title.ifBlank { n.snippet(60) }.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium, color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (n.title.isNotBlank()) n.snippet(110).takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp)) }
+                }
+            }
+        }
+    }
+}
+
 /** The top bar, as Keep has it: a menu, a pill to search in, and the layout and sort controls inside the pill. */
 @Composable
 private fun KeepBar(
     q: String, onQ: (String) -> Unit, list: Boolean, onLayout: () -> Unit, sort: Int, onSort: (Int) -> Unit,
-    count: Int, loading: Boolean, menu: @Composable () -> Unit, modifier: Modifier = Modifier,
+    count: Int, loading: Boolean, menu: @Composable () -> Unit, onSearch: () -> Unit, container: Modifier, modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
     var sorting by remember { mutableStateOf(false) }
     Row(
         modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
-            .height(56.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainerHigh).padding(start = 4.dp, end = 4.dp),
+            .height(56.dp).then(container).clip(RoundedCornerShape(50)).background(cs.surfaceContainerHigh).padding(start = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         menu()
-        Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
+        // tapping the pill opens the search page; the words typed there show here too
+        Box(
+            Modifier.weight(1f).fillMaxHeight().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Search", onClick = onSearch).padding(horizontal = 8.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             if (q.isEmpty()) Text(if (loading) "Loading…" else "Search $count notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
-            androidx.compose.foundation.text.BasicTextField(
-                q, onQ, Modifier.fillMaxWidth(), singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(cs.primary),
-            )
+            else Text(q, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (q.isNotEmpty()) androidx.compose.material3.IconButton({ onQ("") }) { Icon(Icons.Rounded.Close, "Clear") }
         else {
             androidx.compose.material3.IconButton(onLayout) { Icon(if (list) Icons.Rounded.GridView else Icons.Rounded.ViewAgenda, if (list) "Grid view" else "List view") }
             Box {
                 androidx.compose.material3.IconButton({ sorting = true }) { Icon(Icons.Rounded.SwapVert, "Sort") }
-                androidx.compose.material3.DropdownMenu(sorting, { sorting = false }) {
-                    listOf("Newest first", "Oldest first", "Recently edited", "A to Z").forEachIndexed { i, t ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            { Text(t) }, { sorting = false; onSort(i) },
-                            trailingIcon = { if (sort == i) Icon(Icons.Rounded.Check, null) },
-                        )
-                    }
-                }
+                GroupedMenu(sorting, { sorting = false }, listOf(MenuGroup("Sort by",
+                    listOf("Newest first", "Oldest first", "Recently edited", "A to Z").mapIndexed { i, t ->
+                        MenuEntry(t, { sorting = false; onSort(i) }, trailing = if (sort == i) Icons.Rounded.Check else null)
+                    },
+                )))
             }
         }
     }

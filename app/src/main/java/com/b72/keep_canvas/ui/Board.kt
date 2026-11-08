@@ -246,7 +246,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     LaunchedEffect(loaded != null) { placed.seed() }
     var trayMode by remember { androidx.compose.runtime.mutableIntStateOf(0) } // 0 shut, 1 artifacts, 2 marks and stamps
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(t.bg)) {
+    BoxWithConstraints(Modifier.fillMaxSize().keyContainer("board-$tag", 28.dp).background(t.bg)) {
         val swPx = with(density) { maxWidth.toPx() }
         val shPx = with(density) { maxHeight.toPx() }
         val cw = swPx * WIDE

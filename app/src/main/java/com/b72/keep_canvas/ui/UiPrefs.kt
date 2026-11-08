@@ -36,12 +36,14 @@ object UiPrefs {
     /** 1: a title reshapes (size and width axis) between its tile and its page; 0: it is only scaled. */
     val titleMorph = IntPref("titleMorph", 1)
     val saveShots = IntPref("saveShots", 1)
+    /** 1: photos on a note page are tinted in the page's colour (duotone); 0: shown as taken. */
+    val duotone = IntPref("duotone", 1)
 
     fun init(ctx: Context) {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
-        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots).forEach { it.load(p) }
+        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone).forEach { it.load(p) }
     }
     internal fun save(key: String, v: Int) { sp?.edit()?.putInt(key, v)?.apply() }
 }

@@ -94,10 +94,12 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = open to board,
-                transitionSpec = { (fadeIn(fx) + scaleIn(scaleSpec, initialScale = .94f)) togetherWith fadeOut(fx) },
+                // a note grows out of the card that opened it (container transform), so the screens themselves only fade
+                transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
                 label = "screen",
             ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
+                androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
                     value = note?.let { repo.related(it.id) }.orEmpty()
@@ -154,6 +156,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 } }
+                }
             }
         }
         // the nav floats over a soft darkening so it reads against anything scrolling under it

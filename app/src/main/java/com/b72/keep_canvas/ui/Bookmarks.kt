@@ -150,7 +150,7 @@ fun LinkRow(note: Note, b: Block, onOpen: () -> Unit, modifier: Modifier = Modif
     val site = b.field("site").ifBlank { linkHost(b) }
     val facts = (listOf(linkType(b)) + linkFacts(b) + listOfNotNull(b.field("price").takeIf { it.isNotEmpty() })).filter { it.isNotBlank() }
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = "Open the note", onClick = onOpen).padding(12.dp),
+        modifier.fillMaxWidth().noteContainer(note.id, 26.dp).clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).clickable(onClickLabel = "Open the note", onClick = onOpen).padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Box(Modifier.size(100.dp).clip(RoundedCornerShape(18.dp)).background(cs.secondaryContainer), contentAlignment = Alignment.Center) {

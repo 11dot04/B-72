@@ -83,9 +83,27 @@ private val OPTS = listOf(
     Opt("audio", "Audio", Icons.Rounded.Mic), Opt("scan", "Scan", Icons.Rounded.CameraAlt),
 )
 
+/**
+ * The plus menu as a card, not a sheet: the toolbar it was opened from grows into it (container transform) and shrinks back into it on
+ * the way out. Tapping outside, or back, closes it.
+ */
+@Composable
+private fun AddCard(card: SharedCtx?, onClose: () -> Unit, content: @Composable () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    val cs = MaterialTheme.colorScheme
+    val none = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Box(Modifier.then(androidx.compose.foundation.layout.fillMaxSize()).background(cs.scrim.copy(alpha = .32f)).clickable(interactionSource = none, indication = null, onClick = onClose)) {
+        androidx.compose.material3.Surface(
+            Modifier.align(Alignment.BottomCenter).padding(12.dp).let { if (card != null) it.container(card, "add", 32.dp) else it }
+                .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { },
+            shape = RoundedCornerShape(32.dp), color = cs.surfaceContainerHigh,
+        ) { content() }
+    }
+}
+
 /** The plus menu of the note page: everything that can be added to a note, without leaving it. */
 @Composable
-fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = null, onClose: () -> Unit) {
+fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = null, card: SharedCtx? = null, onClose: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf<String?>(null) }
@@ -121,7 +139,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) { initial?.let { go(it) } }
-    ModalBottomSheet(onClose) {
+    AddCard(card, onClose) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))

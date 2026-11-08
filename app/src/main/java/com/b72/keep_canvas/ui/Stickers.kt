@@ -207,6 +207,10 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
     }
 
     Box(Modifier.fillMaxSize()) {
+        // the grid is the container an artifact's page grows out of; it steps aside while a page is open
+        androidx.compose.animation.AnimatedVisibility(visible = view == null, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
+        val av = this
+        val grow = LocalShared.current?.let { SharedCtx(it.st, av) }
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
             TabTitle("Artifacts", paths.size, Modifier.padding(top = 16.dp))
             Text(
@@ -225,8 +229,9 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 GridCells.Fixed(2), Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
                 contentPadding = PaddingValues(bottom = 200.dp),
             ) {
-                items(shown.size, key = { shown[it] }) { i -> Vitrine(shown[i], onCanvases[shown[i]].orEmpty()) { view = shown[i] } }
+                items(shown.size, key = { shown[it] }) { i -> Vitrine(shown[i], onCanvases[shown[i]].orEmpty(), grow) { view = shown[i] } }
             }
+        }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SmallFloatingActionButton(onClick = { if (!busy) takePhoto() }, containerColor = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) { Icon(Icons.Rounded.PhotoCamera, "Take a photo") }
@@ -236,8 +241,13 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 text = { Text(if (busy) "Making artifacts…" else "Make artifacts") },
             )
         }
-        view?.let { p ->
+        val shownPage = view
+        androidx.compose.animation.AnimatedVisibility(visible = shownPage != null, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
+          val p = shownPage ?: return@AnimatedVisibility
+          val pageCtx = LocalShared.current?.let { SharedCtx(it.st, this) }
+          Box(Modifier.let { if (pageCtx != null) it.container(pageCtx, "art-$p", 28.dp) else it }) {
             ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = { repo.removeSticker(p); view = null }, onSaveCopy = { scope.launch { keepInGallery(ctx, File(p)); snack.showSnackbar(if (android.os.Build.VERSION.SDK_INT >= 29) "Saved to Pictures/B-72" else "Saving to the gallery needs Android 10 or newer") } })
+          }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp, start = 16.dp, end = 16.dp))
     }
@@ -251,33 +261,15 @@ private fun accession(path: String, made: Long?): String {
 
 private val Mono10 = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .7.sp)
 
-/** The inside of a display case: dark, lit from above, with a faint sheen of glass and a floor to stand things on. */
+/** The tile an object sits on: a flat tonal container in the app's own colours, like every other card. */
 @Composable
-private fun Case(modifier: Modifier, accent: Color, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
-    val base = androidx.compose.ui.graphics.lerp(Color(0xFF15131A), accent, .12f)
-    Box(
-        modifier.clip(RoundedCornerShape(28.dp)).background(base).drawWithContent {
-            drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color.White.copy(alpha = .22f), Color.Transparent), androidx.compose.ui.geometry.Offset(size.width / 2f, -size.height * .12f), size.width * 1.0f))
-            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .38f)), startY = size.height * .8f, endY = size.height), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height * .8f), size = androidx.compose.ui.geometry.Size(size.width, size.height * .2f))
-            drawContent()
-            drawRect(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color.White.copy(alpha = .08f), Color.Transparent, Color.Transparent, Color.White.copy(alpha = .05f)), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, size.height)))
-            drawRoundRect(Color.White.copy(alpha = .12f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(28.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-        },
-        content = content,
-    )
-}
-
-/** The soft shadow an object throws on the case floor. */
-private fun Modifier.floorShadow(): Modifier = drawBehind {
-    drawOval(
-        androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color.Black.copy(alpha = .6f), Color.Transparent), androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * .86f), size.width * .34f),
-        topLeft = androidx.compose.ui.geometry.Offset(size.width * .16f, size.height * .82f), size = androidx.compose.ui.geometry.Size(size.width * .68f, size.height * .09f),
-    )
+private fun Case(modifier: Modifier, @Suppress("UNUSED_PARAMETER") accent: Color, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    Box(modifier.clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), content = content)
 }
 
 /** One object in its case, with its label underneath, as on a museum wall. */
 @Composable
-private fun Vitrine(path: String, tags: List<String>, onClick: () -> Unit) {
+private fun Vitrine(path: String, tags: List<String>, grow: SharedCtx?, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val img by produceState<ImageBitmap?>(Images.peek(path, 500), path) { value = Images.load(path, 500) }
@@ -285,12 +277,11 @@ private fun Vitrine(path: String, tags: List<String>, onClick: () -> Unit) {
     val facts by produceState<Facts?>(null, path) { value = factsOf(path) }
     val kind = remember(path, aiTick.intValue) { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker" }
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open", indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onClick)) {
-        Case(Modifier.fillMaxWidth().aspectRatio(1f), cs.primary) {
-            Box(Modifier.fillMaxSize().floorShadow())
-            img?.let { Image(it, null, Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 34.dp).rotate(((path.hashCode() % 7) - 3) * 1.4f), contentScale = ContentScale.Fit) }
+        Case(Modifier.fillMaxWidth().aspectRatio(1f).let { if (grow != null) it.container(grow, "art-$path", 28.dp) else it }, cs.primary) {
+            img?.let { Image(it, null, Modifier.fillMaxSize().padding(16.dp).rotate(((path.hashCode() % 7) - 3) * 1.4f), contentScale = ContentScale.Fit) }
             if (tags.isNotEmpty()) Row(Modifier.align(Alignment.TopStart).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF7BE0A0)))
-                Text("ON DISPLAY", style = Mono10, color = Color.White.copy(alpha = .7f), modifier = Modifier.padding(start = 6.dp))
+                Box(Modifier.size(6.dp).clip(CircleShape).background(cs.primary))
+                Text("ON DISPLAY", style = Mono10, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
             }
         }
         Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp)) {
@@ -308,7 +299,7 @@ private suspend fun factsOf(path: String): Facts? = withContext(Dispatchers.IO) 
     Facts(o.outWidth, o.outHeight, f.length(), f.lastModified())
 }
 
-/** One artifact on a page of its own: in its case, which you can tilt, with a wall label and the catalogue notes under it. */
+/** One artifact on a page of its own: on a flat tile you can drag to tilt, with its details card and the catalogue notes under it. */
 @Composable
 private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, onCanvas: (String) -> Unit, onDelete: () -> Unit, onSaveCopy: () -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -337,11 +328,10 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
                 IconButton(onClick = { confirm = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.Delete, "Remove") }
             }
         }
-        // the case: drag to turn the object and look at it from the side
+        // drag to turn the object and look at it from the side
         Case(Modifier.fillMaxWidth().height(400.dp), cs.primary) {
-            Box(Modifier.fillMaxSize().floorShadow())
             Box(
-                Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 34.dp, bottom = 74.dp)
+                Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(vertical = 28.dp)
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragEnd = { scope.launch { tiltX.animateTo(0f, androidx.compose.animation.core.spring(.5f, 120f)) }; scope.launch { tiltY.animateTo(0f, androidx.compose.animation.core.spring(.5f, 120f)) } },
@@ -356,13 +346,7 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
             ) {
                 img?.let { Image(it, null, Modifier.fillMaxSize().rotate(((path.hashCode() % 7) - 3) * 1.2f), contentScale = ContentScale.Fit) }
             }
-            // its reflection in the floor, fading out
-            img?.let {
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(70.dp).padding(horizontal = 24.dp).clipToBounds()) {
-                    Image(it, null, Modifier.fillMaxWidth().height(200.dp).graphicsLayer { scaleY = -1f; alpha = .16f; translationY = -50.dp.toPx() }, contentScale = ContentScale.Fit, alignment = Alignment.TopCenter)
-                }
-            }
-            Text("DRAG TO TURN", style = Mono10, color = Color.White.copy(alpha = .4f), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
+            Text("DRAG TO TURN", style = Mono10, color = cs.onSurfaceVariant.copy(alpha = .6f), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
         }
         // the wall label
         Column(Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(28.dp)).background(cs.surface).padding(22.dp)) {
@@ -387,9 +371,10 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
             f?.let { Text("${if (it.bytes >= 1_048_576) "%.1f MB".format(it.bytes / 1_048_576.0) else "${it.bytes / 1024} KB"}. Kept in this app's own storage; it leaves the phone only if you back it up.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant.copy(alpha = .75f), modifier = Modifier.padding(top = 16.dp)) }
         }
 
-        if (info != null && (info.facts.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("Catalogue notes", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 12.dp)) {
-            if (info.facts.isEmpty()) Text("Not enough to say more than that.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
-            info.facts.chunked(2).forEachIndexed { r, pair ->
+        val factsShown = info?.facts?.filter { it.first.lowercase() !in com.b72.keep_canvas.data.ArtifactAi.JUNK_LABELS }.orEmpty()
+        if (info != null && (factsShown.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("Catalogue notes", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 12.dp)) {
+            if (factsShown.isEmpty()) Text("Not enough to say more than that.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            factsShown.chunked(2).forEachIndexed { r, pair ->
                 Row(Modifier.fillMaxWidth().padding(top = if (r > 0) 14.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     pair.forEach { (k, v) ->
                         Column(Modifier.weight(1f)) {

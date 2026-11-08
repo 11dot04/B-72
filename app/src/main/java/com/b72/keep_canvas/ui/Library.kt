@@ -605,7 +605,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
             // the featured panel: what you wrote about it
             val note: Note = cur.first
             Column(
-                Modifier.padding(horizontal = 16.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(cs.surfaceContainerHigh)
+                Modifier.padding(horizontal = 16.dp, vertical = 16.dp).fillMaxWidth().noteContainer(note.id, 32.dp).clip(RoundedCornerShape(32.dp)).background(cs.surfaceContainerHigh)
                     .clickable(onClickLabel = "Open the note") { onOpen(note.id) }.padding(20.dp),
             ) {
                 // what it is, then what it is about (and, under that, what you made of it), as the concept's panel has it

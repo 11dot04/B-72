@@ -54,22 +54,36 @@ object Rf {
      */
     fun family(wght: Int = 400, wdth: Float = 100f, opsz: Float = 14f, grad: Float = 0f, xtra: Float? = null, ytde: Float? = null, ytas: Float? = null, axes: Map<String, Float>? = null): FontFamily {
         if (id == 0) return flex(wght, wdth)
-        val key = "$wght|${wdth.toInt()}|${opsz.toInt()}|${grad.toInt()}|${xtra?.toInt()}|${ytde?.toInt()}|${ytas?.toInt()}|${axes?.toSortedMap()}"
+        // every request is pulled inside the safe envelope first, so no caller can reach the ends of an axis
+        val w = wght.coerceIn(SAFE_WGHT.first, SAFE_WGHT.last)
+        val x = wdth.coerceIn(if (w > 750) 60f else SAFE_WDTH.start, SAFE_WDTH.endInclusive)
+        val key = "$w|${x.toInt()}|${opsz.toInt()}|${grad.toInt()}|${xtra?.toInt()}|${ytde?.toInt()}|${ytas?.toInt()}|${axes?.toSortedMap()}"
         return cache.getOrPut(key) {
             val s = buildList {
-                add(FontVariation.weight(wght)); add(FontVariation.width(wdth.coerceIn(25f, 151f)))
-                add(FontVariation.Setting("opsz", opsz.coerceIn(8f, 144f))); add(FontVariation.Setting("GRAD", grad.coerceIn(-200f, 150f)))
-                xtra?.let { add(FontVariation.Setting("XTRA", it.coerceIn(323f, 603f))) }
-                ytde?.let { add(FontVariation.Setting("YTDE", it.coerceIn(-305f, -98f))) }
-                ytas?.let { add(FontVariation.Setting("YTAS", it.coerceIn(649f, 854f))) }
+                add(FontVariation.weight(w)); add(FontVariation.width(x))
+                add(FontVariation.Setting("opsz", opsz.coerceIn(8f, 144f))); add(FontVariation.Setting("GRAD", grad.coerceIn(SAFE["GRAD"]!!.first, SAFE["GRAD"]!!.second)))
+                xtra?.let { add(FontVariation.Setting("XTRA", it.coerceIn(SAFE["XTRA"]!!.first, SAFE["XTRA"]!!.second))) }
+                ytde?.let { add(FontVariation.Setting("YTDE", it.coerceIn(SAFE["YTDE"]!!.first, SAFE["YTDE"]!!.second))) }
+                ytas?.let { add(FontVariation.Setting("YTAS", it.coerceIn(SAFE["YTAS"]!!.first, SAFE["YTAS"]!!.second))) }
                 axes?.forEach { (k, v) ->
-                    val r = RANGE[k] ?: return@forEach
+                    val r = SAFE[k] ?: RANGE[k] ?: return@forEach
                     add(FontVariation.Setting(k, v.coerceIn(r.first, r.second)))
                 }
             }
-            FontFamily(Font(id, FontWeight(wght), variationSettings = FontVariation.Settings(*s.toTypedArray())))
+            FontFamily(Font(id, FontWeight(w), variationSettings = FontVariation.Settings(*s.toTypedArray())))
         }
     }
+
+    /**
+     * Roboto Flex is delicate: at the ends of its axes strokes collide, counters close up, tall ascenders and deep descenders run into the
+     * neighbouring lines. The envelope keeps each axis a margin inside its full range (and heavy weights off the narrowest widths).
+     */
+    private val SAFE_WGHT = 200..850
+    private val SAFE_WDTH = 40f..130f
+    private val SAFE = mapOf(
+        "GRAD" to (-150f to 100f), "XTRA" to (345f to 580f), "YTDE" to (-285f to -125f), "YTAS" to (670f to 830f),
+        "XOPQ" to (45f to 150f), "YOPQ" to (45f to 115f), "YTLC" to (430f to 550f), "YTUC" to (540f to 740f), "YTFI" to (580f to 770f),
+    )
 
     private val RANGE = mapOf(
         "XOPQ" to (27f to 175f), "YOPQ" to (25f to 135f), "YTLC" to (416f to 570f), "YTUC" to (528f to 760f),

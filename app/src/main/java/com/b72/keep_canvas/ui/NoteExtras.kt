@@ -67,7 +67,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -287,25 +290,25 @@ fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Uni
             Text("RELATED", style = head, color = ink)
             Text("NOTES", style = head, color = ink)
         }
-        androidx.compose.foundation.lazy.LazyRow(
-            Modifier.padding(top = 16.dp).height(196.dp),
+        // an uncontained carousel: every card keeps its full size and the strip simply runs off the edge
+        androidx.compose.material3.carousel.HorizontalUncontainedCarousel(
+            state = androidx.compose.material3.carousel.rememberCarouselState { related.size },
+            itemWidth = 150.dp,
+            itemSpacing = 10.dp,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            itemsIndexed(related, key = { _, n -> n.id }) { i, n ->
-                val tall = i % 2 == 0
-                RelatedTile(n, if (tall) 146.dp else 118.dp, if (tall) 196.dp else 150.dp, if (tall) 0.dp else 46.dp, ink, onOpen)
-            }
+            modifier = Modifier.padding(top = 16.dp).height(196.dp),
+        ) { i ->
+            RelatedTile(related[i], ink, onOpen, Modifier.fillMaxSize().maskClip(RoundedCornerShape(26.dp)))
         }
     }
 }
 
 @Composable
-private fun RelatedTile(r: Note, w: Dp, h: Dp, top: Dp, ink: Color, onOpen: (String) -> Unit) {
+private fun RelatedTile(r: Note, ink: Color, onOpen: (String) -> Unit, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val path = r.cover?.path
     Box(
-        Modifier.padding(top = top).width(w).height(h).clip(RoundedCornerShape(26.dp)).background(ink.copy(alpha = .16f))
+        modifier.noteContainer(r.id, 26.dp).background(ink.copy(alpha = .16f))
             .clickable(onClickLabel = "Open note") { onOpen(r.id) },
     ) {
         path?.let { PhotoImage(it, 500, false, cs.tertiary, Modifier.fillMaxSize()) }
@@ -347,21 +350,15 @@ fun EditSplit(
                 }
             },
         )
-        DropdownMenu(open, { open = false }, shape = RoundedCornerShape(28.dp)) {
-            DropdownMenuItem(
-                { Column { Text("Title style"); Text(LAYOUTS.firstOrNull { it.id == layout.substringBefore(':') }?.name ?: "Auto", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                { open = false; picking = true }, leadingIcon = { Icon(Icons.Rounded.ViewAgenda, null) },
-            )
-            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            DropdownMenuItem(
-                { Column { Text(if (smart) "Plain text" else "Smart extraction"); Text(if (smart) "Show the text as written" else "For notes built around one fact", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                { open = false; onSmart() }, leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) },
-            )
-            DropdownMenuItem(
-                { Column { Text("Brainstorm with AI"); Text("Next steps, questions, connections", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                { open = false; onBrainstorm() }, leadingIcon = { Icon(Icons.Rounded.Lightbulb, null) },
-            )
-        }
+        GroupedMenu(open, { open = false }, listOf(
+            MenuGroup("Look", listOf(
+                MenuEntry("Title style", { open = false; picking = true }, Icons.Rounded.ViewAgenda, sub = LAYOUTS.firstOrNull { it.id == layout.substringBefore(':') }?.name ?: "Auto"),
+            )),
+            MenuGroup("Tools", listOf(
+                MenuEntry(if (smart) "Plain text" else "Smart extraction", { open = false; onSmart() }, Icons.Rounded.AutoAwesome, sub = if (smart) "Show the text as written" else "For notes built around one fact"),
+                MenuEntry("Brainstorm with AI", { open = false; onBrainstorm() }, Icons.Rounded.Lightbulb, sub = "Next steps, questions, connections"),
+            )),
+        ))
     }
 }
 
@@ -386,17 +383,13 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
         add(Triple(Icons.Rounded.EditCalendar, "Last edited", if (note.edited > 0) at(note.edited) to ago(note.edited) else "Not changed since it was made" to ""))
         if (facts.isNotEmpty()) add(Triple(Icons.Rounded.Notes, "Inside", facts.joinToString(" · ") to ""))
     }
-    DropdownMenu(expanded, onDismiss, shape = RoundedCornerShape(32.dp), containerColor = cs.surfaceContainerHigh, shadowElevation = 8.dp) {
-        Column(Modifier.widthIn(min = 280.dp).padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("ABOUT THIS NOTE", style = caps(cs.onSurfaceVariant, 11), modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 6.dp))
-            rows.forEachIndexed { i, (icon, label, value) ->
-                val big = 22.dp; val small = 6.dp
-                val shape = RoundedCornerShape(
-                    topStart = if (i == 0) big else small, topEnd = if (i == 0) big else small,
-                    bottomStart = if (i == rows.lastIndex) big else small, bottomEnd = if (i == rows.lastIndex) big else small,
-                )
-                Surface(shape = shape, color = cs.surfaceContainerHighest) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    DropdownMenuPopup(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 3)) {
+            MenuDefaults.Label { Text("About this note") }
+            HorizontalDivider(Modifier.padding(MenuDefaults.HorizontalDividerPadding))
+            Column(Modifier.widthIn(min = 280.dp).padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                rows.forEach { (icon, label, value) ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(40.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
                             Icon(icon, null, Modifier.size(20.dp), tint = cs.onPrimaryContainer)
                         }
@@ -409,7 +402,9 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
                     }
                 }
             }
-            Spacer(Modifier.height(4.dp))
+        }
+        Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+        DropdownMenuGroup(shapes = MenuDefaults.groupShape(1, 3)) {
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val csv = androidx.compose.runtime.remember(note.blocks) { com.b72.keep_canvas.data.ledgerCsv(note.blocks.joinToString("\n") { it.tripText() }) }
             val acts = buildList {
@@ -430,29 +425,17 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
                 if (onArchive != null) add(Triple(Icons.Rounded.Inventory2, "Archive", { onDismiss(); onArchive() }))
                 for (t in note.tags) add(Triple(Icons.Rounded.Dashboard, "Open the $t canvas", { onDismiss(); onTag(t) }))
             }
-            acts.forEachIndexed { i, (icon, label, go) ->
-                val big = 22.dp; val small = 6.dp
-                Surface(
-                    shape = RoundedCornerShape(topStart = if (i == 0) big else small, topEnd = if (i == 0) big else small, bottomStart = if (i == acts.lastIndex) big else small, bottomEnd = if (i == acts.lastIndex) big else small),
-                    color = cs.secondaryContainer, onClick = go,
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(icon, null, tint = cs.onSecondaryContainer)
-                        Spacer(Modifier.width(12.dp))
-                        Text(label, style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer)
-                    }
-                }
-                Spacer(Modifier.height(3.dp))
+            acts.forEach { (icon, label, go) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = go, leadingIcon = { Icon(icon, null) })
             }
-            Spacer(Modifier.height(3.dp))
-            Surface(shape = RoundedCornerShape(22.dp), color = cs.errorContainer, onClick = { onDismiss(); onDelete() }) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.DeleteOutline, null, tint = cs.onErrorContainer)
-                    Spacer(Modifier.width(12.dp))
-                    Text("Delete note", style = MaterialTheme.typography.titleSmall, color = cs.onErrorContainer)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+        DropdownMenuGroup(shapes = MenuDefaults.groupShape(2, 3), containerColor = cs.errorContainer) {
+            DropdownMenuItem(
+                text = { Text("Delete note", color = cs.onErrorContainer) },
+                onClick = { onDismiss(); onDelete() },
+                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = cs.onErrorContainer) },
+            )
         }
     }
 }

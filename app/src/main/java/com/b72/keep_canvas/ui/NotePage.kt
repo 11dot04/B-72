@@ -117,6 +117,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.PhotoLibrary
 
 private fun textBlocksOf(n: Note) = n.blocks.filter { it.kind == Kind.Text }
 
@@ -126,7 +127,7 @@ private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
  * The reading view. The title flexes out to full width when the page opens and shrinks into the top bar as
  * you scroll; one photo with one clear subject sits in a Material shape and the subject breaks out at the top.
  */
-/** Scrolls so that what is being typed sits a little above the middle; a large thing (a photo, a card) uses the usual least-scroll rule. */
+/** Keeps what is being typed clear of the keyboard strip and the top bar with the least scrolling; a large thing (a photo, a card) uses the usual least-scroll rule. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private val typingSpec = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
@@ -137,8 +138,15 @@ private val typingSpec = object : androidx.compose.foundation.gestures.BringInto
             kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
             else -> trailing - containerSize
         }
-        val want = containerSize * .4f - size / 2f
-        return if (kotlin.math.abs(offset - want) < size * .6f) 0f else offset - want
+        // a line being typed only moves the page once it nears the keyboard strip or the top bar, and then only by the least that clears it;
+        // pulling every line back to a fixed spot is what made the page drift up and down while typing
+        val low = containerSize * .22f
+        val high = containerSize * .12f
+        return when {
+            trailing > containerSize - low -> trailing - (containerSize - low)
+            offset < high -> offset - high
+            else -> 0f
+        }
     }
 }
 
@@ -155,7 +163,8 @@ fun NotePage(
 ) {
     val pal = rememberNotePalette(note)
     val density = LocalDensity.current
-    var tint by remember { mutableStateOf(true) }
+    // duotone is a setting of the app (in the side menu), not something each page carries
+    val tint = UiPrefs.duotone.value == 1
     var viewer by remember { mutableStateOf<Int?>(null) }
     var editTitle by remember { mutableStateOf(false) }
     var rich by remember { mutableStateOf<RichState?>(null) }
@@ -189,7 +198,7 @@ fun NotePage(
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     viewer?.let { v -> PhotoViewer(photos.mapNotNull { it.path }, v) { viewer = null } }
-    BoxWithConstraints(Modifier.fillMaxSize().background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
+    BoxWithConstraints(Modifier.fillMaxSize().container(shared, "card-${note.id}", 28.dp).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
@@ -230,7 +239,7 @@ fun NotePage(
             } else if (lay != null && !coverMode) item(key = "title-big") {
                 FitTitle(
                     title, pal.fg, note.id, style = note.layout,
-                    morph = Morph(shared, false), modifier = Modifier.shared(shared, "title-${note.id}", text = true, remeasure = UiPrefs.titleMorph.value == 1).onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
+                    modifier = Modifier.onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
                         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { editTitle = true },
                 )
             }
@@ -313,34 +322,26 @@ fun NotePage(
                     modifier = Modifier.padding(bottom = 18.dp),
                 )
             }
-            if (photos.isNotEmpty()) item(key = "photo-tools") {
+            if (photos.isNotEmpty() && (photos.size == 1 && photos[0].cutPath() != null || repo != null)) item(key = "photo-tools") {
                 val pb = photos[0]
                 val cut = photos.size == 1 && pb.cutPath() != null
                 val on = cut && canPopOut(pb)
                 var menu by remember { mutableStateOf(false) }
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), horizontalAlignment = Alignment.End) {
-                    androidx.compose.material3.SplitButtonLayout(
-                        leadingButton = {
-                            androidx.compose.material3.SplitButtonDefaults.TonalLeadingButton(onClick = { tint = !tint }) {
-                                Icon(Icons.Rounded.Contrast, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (tint) "Duotone on" else "Duotone")
-                            }
-                        },
-                        trailingButton = {
-                            androidx.compose.material3.SplitButtonDefaults.TonalTrailingButton(checked = menu, onCheckedChange = { menu = it }) {
-                                Icon(Icons.Rounded.KeyboardArrowDown, "More photo options")
-                            }
-                        },
-                    )
-                    androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
-                        if (cut) androidx.compose.material3.DropdownMenuItem(
-                            { Text(if (on) "Pop out: on" else "Pop out the subject") },
-                            { menu = false; onSetData(pb.id, "pop", if (on) 0 else 1) },
-                            leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) },
-                        )
-                        androidx.compose.material3.DropdownMenuItem({ Text("Duotone " + if (tint) "off" else "on") }, { menu = false; tint = !tint }, leadingIcon = { Icon(Icons.Rounded.Contrast, null) })
-                        if (repo != null) androidx.compose.material3.DropdownMenuItem({ Text("Remove photo") }, { menu = false; repo.removeBlock(note.id, pb.id) }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
+                    Box {
+                        androidx.compose.material3.FilledTonalButton(onClick = { menu = true }) {
+                            Icon(Icons.Rounded.PhotoLibrary, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (photos.size == 1) "Photo" else "Photos")
+                        }
+                        GroupedMenu(menu, { menu = false }, listOf(
+                            MenuGroup("Photo", listOfNotNull(
+                                if (cut) MenuEntry(if (on) "Pop out: on" else "Pop out the subject", { menu = false; onSetData(pb.id, "pop", if (on) 0 else 1) }, Icons.Rounded.AutoAwesome) else null,
+                            )),
+                            MenuGroup(null, listOfNotNull(
+                                if (repo != null) MenuEntry("Remove photo", { menu = false; repo.removeBlock(note.id, pb.id) }, Icons.Rounded.DeleteOutline, tint = MaterialTheme.colorScheme.error) else null,
+                            )),
+                        ))
                     }
                     val why = if (cut) popWhy(pb) else ""
                     if (cut && !on && why.isNotEmpty() && pb.dbl("pop") == null) Text(
@@ -431,14 +432,19 @@ fun NotePage(
         var setupAi by remember { mutableStateOf(false) }
         val smartOn = note.blocks.any { it.kind == Kind.Poster }
         // reminder and details on the sides, the primary action in the middle as a split button
-        if (rich == null && !tagging) HorizontalFloatingToolbar(
+        // the toolbar is the container the add card grows out of, so it steps aside (and comes back) as that card opens and closes
+        androidx.compose.animation.AnimatedVisibility(
+            visible = rich == null && !tagging && !adding,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
+        ) { HorizontalFloatingToolbar(
             expanded = barOpen,
             // neutral on purpose: the page takes its colours from the note, so the bar must not share them
             colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
                 toolbarContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 toolbarContentColor = MaterialTheme.colorScheme.onSurface,
             ),
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            modifier = Modifier.container(SharedCtx(shared.st, this), "add", 28.dp),
             leadingContent = {
                 IconButton(onClick = onStar) { Icon(if (note.starred) Icons.Rounded.Star else Icons.Rounded.StarOutline, if (note.starred) "Remove star" else "Star this note") }
                 IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
@@ -455,8 +461,10 @@ fun NotePage(
                     smart = smartOn, layout = note.layout, onAdd = { adding = true }, onLayout = onLayout, onSmart = { onSmart(!smartOn) }, onBrainstorm = { brainstorm = true },
                 )
             },
-        )
-        if (adding && repo != null) AddSheet(repo, note.id, hasList = note.blocks.any { it.kind == Kind.Checklist }, initial = addFirst) { adding = false; onAddFirstDone() }
+        ) }
+        if (repo != null) androidx.compose.animation.AnimatedVisibility(
+            visible = adding, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
+        ) { AddSheet(repo, note.id, hasList = note.blocks.any { it.kind == Kind.Checklist }, initial = addFirst, card = SharedCtx(shared.st, this)) { adding = false; onAddFirstDone() } }
         // while words are being typed: the formatting strip over the keyboard, with a tick to finish
         rich?.let { r ->
             val fm = androidx.compose.ui.platform.LocalFocusManager.current
