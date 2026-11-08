@@ -19,7 +19,7 @@ android {
         minSdk = 26          // variable fonts need 26
         targetSdk = 36
         versionCode = 100    // above the Flutter build's, so the update is accepted
-        versionName = "2.0.0"
+        versionName = "1.0.0"
         // free key from themoviedb.org, stored as the TMDB_KEY repository secret; empty is fine
         buildConfigField("String", "TMDB_KEY", "\"${System.getenv("TMDB_KEY") ?: ""}\"")
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${System.getenv("SPOTIFY_CLIENT_ID") ?: ""}\"")
