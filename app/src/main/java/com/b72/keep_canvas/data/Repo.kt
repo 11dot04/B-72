@@ -282,7 +282,9 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         val p = linkPreview(b.body.trim())
         if (p.isEmpty()) return
         val path = saveImage(p["image"], imageDir(ctx))
-        val extra = listOf("desc", "site", "src", "stats").mapNotNull { k -> p[k]?.takeIf { it.isNotEmpty() }?.let { k to (JsonPrimitive(it) as kotlinx.serialization.json.JsonElement) } }.toMap()
+        val icon = saveImage(p["icon"], imageDir(ctx), 100)
+        val extra = (LINK_KEYS.mapNotNull { k -> p[k]?.takeIf { it.isNotEmpty() }?.let { k to (JsonPrimitive(it) as kotlinx.serialization.json.JsonElement) } } +
+            listOfNotNull(icon?.let { "icon" to (JsonPrimitive(it) as kotlinx.serialization.json.JsonElement) }, "rev" to (JsonPrimitive("2") as kotlinx.serialization.json.JsonElement))).toMap()
         val n = note(noteId) ?: return
         upsert(n.copy(blocks = n.blocks.map { if (it.id == blockId) it.copy(title = b.title.ifEmpty { p["title"] ?: "" }, path = path ?: it.path, data = it.data + extra) else it }))
     }

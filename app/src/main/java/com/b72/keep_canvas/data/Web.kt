@@ -42,11 +42,11 @@ suspend fun fetchText(url: String, ua: String = UA): String? = withContext(Dispa
 private const val CRAWLER = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
 
 /** Downloads an image into [dir] and returns its path. */
-suspend fun saveImage(url: String?, dir: File): String? {
+suspend fun saveImage(url: String?, dir: File, min: Int = 800): String? {
     if (url.isNullOrEmpty()) return null
     return withContext(Dispatchers.IO) {
         val b = get(url) ?: return@withContext null
-        if (b.size < 800) return@withContext null
+        if (b.size < min) return@withContext null
         dir.mkdirs()
         File(dir, "w_${System.currentTimeMillis()}.jpg").apply { writeBytes(b) }.path
     }
@@ -334,11 +334,11 @@ private suspend fun specialPreview(url: String): Map<String, String> {
     return when {
         host == "open.spotify.com" -> {
             val j = json("https://open.spotify.com/oembed?url=${q(url)}") as? JSONObject
-            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "Spotify", "desc" to "")
+            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "Spotify", "desc" to "", "type" to "Music")
         }
         host.endsWith("youtube.com") || host == "youtu.be" -> {
             val j = json("https://www.youtube.com/oembed?format=json&url=${q(url)}") as? JSONObject
-            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "YouTube", "desc" to j.s("author_name"))
+            if (j == null) emptyMap() else mapOf("title" to j.s("title"), "image" to j.s("thumbnail_url"), "site" to "YouTube", "desc" to "", "author" to j.s("author_name"), "type" to "Video")
         }
         host.endsWith("wikipedia.org") -> {
             val lang = host.substringBefore('.').takeIf { it.length in 2..3 } ?: "en"
@@ -372,12 +372,86 @@ private suspend fun ogPreview(url: String): Map<String, String> {
     val host = runCatching { URL(url).host.removePrefix("www.") }.getOrDefault("")
     val title = meta(h, "og:title") ?: meta(h, "twitter:title") ?: Regex("<title[^>]*>([^<]*)</title>", RegexOption.IGNORE_CASE).find(h)?.groupValues?.get(1)
     val img = meta(h, "og:image") ?: meta(h, "twitter:image")
+    val ld = ldFacts(h)
+    val author = (meta(h, "author") ?: meta(h, "article:author")?.takeIf { !it.startsWith("http") } ?: ld["author"] ?: meta(h, "twitter:creator"))?.trim()?.takeIf { it.length in 2..60 }
+    val date = (meta(h, "article:published_time") ?: meta(h, "og:published_time") ?: meta(h, "date") ?: meta(h, "datePublished") ?: ld["date"])?.let { niceDate(it) }
+    val amount = meta(h, "product:price:amount") ?: meta(h, "og:price:amount") ?: ld["price"]
+    val currency = meta(h, "product:price:currency") ?: meta(h, "og:price:currency") ?: ld["currency"]
+    val iconRef = Regex("<link[^>]+rel=[\"'][^\"']*icon[^\"']*[\"'][^>]*>", RegexOption.IGNORE_CASE).findAll(h).mapNotNull { m ->
+        val href = Regex("href=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(m.value)?.groupValues?.get(1) ?: return@mapNotNull null
+        (if (m.value.contains("apple-touch", true)) 0 else if (href.endsWith(".png", true)) 1 else 2) to href
+    }.minByOrNull { it.first }?.second
     return buildMap {
         put("title", title?.let { clean(it) } ?: "")
         put("desc", meta(h, "og:description") ?: meta(h, "description") ?: "")
         put("site", meta(h, "og:site_name") ?: host)
         if (img != null) runCatching { put("image", URL(URL(url), img).toString()) }
+        put("type", linkKind(host, meta(h, "og:type") ?: ""))
+        author?.let { put("author", clean(it)) }
+        date?.let { put("date", it) }
+        readingTime(h)?.let { put("read", it) }
+        if (!amount.isNullOrBlank()) put("price", price(amount, currency))
+        runCatching { put("icon", URL(URL(url), iconRef ?: "/favicon.ico").toString()) }
     }
+}
+
+/** What sort of thing a link is, in one word, from its Open Graph type and where it lives. */
+fun linkKind(host: String, og: String = ""): String = when {
+    host.endsWith("youtube.com") || host == "youtu.be" || host.endsWith("vimeo.com") || host.endsWith("twitch.tv") || og.startsWith("video") -> "Video"
+    host.endsWith("spotify.com") || host.endsWith("soundcloud.com") || host.endsWith("bandcamp.com") || host.endsWith("music.apple.com") || og.startsWith("music") -> "Music"
+    host.endsWith("wikipedia.org") -> "Reference"
+    host.endsWith("github.com") || host.endsWith("gitlab.com") || host.endsWith("stackoverflow.com") -> "Code"
+    host.endsWith("reddit.com") || host == "x.com" || host.endsWith("twitter.com") || host.endsWith("threads.net") || host.endsWith("instagram.com") || host.endsWith("mastodon.social") -> "Post"
+    host.endsWith("amazon.in") || host.endsWith("amazon.com") || host.endsWith("flipkart.com") || og == "product" || og.startsWith("og:product") -> "Product"
+    host.endsWith("maps.app.goo.gl") || host.endsWith("google.com") && host.startsWith("maps") -> "Place"
+    og == "article" -> "Article"
+    og == "profile" -> "Profile"
+    else -> "Page"
+}
+
+private fun niceDate(s: String): String? = runCatching {
+    java.time.LocalDate.parse(s.trim().take(10)).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+}.getOrNull()
+
+private fun price(amount: String, currency: String?): String {
+    val a = amount.trim().removeSuffix(".00")
+    val sym = when (currency?.uppercase()) { "INR" -> "\u20b9"; "USD" -> "$"; "EUR" -> "\u20ac"; "GBP" -> "\u00a3"; "JPY" -> "\u00a5"; null, "" -> ""; else -> currency.uppercase() + " " }
+    return sym + a
+}
+
+/** "6 min read", only for a page that is actually an article: the words of its <article> (or body), at about 220 a minute. */
+private fun readingTime(h: String): String? {
+    val body = Regex("<article[^>]*>(.*?)</article>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(h)?.groupValues?.get(1) ?: return null
+    val text = clean(body.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), " "))
+    val words = text.split(' ').count { it.length > 1 }
+    return if (words >= 300) "${(words / 220.0).let { kotlin.math.ceil(it).toInt() }} min read" else null
+}
+
+/** The few facts schema.org data carries that plain meta tags often lack: author, publication date, price. */
+private fun ldFacts(h: String): Map<String, String> {
+    val out = HashMap<String, String>()
+    for (m in Regex("<script[^>]+ld\\+json[^>]*>(.*?)</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(h)) {
+        val j = runCatching { org.json.JSONTokener(m.groupValues[1]).nextValue() }.getOrNull() ?: continue
+        fun walk(o: Any?, depth: Int) {
+            if (depth > 5) return
+            when (o) {
+                is JSONArray -> for (i in 0 until o.length()) walk(o.opt(i), depth + 1)
+                is JSONObject -> {
+                    o.optString("datePublished").takeIf { it.isNotBlank() }?.let { out.putIfAbsent("date", it) }
+                    when (val a = o.opt("author")) { is JSONObject -> a.optString("name"); is JSONArray -> (a.optJSONObject(0)?.optString("name") ?: a.optString(0)); is String -> a; else -> null }
+                        ?.takeIf { it.isNotBlank() }?.let { out.putIfAbsent("author", it) }
+                    val offer = o.optJSONObject("offers") ?: o.optJSONArray("offers")?.optJSONObject(0)
+                    if (offer != null) {
+                        offer.opt("price")?.toString()?.takeIf { it.isNotBlank() && it != "null" }?.let { out.putIfAbsent("price", it) }
+                        offer.optString("priceCurrency").takeIf { it.isNotBlank() }?.let { out.putIfAbsent("currency", it) }
+                    }
+                    for (k in listOf("@graph", "mainEntity")) if (o.has(k)) walk(o.opt(k), depth + 1)
+                }
+            }
+        }
+        walk(j, 0)
+    }
+    return out
 }
 
 /** Reads a recipe page's schema.org data (most recipe sites publish it). */
@@ -526,3 +600,6 @@ suspend fun fetchLyrics(artist: String, title: String): List<String> {
     }
     return emptyList()
 }
+
+/** The keys of a link's details, kept on its block. */
+val LINK_KEYS = listOf("desc", "site", "src", "stats", "author", "date", "read", "type", "price")
