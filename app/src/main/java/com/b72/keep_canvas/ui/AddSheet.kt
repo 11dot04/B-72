@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -92,7 +93,7 @@ private fun AddCard(card: SharedCtx?, onClose: () -> Unit, content: @Composable 
     androidx.activity.compose.BackHandler(onBack = onClose)
     val cs = MaterialTheme.colorScheme
     val none = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Box(Modifier.then(androidx.compose.foundation.layout.fillMaxSize()).background(cs.scrim.copy(alpha = .32f)).clickable(interactionSource = none, indication = null, onClick = onClose)) {
+    Box(Modifier.fillMaxSize().background(cs.scrim.copy(alpha = .32f)).clickable(interactionSource = none, indication = null, onClick = onClose)) {
         androidx.compose.material3.Surface(
             Modifier.align(Alignment.BottomCenter).padding(12.dp).let { if (card != null) it.container(card, "add", 32.dp) else it }
                 .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { },

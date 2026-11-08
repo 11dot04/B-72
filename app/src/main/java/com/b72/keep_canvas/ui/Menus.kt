@@ -44,7 +44,7 @@ fun GroupedMenu(expanded: Boolean, onDismiss: () -> Unit, groups: List<MenuGroup
         shown.forEachIndexed { gi, g ->
             DropdownMenuGroup(shapes = MenuDefaults.groupShape(gi, shown.size)) {
                 if (g.label != null) {
-                    MenuDefaults.Label { Text(g.label) }
+                    MenuLabel(g.label)
                     HorizontalDivider(Modifier.padding(MenuDefaults.HorizontalDividerPadding))
                 }
                 g.items.forEach { e ->
@@ -65,4 +65,10 @@ fun GroupedMenu(expanded: Boolean, onDismiss: () -> Unit, groups: List<MenuGroup
             if (gi != shown.lastIndex) Spacer(Modifier.height(MenuDefaults.GroupSpacing))
         }
     }
+}
+
+/** The small caption above a group of rows. */
+@Composable
+fun MenuLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp))
 }

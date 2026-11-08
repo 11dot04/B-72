@@ -385,7 +385,7 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
     }
     DropdownMenuPopup(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 3)) {
-            MenuDefaults.Label { Text("About this note") }
+            MenuLabel("About this note")
             HorizontalDivider(Modifier.padding(MenuDefaults.HorizontalDividerPadding))
             Column(Modifier.widthIn(min = 280.dp).padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 rows.forEach { (icon, label, value) ->
