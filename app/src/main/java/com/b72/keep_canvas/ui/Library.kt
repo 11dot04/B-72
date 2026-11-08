@@ -54,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -516,7 +517,9 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     val counts = remember(notes) { SHELVES.map { s -> notes.count { n -> n.blocks.any { it.kind == s.kind } } } }
     var stage by rememberSaveable { mutableIntStateOf(-1) }
     val all = remember(notes, shelf) {
-        notes.asReversed().mapNotNull { n -> n.blocks.firstOrNull { it.kind == SHELVES[shelf].kind }?.let { n to it } }
+        // a note can hold several links, and each is a bookmark of its own; every other shelf shows a note's first
+        if (SHELVES[shelf].kind == Kind.Link) notes.asReversed().flatMap { n -> n.blocks.filter { it.kind == Kind.Link }.map { n to it } }
+        else notes.asReversed().mapNotNull { n -> n.blocks.firstOrNull { it.kind == SHELVES[shelf].kind }?.let { n to it } }
     }
     val items = remember(all, stage) { if (stage < 0) all else all.filter { it.second.str("status") == STATUS_KEYS[stage] } }
     val stats = remember(all) {
@@ -556,6 +559,11 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
                 style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp),
             )
         } else {
+            if (SHELVES[shelf].kind == Kind.Link) {
+                LinkShelf(items, onOpen)
+                Spacer(Modifier.height(150.dp))
+                return@Column
+            }
             val cur = items.getOrNull((if (isFilm) filmIdx else if (isBook) bookIdx else focus).coerceIn(0, items.lastIndex))!!
             Text(
                 cur.second.title.ifBlank { cur.first.title }.ifBlank { SHELVES[shelf].name },
@@ -634,5 +642,24 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         onClick = { onAdd(SHELVES[shelf].kind) },
         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp),
     )
+    }
+}
+
+
+/** The Links shelf is a list, not a carousel: bookmarks are looked through and searched, so they are filtered by site and each says what it is. */
+@Composable
+private fun LinkShelf(items: List<Pair<Note, Block>>, onOpen: (String) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var site by rememberSaveable { mutableStateOf("") }
+    var limit by rememberSaveable { mutableIntStateOf(15) }
+    val sites = remember(items) { items.groupingBy { linkHost(it.second) }.eachCount().filterKeys { it.isNotEmpty() }.entries.sortedByDescending { it.value }.take(10) }
+    val shown = remember(items, site) { if (site.isEmpty()) items else items.filter { linkHost(it.second) == site } }
+    if (sites.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.material3.FilterChip(site.isEmpty(), { site = "" }, label = { Text("All sites") })
+        for ((h, n) in sites) androidx.compose.material3.FilterChip(site == h, { site = if (site == h) "" else h }, label = { Text("$h  $n") })
+    }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for ((n, b) in shown.take(limit)) LinkRow(n, b, { onOpen(n.id) })
+        if (shown.size > limit) androidx.compose.material3.TextButton({ limit += 20 }, Modifier.align(Alignment.CenterHorizontally)) { Text("Show more (${shown.size - limit})") }
     }
 }

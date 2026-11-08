@@ -138,6 +138,15 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
         if (v("overview").isEmpty() && gb.desc.isNotEmpty()) onData("overview", kotlinx.serialization.json.JsonPrimitive(gb.desc))
         if (v("pages").isEmpty() && gb.pages.isNotEmpty()) onData("pages", kotlinx.serialization.json.JsonPrimitive(gb.pages))
     }
+    // a link saved before bookmarks carried their author, date, kind and icon is read again once, filling only what is missing
+    val linkCtx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(b.id, v("rev")) {
+        if (b.kind != Kind.Link || onData == null || v("rev") == "2" || b.body.isBlank()) return@LaunchedEffect
+        val p = com.b72.keep_canvas.data.linkPreview(linkUrl(b)).takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+        for (k in com.b72.keep_canvas.data.LINK_KEYS) if (v(k).isEmpty()) p[k]?.takeIf { it.isNotEmpty() }?.let { onData(k, kotlinx.serialization.json.JsonPrimitive(it)) }
+        com.b72.keep_canvas.data.saveImage(p["icon"], com.b72.keep_canvas.data.imageDir(linkCtx), 100)?.let { onData("icon", kotlinx.serialization.json.JsonPrimitive(it)) }
+        onData("rev", kotlinx.serialization.json.JsonPrimitive("2"))
+    }
     Column(modifier.padding(bottom = 26.dp)) {
         if (onData != null && b.kind != Kind.Link) Tracker(b, fg, onData)
         when (b.kind) {
@@ -236,33 +245,14 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 }
                 Notes("NOTES", b.body, fg)
             }
-            else -> { // link
-                val uri = LocalUriHandler.current
-                val url = if (b.body.startsWith("http")) b.body else "https://${b.body}"
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(fg.copy(alpha = .09f))) {
-                    if (has) PhotoImage(b.path!!, 1000, false, pal.primary, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    Column(Modifier.padding(18.dp)) {
-                        if (v("site").isNotEmpty()) Text(v("site").uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = .8.sp), color = fg.copy(alpha = .67f))
-                        if (b.title.isNotEmpty()) Text(b.title, style = flexStyle(24.sp, wght = 720, rond = 30f, lh = 1.1f), color = fg, modifier = Modifier.padding(top = 6.dp))
-                        if (v("stats").isNotEmpty()) StatGrid(v("stats"), v("src"), fg)
-                        if (v("desc").isNotEmpty() && v("stats").isEmpty()) Text(v("desc"), maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .82f), modifier = Modifier.padding(top = 8.dp))
-                        Text(b.body, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace), color = fg.copy(alpha = .59f), modifier = Modifier.padding(top = 10.dp))
-                        FilledTonalButton(onClick = { runCatching { uri.openUri(url) } }, modifier = Modifier.padding(top = 14.dp)) {
-                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("OPEN")
-                        }
-                        if (v("note").isNotEmpty()) Text(v("note"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp), color = fg, modifier = Modifier.padding(top = 12.dp))
-                    }
-                }
-            }
+            else -> LinkCard(b, fg, pal.primary) // link
         }
     }
 }
 
 /** The numbers of a shared activity or track as big figures, with a small felt-tip picture of the service's world in the corner. */
 @Composable
-private fun StatGrid(stats: String, src: String, fg: androidx.compose.ui.graphics.Color) {
+internal fun StatGrid(stats: String, src: String, fg: androidx.compose.ui.graphics.Color) {
     val rows = stats.lines().mapNotNull { l -> l.split('|', limit = 2).takeIf { it.size == 2 && it[1].isNotBlank() }?.let { it[0] to it[1] } }
     if (rows.isEmpty()) return
     val pic = when (src) { "Spotify" -> Pic.Music; "Google Maps" -> Pic.Pin; "Goodreads" -> Pic.Book; "Letterboxd" -> Pic.Camera; "YouTube" -> Pic.Music; else -> Pic.Mountain }

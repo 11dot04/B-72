@@ -29,6 +29,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -201,16 +208,24 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
-            TabTitle("Artifacts", null, Modifier.padding(top = 16.dp))
-            FitTabs(listOf("Stickers", "Stamps", "On canvases"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
+            TabTitle("Artifacts", paths.size, Modifier.padding(top = 16.dp))
+            Text(
+                if (paths.isEmpty()) "THE COLLECTION IS EMPTY" else "${paths.size} OBJECT${if (paths.size == 1) "" else "S"}  \u00b7  ${placed.size} ON DISPLAY  \u00b7  KEPT ON THIS DEVICE",
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
+            )
+            FitTabs(listOf("Stickers", "Stamps", "On display"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
             if (shown.isEmpty() && !busy) {
                 Text(
-                    if (paths.isEmpty()) "Pick some photos or take one. A clear subject becomes a die-cut sticker; a photo without one becomes a die-cut stamp of the whole picture." else "Nothing here yet.",
+                    if (paths.isEmpty()) "Photograph something small: a cup, a ticket, a plant, a thing from your desk. It is cut out, named, catalogued and kept here, in a case of its own."
+                    else if (tab == 2) "Nothing is on display. Put an artifact on a canvas and it is shown here." else "Nothing here yet.",
                     style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp),
                 )
             }
-            LazyColumn(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 190.dp)) {
-                itemsIndexed(shown, key = { _, p -> p }) { _, p -> ArtifactRow(p, onCanvases[p].orEmpty()) { view = p } }
+            LazyVerticalGrid(
+                GridCells.Fixed(2), Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
+                contentPadding = PaddingValues(bottom = 200.dp),
+            ) {
+                items(shown.size, key = { shown[it] }) { i -> Vitrine(shown[i], onCanvases[shown[i]].orEmpty()) { view = shown[i] } }
             }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -221,43 +236,67 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 text = { Text(if (busy) "Making artifacts…" else "Make artifacts") },
             )
         }
-        SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp, start = 16.dp, end = 16.dp))
         view?.let { p ->
-            ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = { repo.removeSticker(p); view = null })
+            ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = { repo.removeSticker(p); view = null }, onSaveCopy = { scope.launch { keepInGallery(ctx, File(p)); snack.showSnackbar(if (android.os.Build.VERSION.SDK_INT >= 29) "Saved to Pictures/B-72" else "Saving to the gallery needs Android 10 or newer") } })
         }
+        SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp, start = 16.dp, end = 16.dp))
     }
 }
 
+/** The accession number: the year it entered the collection, then four digits that belong to it alone. */
+private fun accession(path: String, made: Long?): String {
+    val y = made?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).year } ?: java.time.Year.now().value
+    return "$y.%04d".format((path.hashCode().toLong() and 0x7fffffff) % 10000)
+}
+
+private val Mono10 = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .7.sp)
+
+/** The inside of a display case: dark, lit from above, with a faint sheen of glass and a floor to stand things on. */
 @Composable
-private fun ArtifactRow(path: String, tags: List<String>, onClick: () -> Unit) {
+private fun Case(modifier: Modifier, accent: Color, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    val base = androidx.compose.ui.graphics.lerp(Color(0xFF15131A), accent, .12f)
+    Box(
+        modifier.clip(RoundedCornerShape(28.dp)).background(base).drawWithContent {
+            drawRect(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color.White.copy(alpha = .22f), Color.Transparent), androidx.compose.ui.geometry.Offset(size.width / 2f, -size.height * .12f), size.width * 1.0f))
+            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .38f)), startY = size.height * .8f, endY = size.height), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height * .8f), size = androidx.compose.ui.geometry.Size(size.width, size.height * .2f))
+            drawContent()
+            drawRect(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color.White.copy(alpha = .08f), Color.Transparent, Color.Transparent, Color.White.copy(alpha = .05f)), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, size.height)))
+            drawRoundRect(Color.White.copy(alpha = .12f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(28.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        },
+        content = content,
+    )
+}
+
+/** The soft shadow an object throws on the case floor. */
+private fun Modifier.floorShadow(): Modifier = drawBehind {
+    drawOval(
+        androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color.Black.copy(alpha = .6f), Color.Transparent), androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * .86f), size.width * .34f),
+        topLeft = androidx.compose.ui.geometry.Offset(size.width * .16f, size.height * .82f), size = androidx.compose.ui.geometry.Size(size.width * .68f, size.height * .09f),
+    )
+}
+
+/** One object in its case, with its label underneath, as on a museum wall. */
+@Composable
+private fun Vitrine(path: String, tags: List<String>, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
-    val img by produceState<ImageBitmap?>(Images.peek(path, 400), path) { value = Images.load(path, 400) }
+    val img by produceState<ImageBitmap?>(Images.peek(path, 500), path) { value = Images.load(path, 500) }
     val name by produceState<String?>(names[path], path, aiTick.intValue) { value = nameOf(ctx, path) }
     val facts by produceState<Facts?>(null, path) { value = factsOf(path) }
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainer).clickable(onClickLabel = "Open", onClick = onClick).padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
-            img?.let { Image(it, null, Modifier.fillMaxSize().rotate(((path.hashCode() % 7) - 3) * 1.7f), contentScale = ContentScale.Fit) }
-        }
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(name ?: " ", style = flexStyle(22.sp, wght = 480, lh = 1.1f), color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Fact(Icons.Rounded.Dashboard, if (tags.isEmpty()) "Unused" else "${tags.size} canvas${if (tags.size == 1) "" else "es"}")
-                facts?.let { Fact(Icons.Rounded.Schedule, ago(it.made)) }
+    val kind = remember(path, aiTick.intValue) { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker" }
+    Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open", indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onClick)) {
+        Case(Modifier.fillMaxWidth().aspectRatio(1f), cs.primary) {
+            Box(Modifier.fillMaxSize().floorShadow())
+            img?.let { Image(it, null, Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 34.dp).rotate(((path.hashCode() % 7) - 3) * 1.4f), contentScale = ContentScale.Fit) }
+            if (tags.isNotEmpty()) Row(Modifier.align(Alignment.TopStart).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF7BE0A0)))
+                Text("ON DISPLAY", style = Mono10, color = Color.White.copy(alpha = .7f), modifier = Modifier.padding(start = 6.dp))
             }
         }
-        Box(Modifier.size(34.dp).clip(CircleShape).background(cs.surface), contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(20.dp)) }
-    }
-}
-
-@Composable
-private fun Fact(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp), maxLines = 1)
+        Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp)) {
+            Text(name ?: " ", style = flexStyle(18.sp, wght = 520, lh = 1.08f), color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${kind.uppercase()}  \u00b7  ${accession(path, facts?.made)}", style = Mono10, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
@@ -269,45 +308,92 @@ private suspend fun factsOf(path: String): Facts? = withContext(Dispatchers.IO) 
     Facts(o.outWidth, o.outHeight, f.length(), f.lastModified())
 }
 
-/** One artifact on a page of its own: large, named, with its colours, where it has been used, and its plain facts. */
+/** One artifact on a page of its own: in its case, which you can tilt, with a wall label and the catalogue notes under it. */
 @Composable
-private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, onCanvas: (String) -> Unit, onDelete: () -> Unit) {
+private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, onCanvas: (String) -> Unit, onDelete: () -> Unit, onSaveCopy: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val img by produceState<ImageBitmap?>(Images.peek(path, 900), path) { value = Images.load(path, 900) }
     val name by produceState<String?>(names[path], path, aiTick.intValue) { value = nameOf(ctx, path) }
     val facts by produceState<Facts?>(null, path) { value = factsOf(path) }
     val colours by produceState<List<Int>>(emptyList(), path) { value = swatches(path) }
+    val info = aiTick.intValue.let { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path) }
     var confirm by remember { mutableStateOf(false) }
     if (confirm) AlertDialog(
-        onDismissRequest = { confirm = false }, title = { Text("Delete this artifact?") },
+        onDismissRequest = { confirm = false }, title = { Text("Remove this object from the collection?") },
         text = { Text("It is also taken off every canvas it is on.") },
-        confirmButton = { TextButton(onClick = onDelete) { Text("Delete", color = cs.error) } },
+        confirmButton = { TextButton(onClick = onDelete) { Text("Remove", color = cs.error) } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text("Keep") } },
     )
+    val tiltX = remember { androidx.compose.animation.core.Animatable(0f) }
+    val tiltY = remember { androidx.compose.animation.core.Animatable(0f) }
+    val kind = info?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker"
     Column(Modifier.fillMaxSize().background(cs.surfaceContainerLow).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 120.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-            Text(
-                if (isStamp(path)) "Stamp" else "Sticker", style = MaterialTheme.typography.titleMedium, color = cs.onSurface,
-                modifier = Modifier.clip(CircleShape).background(cs.surface).padding(horizontal = 16.dp, vertical = 8.dp),
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(onClick = onSaveCopy, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.SaveAlt, "Save a copy to the gallery") }
+                IconButton(onClick = { confirm = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.Delete, "Remove") }
+            }
+        }
+        // the case: drag to turn the object and look at it from the side
+        Case(Modifier.fillMaxWidth().height(400.dp), cs.primary) {
+            Box(Modifier.fillMaxSize().floorShadow())
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 34.dp, bottom = 74.dp)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragEnd = { scope.launch { tiltX.animateTo(0f, androidx.compose.animation.core.spring(.5f, 120f)) }; scope.launch { tiltY.animateTo(0f, androidx.compose.animation.core.spring(.5f, 120f)) } },
+                            onDragCancel = { scope.launch { tiltX.animateTo(0f) }; scope.launch { tiltY.animateTo(0f) } },
+                        ) { change, drag ->
+                            change.consume()
+                            scope.launch { tiltY.snapTo((tiltY.value + drag.x * .22f).coerceIn(-32f, 32f)) }
+                            scope.launch { tiltX.snapTo((tiltX.value - drag.y * .16f).coerceIn(-18f, 18f)) }
+                        }
+                    }
+                    .graphicsLayer { rotationX = tiltX.value; rotationY = tiltY.value; cameraDistance = 16f * density },
+            ) {
+                img?.let { Image(it, null, Modifier.fillMaxSize().rotate(((path.hashCode() % 7) - 3) * 1.2f), contentScale = ContentScale.Fit) }
+            }
+            // its reflection in the floor, fading out
+            img?.let {
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(70.dp).padding(horizontal = 24.dp).clipToBounds()) {
+                    Image(it, null, Modifier.fillMaxWidth().height(200.dp).graphicsLayer { scaleY = -1f; alpha = .16f; translationY = -50.dp.toPx() }, contentScale = ContentScale.Fit, alignment = Alignment.TopCenter)
+                }
+            }
+            Text("DRAG TO TURN", style = Mono10, color = Color.White.copy(alpha = .4f), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
+        }
+        // the wall label
+        Column(Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(28.dp)).background(cs.surface).padding(22.dp)) {
+            Text(kind.uppercase(), style = Mono10, color = cs.primary)
+            Text(name ?: " ", style = TextStyle(fontFamily = Serif, fontSize = 44.sp, lineHeight = 44.sp), color = cs.onSurface, modifier = Modifier.padding(top = 6.dp))
+            val f = facts
+            val shown = listOfNotNull(
+                "ACCESSION" to accession(path, f?.made),
+                "MEDIUM" to (if (isStamp(path)) "Photograph, cut to a shape with a white border" else "Photograph, die-cut with a white border"),
+                f?.let { "DIMENSIONS" to "${it.w} \u00d7 ${it.h} px" },
+                f?.let { "ACQUIRED" to java.time.Instant.ofEpochMilli(it.made).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH)) },
+                "CONDITION" to "Preserved as made",
+                "LOCATION" to (if (tags.isEmpty()) "In storage" else "On display: " + tags.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } }),
             )
-            IconButton(onClick = { confirm = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.Delete, "Delete") }
+            Box(Modifier.padding(top = 16.dp).fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+            for ((k, v) in shown) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    Text(k, style = Mono10, color = cs.onSurfaceVariant, modifier = Modifier.width(104.dp).padding(top = 3.dp))
+                    Text(v, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, modifier = Modifier.weight(1f))
+                }
+            }
+            f?.let { Text("${if (it.bytes >= 1_048_576) "%.1f MB".format(it.bytes / 1_048_576.0) else "${it.bytes / 1024} KB"}. Kept in this app's own storage; it leaves the phone only if you back it up.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant.copy(alpha = .75f), modifier = Modifier.padding(top = 16.dp)) }
         }
-        Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
-            img?.let { Image(it, null, Modifier.fillMaxSize().padding(12.dp).rotate(((path.hashCode() % 7) - 3) * 1.5f), contentScale = ContentScale.Fit) }
-        }
-        Text(name ?: " ", style = flexStyle(40.sp, wght = 480, wdth = 96f, lh = 1.08f), color = cs.onSurface, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        facts?.let { Text("Made ${ago(it.made)}", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
 
-        val info = aiTick.intValue.let { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path) }
-        if (info != null && (info.facts.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("What it is", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 22.dp)) {
+        if (info != null && (info.facts.isNotEmpty() || info.kind.isNotEmpty())) InfoCard("Catalogue notes", info.kind.ifEmpty { "read by the assistant" }, Modifier.padding(top = 12.dp)) {
             if (info.facts.isEmpty()) Text("Not enough to say more than that.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
             info.facts.chunked(2).forEachIndexed { r, pair ->
                 Row(Modifier.fillMaxWidth().padding(top = if (r > 0) 14.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     pair.forEach { (k, v) ->
                         Column(Modifier.weight(1f)) {
-                            Text(k.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)
+                            Text(k.uppercase(), style = Mono10, color = cs.onSurfaceVariant)
                             Text(v, style = MaterialTheme.typography.titleMedium, color = cs.onSurface, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
@@ -316,13 +402,13 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
             }
         }
         info?.nut?.let { NutritionCard(it, Modifier.padding(top = 12.dp)) }
-        if (info != null && info.text.isNotEmpty()) InfoCard("Printed on it", "${info.text.size}", Modifier.padding(top = 12.dp)) {
+        if (info != null && info.text.isNotEmpty()) InfoCard("Inscriptions", "${info.text.size}", Modifier.padding(top = 12.dp)) {
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (t in info.text) Text(t, style = MaterialTheme.typography.labelLarge, color = cs.onSecondaryContainer, modifier = Modifier.clip(CircleShape).background(cs.secondaryContainer).padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
-        InfoCard("Colours", "from the artifact", Modifier.padding(top = if (info != null) 12.dp else 22.dp)) {
-            if (colours.isEmpty()) Text("Reading its colours…", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+        InfoCard("Palette", "from the object", Modifier.padding(top = 12.dp)) {
+            if (colours.isEmpty()) Text("Reading its colours\u2026", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
             else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (c in colours) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(46.dp).clip(CircleShape).background(Color(c)).border(1.dp, cs.outlineVariant, CircleShape))
@@ -330,30 +416,13 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
                 }
             }
         }
-        InfoCard("On canvases", if (tags.isEmpty()) "not yet" else "${tags.size}", Modifier.padding(top = 12.dp)) {
-            if (tags.isEmpty()) Text("It has not been put on a canvas. Open a canvas and add it from the artifacts button.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
-            else tags.forEachIndexed { i, t ->
+        if (tags.isNotEmpty()) InfoCard("On display", "${tags.size}", Modifier.padding(top = 12.dp)) {
+            tags.forEachIndexed { i, t ->
                 if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .5f)))
                 Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open the $t canvas") { onCanvas(t) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Dashboard, null, Modifier.size(20.dp), tint = cs.onSurfaceVariant)
                     Text(t.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = 12.dp))
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
-                }
-            }
-        }
-        InfoCard("Details", "", Modifier.padding(top = 12.dp)) {
-            val f = facts
-            val rows = listOfNotNull(
-                "Kind" to (if (isStamp(path)) "Stamp: a whole photo with no single subject" else "Die-cut sticker with an outline"),
-                f?.let { "Size" to "${it.w} \u00d7 ${it.h} px" },
-                f?.let { "File" to (if (it.bytes >= 1_048_576) "%.1f MB".format(it.bytes / 1_048_576.0) else "${it.bytes / 1024} KB") },
-                f?.let { "Made" to java.time.Instant.ofEpochMilli(it.made).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", java.util.Locale.ENGLISH)) },
-            )
-            rows.forEachIndexed { i, (k, v) ->
-                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .5f)))
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.Top) {
-                    Text(k, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.width(72.dp))
-                    Text(v, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -418,8 +487,9 @@ private suspend fun keepInGallery(ctx: android.content.Context, f: File) = withC
     runCatching {
         if (android.os.Build.VERSION.SDK_INT < 29) return@runCatching
         val v = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "B-72_${System.currentTimeMillis()}.jpg")
-            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            val png = f.extension.equals("png", true)
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "B-72_${System.currentTimeMillis()}." + if (png) "png" else "jpg")
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
             put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/B-72")
             put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
         }
