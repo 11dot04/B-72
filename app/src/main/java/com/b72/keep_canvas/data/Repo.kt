@@ -393,6 +393,17 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         } else if (text.isBlank()) n.blocks
         else n.blocks + newBlock(Kind.Text, blockId, body = text).copy(data = mapOf("spans" to JsonPrimitive(spans), "indent" to JsonPrimitive(if (indent) 1 else 0)))
         upsert(n.copy(blocks = blocks))
+        harvestLinks(noteId)
+    }
+
+    /** Every web address typed into a note (once it is finished: followed by a space or a new line) also becomes a link card, so it lands in the Library. */
+    private fun harvestLinks(noteId: String) {
+        val n = note(noteId) ?: return
+        val have = n.blocks.filter { it.kind == Kind.Link }.map { it.body.trim().trimEnd('/') }.toSet()
+        val urls = n.blocks.filter { it.kind == Kind.Text }
+            .flatMap { b -> Regex("""https?://[^\s]+(?=\s)""").findAll(b.body).map { it.value.trimEnd('.', ',', ')', ';', '!', '?') }.toList() }
+            .distinct().filter { it.trimEnd('/') !in have }.take(3)
+        for (u in urls) appendLink(noteId, u)
     }
 
     /** Sets the rows of a checklist; blank rows are left out. */
