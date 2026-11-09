@@ -70,6 +70,8 @@ private fun burst(w: Float, h: Float, n: Int, inner: Float): Path = Path().apply
     close()
 }
 
+private fun pill(w: Float, h: Float): Path = Path().apply { addRoundRect(RoundRect(0f, 0f, w, h, CornerRadius(minOf(w, h) * .3f))) }
+
 private fun scallop(w: Float, h: Float, n: Int): Path = Path().apply {
     val cx = w / 2; val cy = h / 2; val r = minOf(w, h) / 2
     for (i in 0..120) {
@@ -101,7 +103,8 @@ private fun DrawScope.face(cx: Float, cy: Float, r: Float, c: Color) {
 /** One stamp, as wide as its parent lets it be; its height follows [Stamp.aspect]. [c] picks the accent from the pen colours. */
 @Composable
 fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
-    val a = MarkColors[c.mod(MarkColors.size)]
+    val pal = LocalMarkColors.current
+    val a = pal[c.mod(pal.size)]
     val onA = if (a.luminance() > .45f) StampInk else StampPaper
     BoxWithConstraints(modifier.aspectRatio(1f / s.aspect), contentAlignment = Alignment.Center) {
         val unit = with(LocalDensity.current) { maxWidth.toSp() }
@@ -120,11 +123,11 @@ fun StampView(s: Stamp, c: Int, seed: Int, modifier: Modifier = Modifier) {
             Stamp.Yes -> Box(Modifier.fillMaxSize().clip(RoundedCornerShape(14)).background(StampPaper).border(bw, StampInk, RoundedCornerShape(14)), contentAlignment = Alignment.Center) { t("YES", .78f, a, 900, 110f) }
             Stamp.NoCap -> Box(Modifier.fillMaxSize().clip(CircleShape).background(StampInk).border(bw, a, CircleShape), contentAlignment = Alignment.Center) { t("NO CAP", .74f, a, 800, 90f) }
             Stamp.Omg -> {
-                Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 14, .78f), a); drawPath(burst(size.width, size.height, 14, .78f), StampInk, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
+                Canvas(Modifier.fillMaxSize()) { drawPath(pill(size.width, size.height), a); drawPath(pill(size.width, size.height), StampInk, style = Stroke(bw.toPx(), join = StrokeJoin.Round)) }
                 t("OMG", .62f, onA, 900)
             }
             Stamp.Ok -> {
-                Canvas(Modifier.fillMaxSize()) { drawPath(burst(size.width, size.height, 18, .84f), a) }
+                Canvas(Modifier.fillMaxSize()) { drawPath(pill(size.width, size.height), a) }
                 t("OK!", .5f, onA, 900)
             }
             Stamp.GoodVibes -> Box(Modifier.fillMaxSize().clip(CircleShape).background(StampInk).border(bw, a, CircleShape), contentAlignment = Alignment.Center) {
@@ -223,6 +226,21 @@ val Dings = listOf(
     Ding(0x266A, "Note", "Play"), Ding(0x266B, "Notes", "Play"), Ding(0x263A, "Smile", "Play"), Ding(0x2620, "Skull", "Play"),
     Ding(0x262E, "Peace", "Play"), Ding(0x26A1, "Bolt", "Play"), Ding(0x2693, "Anchor", "Play"), Ding(0x2699, "Gear", "Play"),
     Ding(0x265B, "Queen", "Play"), Ding(0x2660, "Spade", "Play"), Ding(0x2663, "Club", "Play"), Ding(0x2665, "Hearts", "Play"), Ding(0x2666, "Diamonds", "Play"),
+    Ding(0x2767, "Rotated floral heart", "Ornament"), Ding(0x2619, "Reversed leaf", "Ornament"), Ding(0x2766, "Floral heart", "Ornament"),
+    Ding(0x2734, "Eight-point star", "Ornament"), Ding(0x2735, "Pinwheel star", "Ornament"), Ding(0x2733, "Eight-spoke asterisk", "Ornament"),
+    Ding(0x2738, "Heavy star", "Ornament"), Ding(0x2739, "Twelve-point star", "Ornament"), Ding(0x273A, "Sixteen-point star", "Ornament"),
+    Ding(0x273B, "Teardrop asterisk", "Ornament"), Ding(0x273C, "Open asterisk", "Ornament"), Ding(0x273D, "Heavy teardrop", "Ornament"),
+    Ding(0x273E, "Six-petal flower", "Ornament"), Ding(0x2741, "Eight-petal flower", "Ornament"), Ding(0x2742, "Circled asterisk", "Ornament"),
+    Ding(0x2745, "Tight snowflake", "Ornament"), Ding(0x2746, "Heavy snowflake", "Ornament"), Ding(0x2747, "Sparkle", "Ornament"),
+    Ding(0x2748, "Heavy sparkle", "Ornament"), Ding(0x2749, "Balloon asterisk", "Ornament"), Ding(0x274A, "Eight teardrop", "Ornament"),
+    Ding(0x274B, "Heavy eight teardrop", "Ornament"), Ding(0x2756, "Black diamond", "Ornament"), Ding(0x2767, "Hedera", "Ornament"),
+    Ding(0x2698, "Flower", "Ornament"), Ding(0x269C, "Fleur-de-lis", "Ornament"), Ding(0x2638, "Wheel", "Ornament"),
+    Ding(0x262F, "Yin yang", "Ornament"), Ding(0x2721, "Star of David", "Ornament"), Ding(0x2720, "Maltese cross", "Ornament"),
+    Ding(0x2725, "Club cross", "Ornament"), Ding(0x2724, "Four balloon cross", "Ornament"), Ding(0x2766, "Floral", "Ornament"),
+    Ding(0x00A7, "Section", "Type"), Ding(0x00B6, "Pilcrow", "Type"), Ding(0x2020, "Dagger", "Type"), Ding(0x2021, "Double dagger", "Type"),
+    Ding(0x203B, "Reference mark", "Type"), Ding(0x2042, "Asterism", "Type"), Ding(0x2234, "Therefore", "Type"), Ding(0x221E, "Infinity", "Type"),
+    Ding(0x2116, "Numero", "Type"), Ding(0x2122, "Trade mark", "Type"), Ding(0x2190, "Left arrow", "Type"), Ding(0x2192, "Right arrow", "Type"),
+    Ding(0x2197, "Up-right arrow", "Type"), Ding(0x21BB, "Clockwise", "Type"), Ding(0x2B50, "Star", "Type"), Ding(0x2316, "Position mark", "Type"),
 )
 
 fun dingGlyph(cp: Int) = String(Character.toChars(cp)) + "\uFE0E"   // the text form, never the coloured emoji
@@ -230,7 +248,7 @@ fun dingGlyph(cp: Int) = String(Character.toChars(cp)) + "\uFE0E"   // the text 
 /** The ones this phone has a glyph for, so the tray never offers an empty box. */
 fun availableDings(): List<Ding> {
     val p = android.graphics.Paint()
-    return Dings.filter { p.hasGlyph(String(Character.toChars(it.cp))) }
+    return Dings.distinctBy { it.cp }.filter { p.hasGlyph(String(Character.toChars(it.cp))) }
 }
 
 /** "d:2714:1" is the tick in the second badge shape. */
@@ -240,34 +258,17 @@ fun dingOf(k: String): Pair<Int, Int>? {
     return (p.getOrNull(1)?.toIntOrNull(16) ?: return null) to (p.getOrNull(2)?.toIntOrNull() ?: 0)
 }
 
-/** A glyph in a badge: scalloped, round, rounded square or burst; the pen colour fills it, with an ink outline and a hard shadow. */
+/** A glyph as it is, large, in the pen colour: no badge, no burst behind it. [shape] is kept in the key for old canvases and ignored. */
 @Composable
 fun DingView(cp: Int, shape: Int, c: Int, modifier: Modifier = Modifier) {
-    val a = MarkColors[c.mod(MarkColors.size)]
-    val onA = if (a.luminance() > .45f) StampInk else StampPaper
+    val pal = LocalMarkColors.current
+    val a = pal[c.mod(pal.size)]
     BoxWithConstraints(modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
         val unit = with(LocalDensity.current) { maxWidth.toSp() }
-        val bw = (maxWidth.value * .028f).coerceAtLeast(1.5f)
-        Canvas(Modifier.fillMaxSize()) {
-            val d = size.width * .05f
-            val w = size.width - d - bw.dp.toPx()
-            val p = when (shape.mod(4)) {
-                0 -> scallop(w, w, 12)
-                1 -> Path().apply { addOval(Rect(0f, 0f, w, w)) }
-                2 -> Path().apply { addRoundRect(RoundRect(0f, 0f, w, w, CornerRadius(w * .28f))) }
-                else -> burst(w, w, 16, .88f)
-            }
-            translate(bw.dp.toPx() / 2, bw.dp.toPx() / 2) {
-                translate(d, d) { drawPath(p, StampInk) }
-                drawPath(p, a)
-                drawPath(p, StampInk, style = Stroke(bw.dp.toPx(), join = StrokeJoin.Round))
-            }
-        }
         BasicText(
             dingGlyph(cp), maxLines = 1, softWrap = false,
-            modifier = Modifier.padding(end = (maxWidth.value * .05f).dp, bottom = (maxWidth.value * .05f).dp),
-            style = TextStyle(
-                fontSize = unit * .5f, lineHeight = unit * .5f, color = onA, textAlign = TextAlign.Center,
+                        style = TextStyle(
+                fontSize = unit * .86f, lineHeight = unit * .86f, color = a, textAlign = TextAlign.Center,
                 platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
                 lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both),
             ),

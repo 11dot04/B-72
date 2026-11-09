@@ -32,8 +32,11 @@ enum class Mark(val label: String, val aspect: Float) {
     Line("Line", .1f), Dart("Arrow line", .1f), Oval("Circle", 1f), Rect("Box", .7f), Tri("Triangle", .9f),
 }
 
-/** The pen colours, in the order a mark cycles through them. */
+/** The pen colours when nothing else is said; a canvas provides its own, taken from its photos, through [LocalMarkColors]. */
 val MarkColors = listOf(Color(0xFFFFC928), Color(0xFFFF6B6B), Color(0xFF8E4DFF), Color(0xFF2B1B34), Color(0xFF3DBE7E))
+
+/** What a mark's colour index means right now. Index 3 is the ink that reads on the ground. */
+val LocalMarkColors = androidx.compose.runtime.compositionLocalOf { MarkColors }
 
 private class Line(val pts: FloatArray, val smooth: Boolean = true, val closed: Boolean = false, val bold: Float = 1f)
 

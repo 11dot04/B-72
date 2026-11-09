@@ -326,7 +326,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                         val cover = n.cover?.path
                         val bg = if (i % 2 == 0) cs.tertiaryContainer else cs.secondaryContainer
                         val fg = if (i % 2 == 0) cs.onTertiaryContainer else cs.onSecondaryContainer
-                        Box(Modifier.fillMaxSize().maskClip(RoundedCornerShape(28.dp)).noteContainer(n.id, 28.dp).background(bg).clickable(onClickLabel = "Open") { onOpen(n.id) }) {
+                        Box(Modifier.fillMaxSize().opener(n.id, shrink = .1f).maskClip(RoundedCornerShape(28.dp)).noteContainer(n.id, 28.dp).background(bg).clickable(onClickLabel = "Open") { Opening.press(n.id); onOpen(n.id) }) {
                             if (cover != null) {
                                 PhotoImage(cover, 400, false, cs.primary, Modifier.fillMaxSize())
                                 Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .62f)))))
@@ -377,7 +377,10 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
     androidx.compose.animation.AnimatedVisibility(
         visible = searching, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
     ) {
-        SearchPage(q, { q = it }, if (q.isBlank()) emptyList() else shown, { searching = false }, onOpen, Modifier.container(SharedCtx(shared.st, this), "search", 28.dp, reveal = true, revealShift = topInset + 8.dp))
+        SearchPage(
+            q, { q = it }, if (q.isBlank() && filter == "All") emptyList() else shown, loaded?.library?.notes?.count { !it.isLibrary }?.let { it } ?: 0,
+            FILTERS.map { it.name to it.icon }, filter, { filter = it },
+            { searching = false }, { id -> UiPrefs.pushRecent(q); Opening.press(id); onOpen(id) }, Modifier.container(SharedCtx(shared.st, this), "search", 28.dp, reveal = true, revealShift = topInset + 8.dp))
     }
     if (menu) Box(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .32f))
@@ -736,7 +739,10 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
 
 /** The page the search pill opens into: the field at the top, the notes that match under it. */
 @Composable
-private fun SearchPage(q: String, onQ: (String) -> Unit, results: List<Note>, onBack: () -> Unit, onOpen: (String) -> Unit, container: Modifier) {
+private fun SearchPage(
+    q: String, onQ: (String) -> Unit, results: List<Note>, count: Int, kinds: List<Pair<String, ImageVector>>, kind: String, onKind: (String) -> Unit,
+    onBack: () -> Unit, onOpen: (String) -> Unit, container: Modifier,
+) {
     val cs = MaterialTheme.colorScheme
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -747,7 +753,7 @@ private fun SearchPage(q: String, onQ: (String) -> Unit, results: List<Note>, on
         ) {
             androidx.compose.material3.IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Close search") }
             Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
-                if (q.isEmpty()) Text("Search your notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
+                if (q.isEmpty()) Text("Search $count notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
                 androidx.compose.foundation.text.BasicTextField(
                     q, onQ, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
@@ -756,11 +762,32 @@ private fun SearchPage(q: String, onQ: (String) -> Unit, results: List<Note>, on
             }
             if (q.isNotEmpty()) androidx.compose.material3.IconButton({ onQ("") }) { Icon(Icons.Rounded.Close, "Clear") }
         }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            for ((name, icon) in kinds) FilterChip(
+                selected = kind == name, onClick = { onKind(name) }, label = { Text(name) },
+                leadingIcon = if (name != "All") ({ Icon(icon, null, Modifier.size(18.dp)) }) else null,
+                shape = RoundedCornerShape(50), border = null,
+                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = cs.surfaceContainerHigh),
+            )
+        }
         androidx.compose.foundation.lazy.LazyColumn(
             Modifier.fillMaxSize().imePadding(),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (q.isNotBlank() && results.isEmpty()) item { Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(20.dp)) }
+            if (q.isBlank() && kind == "All" && UiPrefs.recents.isNotEmpty()) {
+                item { Text("Recent", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 2.dp)) }
+                items(UiPrefs.recents.size) { i ->
+                    val r = UiPrefs.recents[i]
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onQ(r) }.padding(horizontal = 8.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.History, null, tint = cs.onSurfaceVariant)
+                        Text(r, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface, modifier = Modifier.padding(start = 16.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            if ((q.isNotBlank() || kind != "All") && results.isEmpty()) item { Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(20.dp)) }
             items(results, key = { it.id }) { n ->
                 Column(
                     Modifier.fillMaxWidth().noteContainer(n.id, 20.dp).clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerHigh)

@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.material3.TopAppBar
@@ -116,6 +117,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.PhotoLibrary
 
@@ -132,7 +134,10 @@ private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
 private val typingSpec = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         val trailing = offset + size
+        // something tall that is already partly on screen (the whole text field while a new line is being added) is left where it is; asking for
+        // its far edge is what used to throw the page to the bottom on every Enter
         if (size > containerSize * .4f) return when {
+            offset < containerSize && trailing > 0f -> 0f
             offset >= 0 && trailing <= containerSize -> 0f
             offset < 0 && trailing > containerSize -> 0f
             kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
@@ -168,6 +173,13 @@ fun NotePage(
     var viewer by remember { mutableStateOf<Int?>(null) }
     var editTitle by remember { mutableStateOf(false) }
     var rich by remember { mutableStateOf<RichState?>(null) }
+    var ready by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        androidx.compose.runtime.withFrameNanos { }
+        if (shared.st.isTransitionActive) kotlinx.coroutines.withTimeoutOrNull(700) { androidx.compose.runtime.snapshotFlow { shared.st.isTransitionActive }.first { !it } }
+        ready = true
+    }
     var adding by remember { mutableStateOf(addFirst != null) }
     var tagging by remember { mutableStateOf(false) }
 
@@ -192,6 +204,10 @@ fun NotePage(
     // page layouts are gone: the note's layout field now holds only its title style
     val layoutId = ""
     val hero = if (photos.size == 1 && canPopOut(photos[0])) photos[0] else null
+    // a recipe whose photo has one clear subject: the photo runs up under the status bar and the title sits behind the subject
+    val recipeHero = remember(note.blocks) {
+        note.blocks.singleOrNull { it.kind == Kind.Recipe }?.takeIf { it.path != null && canPopOut(it) && photos.isEmpty() }
+    }
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
     val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -233,12 +249,15 @@ fun NotePage(
                 }
                 if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
             }
+            if (recipeHero != null && !fieldTitle) item(key = "recipe-head") {
+                RecipeHeader(recipeHero, title, top + 72.dp, shared, note.id) { editTitle = true }
+            }
             if (fieldTitle) item(key = "title-field") {
                 InlineTitle(
                     explicit, if (title.isNotEmpty()) title else "Title", pal, focus = editTitle,
                     onDone = { editTitle = false }, onChange = onTitle,
                 )
-            } else if (lay != null && !coverMode) item(key = "title-big") {
+            } else if (lay != null && !coverMode && recipeHero == null) item(key = "title-big") {
                 FitTitle(
                     title, pal.fg, note.id, style = note.layout,
                     modifier = Modifier.onGloballyPositioned { titleBottom = it.boundsInWindow().bottom }
@@ -305,6 +324,8 @@ fun NotePage(
                     }
                 }
             }
+            // the title and the photo are what the container transform needs on its first frames; the rest of the page is composed once it has landed
+            if (ready) {
             item { Spacer(Modifier.height(24.dp)) }
             for (b in note.blocks) b.trip()?.let { tr ->
                 item(key = "trip-${b.id}") { TripCard(tr, pal.fg, pal.bg, pal.primary, Modifier.padding(bottom = 18.dp)) }
@@ -377,6 +398,7 @@ fun NotePage(
                 Text("$words words · ${max(1, words / 200)} min read", style = MaterialTheme.typography.labelMedium, color = pal.fg.copy(alpha = .5f), modifier = Modifier.padding(top = 10.dp, start = 4.dp))
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
+            }
         }
         }
 
@@ -567,5 +589,30 @@ private fun BlockCard(b: Block, noteTitle: String, pal: NotePalette, modifier: M
             }
         }
         if (rating > 0) Row { for (i in 1..5) Icon(if (i <= rating) Icons.Rounded.Star else Icons.Rounded.StarOutline, null, tint = pal.fg) }
+    }
+}
+
+
+/**
+ * The photo of a recipe with one clear subject, flush with the top of the screen. The title is drawn between the photo and the cut-out of the
+ * subject, so the dish stands in front of the words. [pull] is the room the list reserves above its first item; the photo reaches back up through it.
+ */
+@Composable
+private fun RecipeHeader(b: Block, title: String, pull: androidx.compose.ui.unit.Dp, shared: SharedCtx, noteId: String, onEditTitle: () -> Unit) {
+    val photo by produceState<ImageBitmap?>(b.path?.let { Images.peek(it, 1100) }, b.path) { value = b.path?.let { Images.load(it, 1100) } }
+    val cut by produceState<ImageBitmap?>(b.cutPath()?.let { Images.peek(it, 1100) }, b.id) { value = b.cutPath()?.let { Images.load(it, 1100) } }
+    val full = 430.dp
+    Box(Modifier.fillMaxWidth().height(full - pull).wrapContentHeight(Alignment.Top, unbounded = true)) {
+        Box(Modifier.fillMaxWidth().height(full).offset(y = -pull).shared(shared, "img-$noteId")) {
+            photo?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = .32f), Color.Transparent, Color.Black.copy(alpha = .2f)))))
+            Text(
+                title.ifBlank { "Recipe" }, maxLines = 3,
+                style = flexStyle(64.sp, wght = 800, wdth = 92f, lh = .95f), color = Color.White,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 16.dp, end = 16.dp, top = pull + 8.dp)
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { onEditTitle() },
+            )
+            cut?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        }
     }
 }

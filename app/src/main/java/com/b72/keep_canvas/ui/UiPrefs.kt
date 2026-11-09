@@ -39,11 +39,23 @@ object UiPrefs {
     /** 1: photos on a note page are tinted in the page's colour (duotone); 0: shown as taken. */
     val duotone = IntPref("duotone", 1)
 
+    /** The last few searches that led to a note, newest first. */
+    var recents by androidx.compose.runtime.mutableStateOf(listOf<String>())
+        private set
+    fun pushRecent(q: String) {
+        val v = q.trim()
+        if (v.length < 2) return
+        recents = (listOf(v) + recents.filterNot { it.equals(v, true) }).take(6)
+        sp?.edit()?.putString("recents", recents.joinToString("\u001f"))?.apply()
+    }
+    fun clearRecents() { recents = emptyList(); sp?.edit()?.remove("recents")?.apply() }
+
     fun init(ctx: Context) {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
         listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone).forEach { it.load(p) }
+        recents = p.getString("recents", "").orEmpty().split('\u001f').filter { it.isNotBlank() }
     }
     internal fun save(key: String, v: Int) { sp?.edit()?.putInt(key, v)?.apply() }
 }

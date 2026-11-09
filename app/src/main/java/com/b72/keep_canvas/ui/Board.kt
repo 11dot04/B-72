@@ -31,6 +31,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.automirrored.rounded.Redo
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -131,6 +134,14 @@ import kotlin.math.roundToInt
 
 private fun hsl(h: Float, s: Float, l: Float) = Color(ColorUtils.HSLToColor(floatArrayOf(((h % 360f) + 360f) % 360f, s, l)))
 
+/** The error red nudged up to 20 degrees toward the canvas hue, so a delete button belongs to the board instead of sitting on it like a sticker. */
+private fun harmonised(c: Color, hue: Float): Color {
+    val hsl = FloatArray(3); ColorUtils.colorToHSL(c.toArgb(), hsl)
+    val d = ((hue - hsl[0] + 540f) % 360f) - 180f
+    hsl[0] = (hsl[0] + d.coerceIn(-1f, 1f) * minOf(20f, kotlin.math.abs(d) * .5f) + 360f) % 360f
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
 private fun hueGap(a: Float, b: Float): Float { val d = kotlin.math.abs(((a - b) % 360f + 360f) % 360f); return min(d, 360f - d) }
 
 /** Card colours for one canvas: the hues of its photos first, then spread-out hues so even one photo gives a lively board. */
@@ -147,11 +158,11 @@ private fun swatchesFor(hues: List<Float>): List<Pair<Color, Color>> {
 
 /** The canvas takes its colour from its photos: a pastel wash in light mode, a deep tint of the same hue in dark mode. Cards stay bright either way. */
 private fun tonesFor(hue: Float, dark: Boolean, error: Color, sw: List<Pair<Color, Color>>, blockHue: Map<String, Float>) = if (dark) Tones(
-    bg = hsl(hue, .5f, .15f), onBg = hsl(hue, .3f, .93f),
-    primary = hsl(hue, .75f, .72f), onPrimary = hsl(hue, .6f, .1f),
-    pc = hsl(hue, .45f, .3f), onPc = hsl(hue, .6f, .92f),
-    sc = hsl(hue + 25f, .4f, .26f), onSc = hsl(hue + 25f, .5f, .92f),
-    tc = hsl(hue + 60f, .42f, .27f), onTc = hsl(hue + 60f, .5f, .92f),
+    bg = hsl(hue, .62f, .19f), onBg = hsl(hue, .35f, .94f),
+    primary = hsl(hue, .82f, .74f), onPrimary = hsl(hue, .7f, .1f),
+    pc = hsl(hue, .55f, .36f), onPc = hsl(hue, .7f, .93f),
+    sc = hsl(hue + 25f, .5f, .32f), onSc = hsl(hue + 25f, .6f, .93f),
+    tc = hsl(hue + 60f, .52f, .33f), onTc = hsl(hue + 60f, .6f, .93f),
     error = error, swatches = sw, blockHue = blockHue,
 ) else Tones(
     bg = hsl(hue, .62f, .84f), onBg = hsl(hue, .45f, .1f),
@@ -194,7 +205,7 @@ private fun rememberTones(paths: List<String>, blockPhoto: Map<String, String>):
     }
     val blockHue = remember(byPhoto, blockPhoto) { blockPhoto.mapNotNull { (id, p) -> byPhoto[p]?.let { id to it } }.toMap() }
     val dark = isSystemInDarkTheme()
-    return remember(hues, err, blockHue, dark) { tonesFor(hues[0], dark, err, swatchesFor(hues), blockHue) }
+    return remember(hues, err, blockHue, dark) { tonesFor(hues[0], dark, harmonised(err, hues[0]), swatchesFor(hues), blockHue) }
 }
 
 /** Dark system-bar icons while a bright pastel screen is up, put back when it leaves. */
@@ -227,6 +238,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         }
     }
     val t = rememberTones(photos, blockPhoto)
+    // marks take their colours from this canvas: its own accent, a harmonised red, two of its photo hues, the ink that reads on the ground, and a fifth hue
+    val markColors = remember(t) {
+        listOf(t.primary, t.error, t.swatches.getOrNull(1)?.first ?: t.pc, t.onBg, t.swatches.getOrNull(2)?.first ?: t.tc)
+    }
     val density = LocalDensity.current
     LightStatusBar(!isSystemInDarkTheme())
     val tm = rememberTextMeasurer()
@@ -246,7 +261,8 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
     LaunchedEffect(loaded != null) { placed.seed() }
     var trayMode by remember { androidx.compose.runtime.mutableIntStateOf(0) } // 0 shut, 1 artifacts, 2 marks and stamps
 
-    BoxWithConstraints(Modifier.fillMaxSize().keyContainer("board-$tag", 28.dp).background(t.bg)) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalMarkColors provides markColors) {
+    BoxWithConstraints(Modifier.fillMaxSize().keyContainer("board-$tag", 28.dp, reveal = true).background(t.bg)) {
         val swPx = with(density) { maxWidth.toPx() }
         val shPx = with(density) { maxHeight.toPx() }
         val cw = swPx * WIDE
@@ -362,8 +378,9 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         if (trayMode != 0) PlacedTray(
             marks = trayMode == 2,
             stickers = loaded?.library?.stickers.orEmpty().mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("p") as? kotlinx.serialization.json.JsonPrimitive)?.content },
-            onStamp = { key, c ->
+            onStamp = { key, _ ->
                 trayMode = 0
+                val c = placed.nextColour()
                 val w = .22f
                 placed.add(com.b72.keep_canvas.data.Stuck("p${System.nanoTime()}", key, centreX((-pan.x).roundToInt(), swPx, s.cw, w), centreY((-pan.y).roundToInt(), shPx, s.cw, topInset, w), w, ((placed.items.size % 5) - 2) * 4f, c, w))
             },
@@ -393,31 +410,29 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 dismissButton = { androidx.compose.material3.TextButton({ textEdit = null }) { Text("Cancel") } },
             )
         }
-        // tools in a floating pill, and the one thing you do most (a new note) as its own larger button beside it
-        Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+        // the tools stand in a vertical floating bar at the edge, with undo and redo; a new note is its own larger button below
+        Column(
+            Modifier.align(Alignment.CenterEnd).navigationBarsPadding().padding(end = 10.dp, bottom = 96.dp).clip(RoundedCornerShape(30.dp)).background(t.tc).padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            androidx.compose.material3.HorizontalFloatingToolbar(
-                expanded = true,
-                colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-                content = {
-                    IconButton(onClick = { trayMode = 1 }) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
-                    IconButton(onClick = { textEdit = null to "" }) { Icon(Icons.Rounded.TextFields, "Add text") }
-                    IconButton(onClick = { trayMode = 2 }) { Icon(Icons.Rounded.Draw, "Stamps") }
-                    IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }) { Icon(Icons.Rounded.Gesture, "Draw, arrows and scribbles") }
-                    IconButton(onClick = { force[0] = true; shuffle++; retidy++ }) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
-                },
-            )
-            FloatingActionButton(
-                onClick = onAdd,
-                modifier = Modifier.size(80.dp),
-                shape = RoundedCornerShape(28.dp),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) { Icon(Icons.Rounded.Edit, "New note", Modifier.size(30.dp)) }
+            val on = IconButtonDefaults.iconButtonColors(contentColor = t.onTc, disabledContentColor = t.onTc.copy(alpha = .35f))
+            IconButton(onClick = { trayMode = 1 }, colors = on) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
+            IconButton(onClick = { textEdit = null to "" }, colors = on) { Icon(Icons.Rounded.TextFields, "Add text") }
+            IconButton(onClick = { trayMode = 2 }, colors = on) { Icon(Icons.Rounded.Draw, "Stamps") }
+            IconButton(onClick = { placed.drawing = !placed.drawing; placed.selected = null }, colors = IconButtonDefaults.iconButtonColors(containerColor = if (placed.drawing) t.primary else Color.Transparent, contentColor = if (placed.drawing) t.onPrimary else t.onTc)) { Icon(Icons.Rounded.Gesture, "Draw, arrows and scribbles") }
+            IconButton(onClick = { placed.undo() }, enabled = placed.canUndo, colors = on) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo") }
+            IconButton(onClick = { placed.redo() }, enabled = placed.canRedo, colors = on) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo") }
+            IconButton(onClick = { force[0] = true; shuffle++; retidy++ }, colors = on) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
         }
+        FloatingActionButton(
+            onClick = onAdd,
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 16.dp).size(72.dp),
+            shape = RoundedCornerShape(26.dp),
+            containerColor = t.primary,
+            contentColor = t.onPrimary,
+        ) { Icon(Icons.Rounded.Edit, "New note", Modifier.size(28.dp)) }
     }
+}
 }
 
 /** Where to drop a new item so it lands in the middle of what is on screen (fractions of the canvas width). */

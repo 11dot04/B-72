@@ -8,6 +8,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -210,6 +213,27 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                             if (m == "link") { repo.appendLink(noteId, u); onClose() }
                             else scope.launch { busy = true; val ok = repo.appendRecipe(noteId, u); busy = false; if (ok) onClose() else err = "No recipe found on that page. Add it as a link instead." }
                         }, Modifier.padding(top = 12.dp), enabled = !busy) { Text(if (busy) "Reading…" else "Add") }
+                        if (m == "link") {
+                            // links already saved in any note are the Library's links too, so one can be added here without typing it again
+                            val here = repo.loaded?.library?.notes?.firstOrNull { it.id == noteId }?.blocks?.filter { it.kind == Kind.Link }?.map { it.body.trim() }.orEmpty().toSet()
+                            val saved = remember { repo.loaded?.library?.notes.orEmpty().asReversed().flatMap { n -> n.blocks.filter { it.kind == Kind.Link && it.body.isNotBlank() } }.distinctBy { it.body.trim() }.take(40) }
+                                .filter { it.body.trim() !in here }
+                            if (saved.isNotEmpty()) {
+                                Text("From your Library", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                                Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                                    for (b in saved) Row(
+                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { repo.appendBlock(noteId, b.copy(id = "l${System.nanoTime()}")); onClose() }.padding(horizontal = 8.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        SiteBadge(b, cs.secondaryContainer, cs.onSecondaryContainer, 32.dp)
+                                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                            Text(b.title.ifBlank { linkHost(b) }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                            Text(linkHost(b), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     else -> {
                         OutlinedTextField(

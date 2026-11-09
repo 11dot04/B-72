@@ -143,7 +143,7 @@ object Opening {
 
 /** Registers this tile's centre and, while another tile is opening, slides away from it and fades. */
 @Composable
-fun Modifier.opener(key: String): Modifier {
+fun Modifier.opener(key: String, shrink: Float = 0f): Modifier {
     val opening = Opening.id
     val away = opening != null && opening != key
     val t by androidx.compose.animation.core.animateFloatAsState(
@@ -162,5 +162,6 @@ fun Modifier.opener(key: String): Modifier {
                 translationY = d.y / len * 56.dp.toPx() * t
             }
             alpha = 1f - .85f * t
+            scaleX = 1f - shrink * t; scaleY = 1f - shrink * t
         }
 }

@@ -31,6 +31,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Redo
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -77,12 +82,45 @@ class PlacedState(private val repo: Repo, private val tag: String) {
     var drawing by mutableStateOf(false)
     var pen by mutableStateOf(0)
     private var seeded = false
+    private val past = ArrayList<List<Stuck>>()
+    private val future = ArrayList<List<Stuck>>()
+    private var lastEdit = 0L
+    val canUndo get() = historySize > 0
+    val canRedo get() = futureSize > 0
+    private var historySize by mutableStateOf(0)
+    private var futureSize by mutableStateOf(0)
+
+    /** The state before a change is kept (up to fifty steps), so undo can bring it back. */
+    fun checkpoint() {
+        past.add(items.toList()); if (past.size > 50) past.removeAt(0)
+        future.clear(); historySize = past.size; futureSize = 0
+    }
+    fun undo() {
+        if (past.isEmpty()) return
+        future.add(items.toList()); val back = past.removeAt(past.lastIndex)
+        items.clear(); items.addAll(back); selected = null; historySize = past.size; futureSize = future.size
+    }
+    fun redo() {
+        if (future.isEmpty()) return
+        past.add(items.toList()); val fwd = future.removeAt(future.lastIndex)
+        items.clear(); items.addAll(fwd); selected = null; historySize = past.size; futureSize = future.size
+    }
+    /** Pens are not chosen: each new mark takes the next colour of the canvas's own palette (never the ink, which is for text). */
+    fun nextColour() = intArrayOf(0, 1, 2, 4)[items.size % 4]
 
     fun seed() { if (!seeded) { repo.loaded?.library?.let { items.addAll(it.placed[tag].orEmpty()); seeded = true } } }
     fun save() = repo.setPlaced(tag, items.toList())
-    fun update(id: String, f: (Stuck) -> Stuck) { val i = items.indexOfFirst { it.id == id }; if (i >= 0) items[i] = f(items[i]) }
-    fun add(s: Stuck) { items.add(s); selected = s.id }
-    fun remove(id: String) { items.removeAll { it.id == id }; if (selected == id) selected = null }
+    fun update(id: String, f: (Stuck) -> Stuck) {
+        val i = items.indexOfFirst { it.id == id }
+        if (i < 0) return
+        // a drag or a pinch is many updates; one pause in them is one undo step
+        val now = System.currentTimeMillis()
+        if (now - lastEdit > 700) checkpoint()
+        lastEdit = now
+        items[i] = f(items[i])
+    }
+    fun add(s: Stuck) { checkpoint(); items.add(s); selected = s.id }
+    fun remove(id: String) { checkpoint(); items.removeAll { it.id == id }; if (selected == id) selected = null }
     fun duplicate(id: String) { items.firstOrNull { it.id == id }?.let { add(it.copy(id = "p${System.nanoTime()}", x = it.x + .02f, y = it.y + .02f)) } }
     suspend fun autosave() { snapshotFlow { items.toList() }.drop(1).debounce(500).collect { save() } }
 }
@@ -103,6 +141,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
     val stamp = stampOf(s.k)
     val ding = dingOf(s.k)
     val isText = s.k.startsWith("t:")
+    val pal = LocalMarkColors.current
     val aspect = if (s.h > 0f && s.w > 0f) s.h / s.w else mark?.aspect ?: stamp?.aspect ?: 1f
     val wPx = s.w * cw
     val on = st.selected == s.id
@@ -117,7 +156,7 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
                     st.selected = s.id
                     st.update(s.id) { o ->
                         val nw = (o.w * zoom).coerceIn(.04f, 1f)
-                        o.copy(x = o.x + pan.x / cw + (o.w - nw) / 2, y = o.y + pan.y / cw + (o.w - nw) * aspect / 2, w = nw, r = o.r + rot)
+                        o.copy(x = o.x + pan.x / cw + (o.w - nw) / 2, y = o.y + pan.y / cw + (o.w - nw) * aspect / 2, w = nw, r = o.r + rot, h = if (o.h > 0f) o.h * nw / o.w else 0f)
                     }
                 }
             }
@@ -127,12 +166,22 @@ private fun PlacedItem(s: Stuck, st: PlacedState, cw: Float, topInset: Float, ri
             s.k.substring(2),
             style = androidx.compose.ui.text.TextStyle(
                 fontFamily = Serif, fontSize = with(density) { (wPx / 8.5f).toSp() }, lineHeight = with(density) { (wPx / 6.2f).toSp() },
-                color = if (s.c == 3) ink else MarkColors[s.c.mod(MarkColors.size)],
+                color = if (s.c == 3) ink else pal[s.c.mod(pal.size)],
             ),
         )
+        else if (s.k.startsWith("f:")) {
+            val line = remember(s.k) { freehandPoints(s.k) }
+            val col = pal[s.c.mod(pal.size)]
+            Canvas(Modifier.fillMaxSize()) {
+                if (line.size > 1) drawPath(
+                    Path().apply { moveTo(line[0].x * size.width, line[0].y * size.height); for (i in 1 until line.size) lineTo(line[i].x * size.width, line[i].y * size.height) },
+                    col, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                )
+            }
+        }
         else if (ding != null) DingView(ding.first, ding.second, s.c, Modifier.fillMaxWidth())
         else if (stamp != null) StampView(stamp, s.c, s.id.hashCode(), Modifier.fillMaxWidth())
-        else if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, MarkColors[s.c.mod(MarkColors.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
+        else if (mark != null) Canvas(Modifier.fillMaxWidth().aspectRatio(1f / aspect)) { drawMark(mark, 0f, 0f, size.width, pal[s.c.mod(pal.size)], s.id.hashCode(), if (s.h > 0f) size.height else -1f) }
         else {
             val img by produceState<ImageBitmap?>(Images.peek(s.k.substring(2), 500), s.k) { value = Images.load(s.k.substring(2), 500) }
             img?.let { Image(it, null, Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit) }
@@ -151,16 +200,12 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -
         modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        if (isMark || sel.k.startsWith("t:")) for ((i, c) in MarkColors.withIndex()) Box(
-            Modifier.padding(horizontal = 3.dp).size(28.dp).clip(CircleShape).background(c)
-                .border(if (sel.c == i) 3.dp else 1.dp, if (sel.c == i) cs.onTertiary else cs.onTertiary.copy(alpha = .4f), CircleShape)
-                .clickable(onClickLabel = "Colour") { st.update(sel.id) { it.copy(c = i) } },
-        )
         if (sel.k.startsWith("t:")) IconButton({ onEdit(sel.id) }) { Icon(Icons.Rounded.Edit, "Edit the text", tint = cs.onTertiary) }
         IconButton({ st.update(sel.id) { it.copy(w = (it.w / 1.2f).coerceAtLeast(.04f)) } }) { Icon(Icons.Rounded.Remove, "Smaller", tint = cs.onTertiary) }
         IconButton({ st.update(sel.id) { it.copy(w = (it.w * 1.2f).coerceAtMost(1f)) } }) { Icon(Icons.Rounded.Add, "Bigger", tint = cs.onTertiary) }
         IconButton({ st.duplicate(sel.id) }) { Icon(Icons.Rounded.ContentCopy, "Duplicate", tint = cs.onTertiary) }
-        IconButton({ st.remove(sel.id) }) { Icon(Icons.Rounded.Delete, "Remove", tint = cs.onTertiary) }
+        val del = LocalMarkColors.current[1]
+        IconButton({ st.remove(sel.id) }, colors = IconButtonDefaults.iconButtonColors(containerColor = del, contentColor = if (del.luminance() > .5f) Color(0xFF1B1B1F) else Color.White)) { Icon(Icons.Rounded.Delete, "Remove") }
         IconButton({ st.selected = null }) { Icon(Icons.Rounded.Check, "Done", tint = cs.onTertiary) }
     }
 }
@@ -169,20 +214,15 @@ fun PlacedBar(st: PlacedState, modifier: Modifier = Modifier, onEdit: (String) -
 @Composable
 fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (String, Int) -> Unit, onSticker: (String) -> Unit, onClose: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    var color by remember { mutableStateOf(0) }
+    val color = 0
     ModalBottomSheet(onClose) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
             Text(if (marks) "Stamps" else "Artifacts", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
             if (marks) {
-                Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for ((i, c) in MarkColors.withIndex()) Box(
-                        Modifier.size(34.dp).clip(CircleShape).background(c).border(if (color == i) 3.dp else 1.dp, if (color == i) cs.onSurface else cs.outlineVariant, CircleShape)
-                            .clickable(onClickLabel = "Stamp colour") { color = i },
-                    )
-                }
+                Spacer(Modifier.height(12.dp))
                 val dings = remember { availableDings() }
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.height(420.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for (g in listOf("Marks", "Nature", "Play")) {
+                    for (g in listOf("Ornament", "Marks", "Nature", "Play", "Type")) {
                         val of = dings.filter { it.group == g }
                         if (of.isEmpty()) continue
                         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
@@ -219,6 +259,7 @@ fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (String, Int) ->
 @Composable
 fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, modifier: Modifier = Modifier) {
     val pts = remember { mutableStateListOf<androidx.compose.ui.geometry.Offset>() }
+    val pal = LocalMarkColors.current
     val hsNow by androidx.compose.runtime.rememberUpdatedState(hs)
     val vsNow by androidx.compose.runtime.rememberUpdatedState(vs)
     Canvas(
@@ -228,7 +269,9 @@ fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, mod
                 onDrag = { c, _ -> pts.add(c.position) },
                 onDragEnd = {
                     val canvasPts = pts.map { androidx.compose.ui.geometry.Offset((it.x + hsNow) / cw, (it.y + vsNow - topInset) / cw) }
-                    com.b72.keep_canvas.ui.Shapes.recognise(canvasPts, "p${System.nanoTime()}", st.pen)?.let { s -> st.items.add(s) }
+                    val col = st.nextColour()
+                    val shape = com.b72.keep_canvas.ui.Shapes.recognise(canvasPts, "p${System.nanoTime()}", col) ?: freehand(canvasPts, "p${System.nanoTime()}", col)
+                    shape?.let { s -> st.add(s); st.selected = null }
                     pts.clear()
                 },
                 onDragCancel = { pts.clear() },
@@ -237,7 +280,7 @@ fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, mod
     ) {
         if (pts.size > 1) drawPath(
             androidx.compose.ui.graphics.Path().apply { moveTo(pts[0].x, pts[0].y); for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y) },
-            MarkColors[st.pen.mod(MarkColors.size)].copy(alpha = .8f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 7.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+            pal[st.nextColour().mod(pal.size)].copy(alpha = .85f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 7.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
         )
     }
 }
@@ -247,10 +290,24 @@ fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, mod
 fun DrawBar(st: PlacedState, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Row(modifier.clip(CircleShape).background(cs.tertiary).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Draw a shape", color = cs.onTertiary, style = MaterialTheme.typography.labelLarge)
-        for ((i, c) in MarkColors.withIndex()) Box(
-            Modifier.size(28.dp).clip(CircleShape).background(c).border(if (st.pen == i) 3.dp else 1.dp, cs.onTertiary.copy(alpha = if (st.pen == i) 1f else .4f), CircleShape).clickable(onClickLabel = "Pen colour") { st.pen = i },
-        )
+        Text("Draw", color = cs.onTertiary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+        IconButton({ st.undo() }, enabled = st.canUndo) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo", tint = cs.onTertiary.copy(alpha = if (st.canUndo) 1f else .35f)) }
         IconButton({ st.drawing = false }) { Icon(Icons.Rounded.Check, "Done", tint = cs.onTertiary) }
     }
 }
+
+
+/** A free line becomes an item of its own: its points are kept inside its own box (0..1), so it scales and turns like any mark. */
+private fun freehand(pts: List<androidx.compose.ui.geometry.Offset>, id: String, color: Int): Stuck? {
+    if (pts.size < 3) return null
+    val minX = pts.minOf { it.x }; val maxX = pts.maxOf { it.x }; val minY = pts.minOf { it.y }; val maxY = pts.maxOf { it.y }
+    val w = (maxX - minX).coerceAtLeast(.02f); val h = (maxY - minY).coerceAtLeast(.02f)
+    if (w + h < .03f) return null
+    val step = (pts.size / 70).coerceAtLeast(1)
+    val kept = pts.filterIndexed { i, _ -> i % step == 0 || i == pts.lastIndex }
+    val text = kept.joinToString(";") { "%.3f,%.3f".format(java.util.Locale.US, (it.x - minX) / w, (it.y - minY) / h) }
+    return Stuck(id, "f:$text", minX, minY, w, 0f, color, h)
+}
+
+private fun freehandPoints(k: String): List<androidx.compose.ui.geometry.Offset> =
+    k.substring(2).split(';').mapNotNull { p -> val v = p.split(','); val x = v.getOrNull(0)?.toFloatOrNull(); val y = v.getOrNull(1)?.toFloatOrNull(); if (x != null && y != null) androidx.compose.ui.geometry.Offset(x, y) else null }
