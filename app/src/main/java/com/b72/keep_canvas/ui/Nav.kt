@@ -86,9 +86,9 @@ import com.b72.keep_canvas.data.Loaded
 import com.b72.keep_canvas.data.Note
 
 /** [icon] is the resting outline, [selected] the filled one that takes its place on the open tab. */
-private class Dest(val label: String, val icon: ImageVector, val selected: ImageVector)
+internal class Dest(val label: String, val icon: ImageVector, val selected: ImageVector)
 
-private val DESTS = listOf(
+internal val DESTS = listOf(
     Dest("Notes", androidx.compose.material.icons.Icons.Outlined.StickyNote2, androidx.compose.material.icons.Icons.Filled.StickyNote2),
     Dest("Canvas", androidx.compose.material.icons.Icons.Outlined.Dashboard, androidx.compose.material.icons.Icons.Filled.Dashboard),
     Dest("Library", androidx.compose.material.icons.Icons.Outlined.CollectionsBookmark, androidx.compose.material.icons.Icons.Filled.CollectionsBookmark),

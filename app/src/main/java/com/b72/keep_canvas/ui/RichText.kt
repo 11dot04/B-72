@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -374,14 +375,19 @@ fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) 
             else Text(label, color = if (on) cs.tertiary else cs.onTertiary, style = if (script) androidx.compose.ui.text.TextStyle(fontFamily = Script, fontSize = 26.sp) else MaterialTheme.typography.titleMedium)
         }
     }
-    @Composable fun gap() { Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(22.dp).background(cs.onTertiary.copy(alpha = .28f))) }
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiary).padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    @Composable fun gap() { Box(Modifier.padding(vertical = 4.dp).height(1.dp).width(22.dp).background(cs.onTertiary.copy(alpha = .28f))) }
+    // a floating toolbar that stands on the right edge, beside the words, so the whole set fits without sliding sideways
+    Column(
+        modifier.width(54.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiary).padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            Modifier.weight(1f).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
+        Box(Modifier.size(42.dp).clip(CircleShape).background(cs.onTertiary).clickable(onClickLabel = "Done", onClick = onDone), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Check, "Done", tint = cs.tertiary)
+        }
+        Spacer(Modifier.height(6.dp))
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             btn(Icons.Rounded.FormatBold, "Bold", st.has("b")) { st.toggle("b") }
             btn(Icons.Rounded.FormatItalic, "Italic", st.has("i")) { st.toggle("i") }
@@ -409,10 +415,6 @@ fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) 
                 "Alignment", st.align() != "",
             ) { st.cycleAlign() }
             btn(Icons.Rounded.HorizontalRule, "Break", false) { st.rule() }
-        }
-        Spacer(Modifier.width(6.dp))
-        Box(Modifier.size(42.dp).clip(CircleShape).background(cs.onTertiary).clickable(onClickLabel = "Done", onClick = onDone), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Check, "Done", tint = cs.tertiary)
         }
     }
 }

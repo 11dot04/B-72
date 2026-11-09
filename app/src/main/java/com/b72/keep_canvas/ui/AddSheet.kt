@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Link
@@ -58,6 +59,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -82,20 +85,31 @@ private val OPTS = listOf(
     Opt("film", "Film & show", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
     Opt("track", "Track", Icons.Rounded.MusicNote), Opt("recipe", "Recipe", Icons.Rounded.LocalDining),
     Opt("audio", "Audio", Icons.Rounded.Mic), Opt("scan", "Scan", Icons.Rounded.CameraAlt),
+    Opt("text", "Note", Icons.Rounded.EditNote),
 )
 
 /**
- * The plus menu as a card, not a sheet: the toolbar it was opened from grows into it (container transform) and shrinks back into it on
- * the way out. Tapping outside, or back, closes it.
+ * The plus menu as a card, not a sheet. From the note page the toolbar grows into it (container transform); from the + button on a
+ * list it grows out of the corner the button is in, over a scrim, and shrinks back the same way. Tapping outside, or back, closes it.
  */
 @Composable
-private fun AddCard(card: SharedCtx?, onClose: () -> Unit, content: @Composable () -> Unit) {
+private fun AddCard(card: SharedCtx?, visible: Boolean, onClose: () -> Unit, content: @Composable () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onClose)
     val cs = MaterialTheme.colorScheme
     val none = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Box(Modifier.fillMaxSize().background(cs.scrim.copy(alpha = .32f)).clickable(interactionSource = none, indication = null, onClick = onClose)) {
+    var shown by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { shown = true }
+    val p by androidx.compose.animation.core.animateFloatAsState(
+        if (visible && shown) 1f else 0f,
+        androidx.compose.animation.core.tween(if (visible) 380 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)), label = "addcard",
+    )
+    Box(Modifier.fillMaxSize().background(cs.scrim.copy(alpha = .32f * (if (card != null) 1f else p))).clickable(interactionSource = none, indication = null, onClick = onClose)) {
         androidx.compose.material3.Surface(
-            Modifier.align(Alignment.BottomCenter).padding(12.dp).let { if (card != null) it.container(card, "add", 32.dp) else it }
+            Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                .let { if (card != null) it.container(card, "add", 32.dp, full = false, reveal = true) else it.graphicsLayer {
+                    scaleX = .55f + .45f * p; scaleY = .55f + .45f * p; alpha = p
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.9f, 1f)
+                } }
                 .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { },
             shape = RoundedCornerShape(32.dp), color = cs.surfaceContainerHigh,
         ) { content() }
@@ -104,10 +118,18 @@ private fun AddCard(card: SharedCtx?, onClose: () -> Unit, content: @Composable 
 
 /** The plus menu of the note page: everything that can be added to a note, without leaving it. */
 @Composable
-fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = null, card: SharedCtx? = null, onClose: () -> Unit) {
+fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = null, card: SharedCtx? = null, onDone: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf<String?>(null) }
+    // the card plays its exit before it is really gone (when it is not a container that shrinks back into its toolbar)
+    var closing by remember { mutableStateOf(false) }
+    val onClose: () -> Unit = { if (card != null) onDone() else closing = true }
+    androidx.compose.runtime.LaunchedEffect(closing) { if (closing) { kotlinx.coroutines.delay(240); onDone() } }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // started from the + button it opens straight on what was asked for, so the first frame is that, not the list of everything
+    var mode by remember { mutableStateOf<String?>(initial?.takeIf { it !in setOf("photo", "scan", "list") }) }
+    val direct = initial == "photo" || initial == "scan"
+    androidx.compose.runtime.LaunchedEffect(mode) { if (mode != null && mode != "audio") { kotlinx.coroutines.delay(160); runCatching { focus.requestFocus() } } }
     var text by remember { mutableStateOf("") }
     var text2 by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -140,7 +162,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) { initial?.let { go(it) } }
-    AddCard(card, onClose) {
+    if (!direct) AddCard(card, !closing, onClose) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
@@ -163,15 +185,24 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                 }
                 when (m) {
                     "audio" -> VoicePane(repo, noteId, onClose)
+                    "text" -> {
+                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(focus), label = { Text("Title") }, singleLine = true)
+                        OutlinedTextField(text2, { text2 = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Note") }, minLines = 4, maxLines = 10)
+                        Button({
+                            if (text.isNotBlank()) repo.setTitle(noteId, text.trim())
+                            if (text2.isNotBlank()) repo.appendText(noteId, text2.trim())
+                            onClose()
+                        }, Modifier.padding(top = 12.dp)) { Text("Keep") }
+                    }
                     "quote" -> {
-                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("The quote") }, minLines = 2)
+                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(focus), label = { Text("The quote") }, minLines = 2)
                         OutlinedTextField(text2, { text2 = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Who said it") }, singleLine = true)
                         Button({
                             if (text.isNotBlank()) { repo.appendBlock(noteId, newBlock(Kind.Quote, "q${System.nanoTime()}", title = text2.trim(), body = text.trim())); onClose() }
                         }, Modifier.padding(top = 12.dp)) { Text("Add quote") }
                     }
                     "link", "recipe" -> {
-                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text(if (m == "link") "Web address" else "Address of a recipe page") }, singleLine = true)
+                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(focus), label = { Text(if (m == "link") "Web address" else "Address of a recipe page") }, singleLine = true)
                         if (err.isNotEmpty()) Text(err, color = cs.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                         Button({
                             val u = text.trim().let { if (it.startsWith("http")) it else "https://$it" }
@@ -182,7 +213,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                     }
                     else -> {
                         OutlinedTextField(
-                            text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true,
+                            text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(focus), singleLine = true,
                             label = { Text(if (m == "film") "Search films and shows" else "Search ${OPTS.first { it.id == m }.label.lowercase()}s") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = {
                                 scope.launch { busy = true; results = when (m) { "film" -> com.b72.keep_canvas.data.searchFilmsAndShows(text); "book" -> searchBooks(text); else -> searchTracks(text) }; busy = false; if (results.isEmpty()) err = "Nothing found" else err = "" }

@@ -36,6 +36,8 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,8 +66,14 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
     fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }
+    // a note started from a + button is not opened: it is a card holding only what was asked for, and when it is kept it lands in the list as a tile
+    var cardFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     fun begin(kind: Kind, tag: String?) {
-        if (kind == Kind.Text || kind == Kind.Checklist) { val id = repo.newDraft(kind, tag); draft = id; open = id }
+        if (kind == Kind.Checklist) { val id = repo.newDraft(kind, tag); draft = id; open = id }
+        else if (kind == Kind.Text || kind == Kind.Photo || kind == Kind.Quote || kind == Kind.Link || kind == Kind.Film || kind == Kind.Book || kind == Kind.Track || kind == Kind.Recipe || kind == Kind.Audio) {
+            val id = repo.newDraft(Kind.Text, tag)
+            cardFor = id to when (kind) { Kind.Photo -> "photo"; Kind.Quote -> "quote"; Kind.Link -> "link"; Kind.Film -> "film"; Kind.Book -> "book"; Kind.Track -> "track"; Kind.Recipe -> "recipe"; Kind.Audio -> "audio"; else -> "text" }
+        }
         else { val id = repo.newDraft(Kind.Text, tag); draft = id; open = id; addFirst = when (kind) { Kind.Photo -> "photo"; Kind.Quote -> "quote"; Kind.Link -> "link"; Kind.Film -> "film"; Kind.Book -> "book"; Kind.Track -> "track"; Kind.Recipe -> "recipe"; Kind.Audio -> "audio"; else -> null } }
     }
     // something shared from another app opens a new note, ready to save
@@ -87,6 +95,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val scaleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     BackHandler(tab != 0 && open == null && board == null) { tab = 0 }
+    androidx.compose.runtime.LaunchedEffect(open, board) { if (open == null && board == null) Opening.clear() }
     BackHandler((open != null || board != null)) { if (open != null) leave() else board = null }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
@@ -94,12 +103,16 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = open to board,
-                // a note grows out of the card that opened it (container transform), so the screens themselves only fade
-                transitionSpec = { fadeIn(fx) togetherWith fadeOut(fx) },
+                // a note grows out of the card that opened it (container transform): the screen it leaves is held in place underneath, and the new one fades in over it
+                transitionSpec = { fadeIn(fx) togetherWith androidx.compose.animation.ExitTransition.None },
                 label = "screen",
             ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
+                // what the container grows over is dimmed as it goes (the spec's scrim) and brightens again on the way back
+                val here = id to tag
+                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)) }, label = "dim") { s -> if (s == here) 0f else .32f }
+                Box(Modifier.fillMaxSize().drawWithContent { drawContent(); if (dim > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = dim)) }) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
                     value = note?.let { repo.related(it.id) }.orEmpty()
@@ -153,12 +166,14 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     2 -> LibraryScreen(loaded, { open = it }, onAdd = { begin(it, null) })
                     4 -> ShotsScreen()
                     3 -> StickersScreen(repo, loaded, onBack = { tab = 0 }, onCanvas = { board = it })
-                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it },
+                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it }, tab = tab, onTab = { tab = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 } }
                 }
+                }
             }
         }
+        cardFor?.let { (cid, ckind) -> AddSheet(repo, cid, hasList = false, initial = ckind) { cardFor = null; repo.discardIfEmpty(cid) } }
         // the nav floats over a soft darkening so it reads against anything scrolling under it
         AnimatedVisibility(
             visible = open == null && board == null,

@@ -198,7 +198,7 @@ fun NotePage(
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     viewer?.let { v -> PhotoViewer(photos.mapNotNull { it.path }, v) { viewer = null } }
-    BoxWithConstraints(Modifier.fillMaxSize().container(shared, "card-${note.id}", 28.dp).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
+    BoxWithConstraints(Modifier.fillMaxSize().container(shared, "card-${note.id}", 28.dp, reveal = true).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
@@ -444,7 +444,7 @@ fun NotePage(
                 toolbarContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 toolbarContentColor = MaterialTheme.colorScheme.onSurface,
             ),
-            modifier = Modifier.container(SharedCtx(shared.st, this), "add", 28.dp),
+            modifier = Modifier.container(SharedCtx(shared.st, this), "add", 28.dp, full = false),
             leadingContent = {
                 IconButton(onClick = onStar) { Icon(if (note.starred) Icons.Rounded.Star else Icons.Rounded.StarOutline, if (note.starred) "Remove star" else "Star this note") }
                 IconButton(onClick = { pickDate = true }) { Icon(Icons.Rounded.NotificationAdd, "Remind me about this note") }
@@ -469,7 +469,9 @@ fun NotePage(
         rich?.let { r ->
             val fm = androidx.compose.ui.platform.LocalFocusManager.current
             val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-            FormatBar(r, { fm.clearFocus(); kb?.hide() }, Modifier.align(Alignment.BottomCenter).imePadding().padding(bottom = 8.dp))
+            Box(Modifier.fillMaxSize().imePadding().padding(top = 96.dp, bottom = 12.dp, end = 8.dp), contentAlignment = Alignment.CenterEnd) {
+                FormatBar(r, { fm.clearFocus(); kb?.hide() }, Modifier.heightIn(max = 460.dp))
+            }
         }
         if (brainstorm) BrainstormSheet(note, { brainstorm = false }, onAppend, { setupAi = true })
         if (setupAi) AssistantDialog { setupAi = false }

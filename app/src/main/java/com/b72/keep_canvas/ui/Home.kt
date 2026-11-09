@@ -40,6 +40,14 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.b72.keep_canvas.data.trip
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Restore
@@ -166,7 +174,7 @@ private val FILTERS = listOf(
 )
 
 @Composable
-fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
+fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, tab: Int = 0, onTab: (Int) -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
   val appCtx = androidx.compose.ui.platform.LocalContext.current
   androidx.compose.runtime.LaunchedEffect(Unit) { com.b72.keep_canvas.data.Follow.load(appCtx) }
   val match by produceState<com.b72.keep_canvas.data.Match?>(null, com.b72.keep_canvas.data.Follow.teams.size) { value = com.b72.keep_canvas.data.Follow.recent(appCtx).firstOrNull() }
@@ -174,6 +182,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   var menu by remember { mutableStateOf(false) }
   var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
   var searching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+  val topInset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(this).toDp() }
   val texts = remember(loaded?.library) { loaded?.library?.notes.orEmpty().associate { it.id to it.searchText() } }
   var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
   val test: (Note) -> Boolean = if (filter.startsWith("#")) { n -> filter.substring(1) in n.tags } else (FILTERS.firstOrNull { it.name == filter }?.test ?: { _: Note -> true })
@@ -202,10 +211,14 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   asking?.let { AskSheet(repo, it, onOpen) { asking = null } }
   BackHandler(menu) { menu = false }
   BackHandler(searching) { searching = false }
-  val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
-  val drawerScope = androidx.compose.runtime.rememberCoroutineScope()
-  BackHandler(drawer.isOpen) { drawerScope.launch { drawer.close() } }
-  androidx.compose.material3.ModalNavigationDrawer(drawerContent = { AppDrawer(repo) { drawerScope.launch { drawer.close() } } }, drawerState = drawer) {
+  var railOpen by remember { mutableStateOf(false) }
+  var settings by remember { mutableStateOf(false) }
+  BackHandler(railOpen && !settings) { railOpen = false }
+  BackHandler(settings) { settings = false }
+  RailLayout(
+    open = railOpen, tab = tab, onTab = { railOpen = false; if (it != tab) onTab(it) }, onSettings = { railOpen = false; settings = true },
+    settings = settings, onCloseSettings = { settings = false }, settingsPage = { AppDrawer(repo) { settings = false } },
+  ) {
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
         LazyVerticalStaggeredGrid(
@@ -324,7 +337,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                 }, onSkip = { com.b72.keep_canvas.data.Follow.markHandled(appCtx, mt.eventId); dismissed = mt.eventId })
             } else if (revisit != null && q.isBlank()) item(span = StaggeredGridItemSpan.FullLine) { Revisit(revisit.first, revisit.second) { onOpen(revisit.first.id) } }
             if (loaded != null) {
-                items(shown, key = { it.id }) { n -> Box(Modifier.animateItem()) { if (cols == 1) FeatureTile(n, shared, grow = !searching) { onOpen(n.id) } else Tile(n, shared, grow = !searching) { onOpen(n.id) } } }
+                items(shown, key = { it.id }) { n -> Box(Modifier.animateItem().opener(n.id)) { if (cols == 1) FeatureTile(n, shared, grow = !searching) { Opening.press(n.id); onOpen(n.id) } else Tile(n, shared, grow = !searching) { Opening.press(n.id); onOpen(n.id) } } }
                 if (shown.isEmpty() && q.isNotBlank()) item(span = StaggeredGridItemSpan.FullLine) {
                     Text("Nothing matches “$q”", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
                 }
@@ -340,14 +353,14 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         KeepBar(
             q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
             count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
-            menu = { androidx.compose.material3.IconButton({ drawerScope.launch { drawer.open() } }) { Icon(Icons.Rounded.Menu, "Menu") } },
+            menu = { androidx.compose.material3.IconButton({ railOpen = !railOpen }) { Icon(Icons.Rounded.Menu, "Menu") } },
             onSearch = { searching = true }, container = Modifier.container(SharedCtx(shared.st, this), "search", 28.dp),
         )
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = searching, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
     ) {
-        SearchPage(q, { q = it }, if (q.isBlank()) emptyList() else shown, { searching = false }, onOpen, Modifier.container(SharedCtx(shared.st, this), "search", 28.dp))
+        SearchPage(q, { q = it }, if (q.isBlank()) emptyList() else shown, { searching = false }, onOpen, Modifier.container(SharedCtx(shared.st, this), "search", 28.dp, reveal = true, revealShift = topInset + 8.dp))
     }
     if (menu) Box(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .32f))
@@ -667,7 +680,7 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
             }
         }
     }
-    androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = cs.surface) {
+    androidx.compose.material3.Surface(color = cs.surface, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Column(Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(cs.primaryContainer).statusBarsPadding().padding(horizontal = 20.dp, vertical = 20.dp)) {
                 Text("B-72", style = flexStyle(40.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onPrimaryContainer)
@@ -716,7 +729,7 @@ private fun SearchPage(q: String, onQ: (String) -> Unit, results: List<Note>, on
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.material3.IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Close search") }
-            Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
                 if (q.isEmpty()) Text("Search your notes", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1)
                 androidx.compose.foundation.text.BasicTextField(
                     q, onQ, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true,
@@ -800,6 +813,62 @@ private fun MatchPrompt(m: com.b72.keep_canvas.data.Match, onWrite: () -> Unit, 
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             androidx.compose.material3.FilledTonalButton(onWrite) { Text("Write it down") }
             androidx.compose.material3.TextButton(onSkip) { Text("Not now", color = cs.onTertiaryContainer) }
+        }
+    }
+}
+
+
+/**
+ * The expanded navigation rail. It sits beside the content in a Row rather than over it, so opening it squeezes the tiles to the side
+ * instead of dimming them. Settings opens as its own page over everything.
+ */
+@Composable
+private fun RailLayout(
+    open: Boolean, tab: Int, onTab: (Int) -> Unit, onSettings: () -> Unit,
+    settings: Boolean, onCloseSettings: () -> Unit, settingsPage: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val w by androidx.compose.animation.core.animateDpAsState(
+        if (open) 272.dp else 0.dp,
+        androidx.compose.animation.core.tween(380, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)), label = "rail",
+    )
+    Box(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.width(w).fillMaxHeight().clipToBounds()) {
+                Column(Modifier.requiredWidth(272.dp).fillMaxHeight().background(cs.surface).statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp)) {
+                    Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 56.dp, bottom = 20.dp))
+                    for ((i, d) in DESTS.withIndex()) {
+                        val on = i == tab
+                        Row(
+                            Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp))
+                                .background(if (on) cs.secondaryContainer else Color.Transparent)
+                                .clickable { onTab(i) }.padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(if (on) d.selected else d.icon, null, tint = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant)
+                            Spacer(Modifier.width(12.dp))
+                            Text(d.label, style = MaterialTheme.typography.labelLarge, color = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant, maxLines = 1)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).clickable { onSettings() }.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Settings, null, tint = cs.onSurfaceVariant)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Settings", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, maxLines = 1)
+                    }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+        }
+        AnimatedVisibility(settings, enter = fadeIn(tween(220)) + slideInHorizontally(tween(380, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))) { it / 6 }, exit = fadeOut(tween(160))) {
+            Box(Modifier.fillMaxSize()) {
+                settingsPage()
+                androidx.compose.material3.FilledTonalIconButton(onClick = onCloseSettings, modifier = Modifier.statusBarsPadding().padding(8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+            }
         }
     }
 }
