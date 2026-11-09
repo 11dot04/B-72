@@ -212,6 +212,22 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   asking?.let { AskSheet(repo, it, onOpen) { asking = null } }
   BackHandler(menu) { menu = false }
   BackHandler(searching) { searching = false }
+  // A page lays its big title out with a variable font, which is slow the first time. While the grid is idle the page-sized layouts of the
+  // notes on screen are made ahead, one per frame, so opening a note does not stall the container transform on its first frame.
+  run {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val dens = androidx.compose.ui.platform.LocalDensity.current
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val screenW = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toFloat()
+    val ahead = remember(shown) { (loaded?.library?.notes.orEmpty().filter { it.starred } + shown).distinctBy { it.id }.filter { it.title.isNotEmpty() }.take(16) }
+    androidx.compose.runtime.LaunchedEffect(ahead, screenW) {
+      val wPx = screenW - with(dens) { 32.dp.toPx() }
+      for (n in ahead) {
+        androidx.compose.runtime.withFrameNanos { }
+        runCatching { titleLay(n.title, wPx, n.id, 3, if (dark) -25f else 0f, measurer, dens, n.layout) }
+      }
+    }
+  }
   var railOpen by remember { mutableStateOf(false) }
   var settings by remember { mutableStateOf(false) }
   BackHandler(railOpen && !settings) { railOpen = false }

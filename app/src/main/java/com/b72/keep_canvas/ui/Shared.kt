@@ -98,7 +98,8 @@ fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Bo
     return with(ctx.st) {
         sharedBounds(
             rememberSharedContentState(key), ctx.av,
-            enter = fadeIn(tween(130)), exit = fadeOut(tween(130, delayMillis = 260)),
+            // fade through, as in the spec: what leaves is gone in 90 ms (so no scaled-up ghost of it rides the growing shape), then what arrives fades in
+            enter = fadeIn(tween(210, delayMillis = 90)), exit = fadeOut(tween(90)),
             boundsTransform = bounds,
             // a destination is revealed, not shrunk: it is laid out at its real size and the growing container uncovers it from the top, as in the spec's videos
             resizeMode = if (reveal) SharedTransitionScope.ResizeMode.scaleToBounds(androidx.compose.ui.layout.ContentScale.None, align) else SharedTransitionScope.ResizeMode.scaleToBounds(),

@@ -221,13 +221,15 @@ fun NotePage(
             val besideMode = false
             val bodies: @Composable (Boolean) -> Unit = { compact ->
                 val tbs = note.blocks.filter { it.kind == Kind.Text }
+                // the formatting bar stands on the right edge while typing, so the words make room for it instead of running under it
+                val barRoom by androidx.compose.animation.core.animateDpAsState(if (rich != null) 62.dp else 0.dp, androidx.compose.animation.core.tween(260), label = "barRoom")
                 for ((ti, b) in tbs.withIndex()) {
                     val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
-                    InlineBody(
+                    Box(Modifier.padding(end = barRoom)) { InlineBody(
                         b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || layoutId == "script", if (ti == 0) "Note" else "", pal, linked,
                         focus = autoFocus && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
                         serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact,
-                    ) { t, sp, ind -> onRich(b.id, t, sp, ind) }
+                    ) { t, sp, ind -> onRich(b.id, t, sp, ind) } }
                 }
                 if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
             }

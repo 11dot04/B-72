@@ -180,7 +180,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
             } else {
                 val m = mode!!
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton({ mode = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    IconButton({ if (initial != null) onClose() else mode = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                     Text(OPTS.first { it.id == m }.label, style = MaterialTheme.typography.titleLarge)
                 }
                 when (m) {
