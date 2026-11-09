@@ -2,6 +2,7 @@ package com.b72.keep_canvas.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -33,8 +34,19 @@ object Store {
     suspend fun load(ctx: Context): Loaded = withContext(Dispatchers.IO) {
         val mine = own(ctx)
         if (mine.exists()) {
-            return@withContext runCatching { Loaded(parse(mine.readText()), Source.Own) }
-                .getOrElse { Loaded(Library(), Source.Own, "Could not read notes: ${it.message}") }
+            val text = mine.readText()
+            return@withContext runCatching { Loaded(parse(text), Source.Own) }
+                .getOrElse { first ->
+                    // Two saves at once used to be able to leave the tail of the longer one after the end of the shorter. Everything up to the end
+                    // of the first complete document is intact, so that is read, the damaged file is kept beside it, and the clean copy is written back.
+                    val head = firstValue(text)
+                    val lib = if (head != null && head.length < text.length) runCatching { parse(head) }.getOrNull() else null
+                    if (lib != null) {
+                        runCatching { File(mine.parentFile, "notes.damaged.json").writeText(text) }
+                        runCatching { save(ctx, lib) }
+                        Loaded(lib, Source.Own)
+                    } else Loaded(Library(), Source.Own, "Could not read notes: ${first.message}")
+                }
         }
         val old = flutter(ctx)
         if (old.exists()) {
@@ -48,12 +60,32 @@ object Store {
         Loaded(Library(), Source.Empty)
     }
 
+    /** One save at a time, each through its own temporary file, so two writers can never share a file and leave a torn one behind. */
+    private val saving = kotlinx.coroutines.sync.Mutex()
+
     suspend fun save(ctx: Context, lib: Library) = withContext(Dispatchers.IO) {
         val f = own(ctx)
         f.parentFile?.mkdirs()
-        val tmp = File(f.parentFile, "notes.json.tmp")
-        tmp.writeText(AppJson.encodeToString(Library.serializer(), lib))
-        tmp.renameTo(f)
+        saving.withLock {
+            val tmp = File(f.parentFile, "notes.json.tmp")
+            tmp.writeText(AppJson.encodeToString(Library.serializer(), lib))
+            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        }
+    }
+
+    /** The text of the first complete top-level object or array in [t], or null if there is none. */
+    private fun firstValue(t: String): String? {
+        var depth = 0; var inStr = false; var esc = false; var start = -1
+        for (i in t.indices) {
+            val c = t[i]
+            if (inStr) { if (esc) esc = false else if (c == '\\') esc = true else if (c == '"') inStr = false; continue }
+            when (c) {
+                '"' -> inStr = true
+                '{', '[' -> { if (depth == 0) start = i; depth++ }
+                '}', ']' -> { depth--; if (depth == 0 && start >= 0) return t.substring(start, i + 1) }
+            }
+        }
+        return null
     }
 
     /** The Flutter file is either a bare list of notes (very old) or {notes, stickers}. */
