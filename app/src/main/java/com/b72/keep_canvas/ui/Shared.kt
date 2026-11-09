@@ -14,6 +14,8 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -99,7 +101,7 @@ fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Bo
             enter = fadeIn(tween(130)), exit = fadeOut(tween(130, delayMillis = 260)),
             boundsTransform = bounds,
             // a destination is revealed, not shrunk: it is laid out at its real size and the growing container uncovers it from the top, as in the spec's videos
-            resizeMode = if (reveal) SharedTransitionScope.ResizeMode.ScaleToBounds(androidx.compose.ui.layout.ContentScale.None, align) else SharedTransitionScope.ResizeMode.ScaleToBounds(),
+            resizeMode = if (reveal) SharedTransitionScope.ResizeMode.scaleToBounds(androidx.compose.ui.layout.ContentScale.None, align) else SharedTransitionScope.ResizeMode.scaleToBounds(),
             clipInOverlayDuringTransition = OverlayClip(clip),
         )
     }

@@ -102,6 +102,7 @@ import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.AutoAwesome
 import com.b72.keep_canvas.data.matchesQuery
