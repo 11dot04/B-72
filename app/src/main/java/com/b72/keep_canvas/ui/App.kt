@@ -111,8 +111,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
                 // what the container grows over is dimmed as it goes (the spec's scrim) and brightens again on the way back
-                val here = id to tag
-                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)) }, label = "dim") { s -> if (s == here) 0f else .32f }
+                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)) }, label = "dim") { s -> if (s == androidx.compose.animation.EnterExitState.Visible) 0f else .32f }
                 Box(Modifier.fillMaxSize().drawWithContent { drawContent(); if (dim > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = dim)) }) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
