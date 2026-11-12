@@ -12,6 +12,9 @@ import android.content.Intent
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.rounded.Dashboard
@@ -187,7 +190,7 @@ fun NotePage(
     val ls = rememberLazyListState()
     // The big title scrolls away like any other content. The bar's own title takes over once the big one has slid under the
     // bar; where the big title really is gets measured, so the two are never on screen together.
-    val barBottomPx = with(density) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp).toPx() }
+    val barBottomPx = with(density) { 64.dp.toPx() }
     val fadePx = with(density) { 24.dp.toPx() }
     var titleBottom by remember { mutableFloatStateOf(Float.MAX_VALUE) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -210,11 +213,19 @@ fun NotePage(
     }
     val texts = note.blocks.filter { it.kind == Kind.Text && it.body.isNotEmpty() }.map { it.body }
     val list = note.blocks.filter { it.kind == Kind.Checklist }.flatMap { it.checkItems }
-    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val top = 0.dp   // the card starts below the status bar
+    val bottom = 0.dp
 
     viewer?.let { v -> PhotoViewer(photos.mapNotNull { it.path }, v) { viewer = null } }
-    BoxWithConstraints(Modifier.fillMaxSize().container(shared, "card-${note.id}", 28.dp, reveal = true).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
+    // The page is a card inset from the screen: grey all round (the status bar above it, a strip below it that holds undo, redo and the tag),
+    // and the page's own colours only inside. The container transform grows a tile into this card, not into the whole screen.
+    val frame = MaterialTheme.colorScheme.surfaceContainerHigh
+    val frameA by shared.av.transition.animateFloat(transitionSpec = { tween(260) }, label = "frame") { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else 0f }
+    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.matchParentSize().graphicsLayer { alpha = frameA }.background(frame))
+    Column(Modifier.fillMaxSize().imePadding().statusBarsPadding().navigationBarsPadding()) {
+    Spacer(Modifier.height(6.dp))
+    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).container(shared, "card-${note.id}", 28.dp, reveal = true).clip(RoundedCornerShape(28.dp)).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
@@ -415,16 +426,6 @@ fun NotePage(
             },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             actions = {
-                if (repo != null) {
-                    IconButton(onClick = { repo.undo(note.id) }, enabled = repo.canUndo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo") }
-                    IconButton(onClick = { repo.redo(note.id) }, enabled = repo.canRedo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo") }
-                }
-                note.tags.firstOrNull()?.let { t ->
-                    Text(
-                        t, style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(end = 8.dp).minimumInteractiveComponentSize().clip(RoundedCornerShape(20.dp)).background(pal.primary.copy(alpha = .2f)).clickable { onTag(t) }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent, scrolledContainerColor = pal.bg,
@@ -536,6 +537,25 @@ fun NotePage(
             confirmButton = { TextButton(onClick = { askDelete = false; onDelete() }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancel") } },
         )
+    }
+    Row(
+        Modifier.fillMaxWidth().height(56.dp).graphicsLayer { alpha = frameA }.padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val on = MaterialTheme.colorScheme.onSurfaceVariant
+        if (repo != null) {
+            IconButton(onClick = { repo.undo(note.id) }, enabled = repo.canUndo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo", tint = on.copy(alpha = if (repo.canUndo(note.id)) 1f else .38f)) }
+            IconButton(onClick = { repo.redo(note.id) }, enabled = repo.canRedo(note.id)) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo", tint = on.copy(alpha = if (repo.canRedo(note.id)) 1f else .38f)) }
+        }
+        Spacer(Modifier.weight(1f))
+        note.tags.firstOrNull()?.let { t ->
+            Text(
+                "#$t", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.secondaryContainer).clickable { onTag(t) }.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+    }
+    }
     }
 }
 

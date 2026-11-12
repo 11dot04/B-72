@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -155,7 +156,7 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
                 val meta = if (book) listOf(v("year"), v("pages").takeIf { it.isNotEmpty() && it != "0" }?.let { "$it pages" } ?: "", v("genre"))
                 else listOf(if (v("series").isNotEmpty()) "Series" else "", v("year"), v("seasons").takeIf { it.isNotEmpty() }?.let { "$it seasons" } ?: v("runtime").takeIf { it.isNotEmpty() }?.let { "$it min" } ?: "", v("genre"))
                 val by = if (book) v("author").takeIf { it.isNotEmpty() }?.let { "By $it" } ?: "" else v("director").takeIf { it.isNotEmpty() }?.let { (if (v("series").isNotEmpty()) "Created by " else "Directed by ") + it } ?: ""
-                Row {
+                if (!book) FilmTicket(b, showTitle, meta, by, has, rating) else Row {
                     if (has) {
                         PhotoImage(b.path!!, 700, false, pal.primary, Modifier.width(w * .38f).aspectRatio(2f / 3f).clip(RoundedCornerShape(22.dp)).let { if (book && onCover != null) it.clickable(onClickLabel = "Change cover") { pickCover = true } else it })
                         Spacer(Modifier.width(16.dp))
@@ -265,6 +266,71 @@ internal fun StatGrid(stats: String, src: String, fg: androidx.compose.ui.graphi
             for ((k, v) in rows) Column {
                 Text(v, style = flexStyle(if (v.length > 9) 22.sp else 30.sp, wght = 780, rond = 30f, lh = 1f), color = fg)
                 Text(k.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = .8.sp), color = fg.copy(alpha = .6f), modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+    }
+}
+
+
+/** A ticket-shaped notch cut from both sides at [y] from the top, [r] deep. */
+private class TicketShape(val corner: Dp, val y: Dp, val r: Dp) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density): androidx.compose.ui.graphics.Outline {
+        val c = with(density) { corner.toPx() }; val yy = with(density) { y.toPx() }; val rr = with(density) { r.toPx() }
+        val card = androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, androidx.compose.ui.geometry.CornerRadius(c))) }
+        val cut = androidx.compose.ui.graphics.Path().apply {
+            addOval(androidx.compose.ui.geometry.Rect(-rr, yy - rr, rr, yy + rr))
+            addOval(androidx.compose.ui.geometry.Rect(size.width - rr, yy - rr, size.width + rr, yy + rr))
+        }
+        val out = androidx.compose.ui.graphics.Path.combine(androidx.compose.ui.graphics.PathOperation.Difference, card, cut)
+        return androidx.compose.ui.graphics.Outline.Generic(out)
+    }
+}
+
+/**
+ * A film as a cinema ticket, after a ticket-stub layout: a colour taken from the poster, the title large, director and genre under it, a row of
+ * small facts, the poster beside, then a notched tear-off with a barcode that is the same for the same film.
+ */
+@Composable
+private fun FilmTicket(b: Block, showTitle: Boolean, meta: List<String>, by: String, has: Boolean, rating: Int) {
+    fun v(k: String) = b.field(k)
+    val hue by androidx.compose.runtime.produceState(seedOf(b.id) % 360f, b.path) { b.path?.let { pa -> hueOfPhoto(pa)?.let { value = it } } }
+    val h0 = ((hue % 360f) + 360f) % 360f
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val block = androidx.compose.ui.graphics.Color.hsl(h0, if (dark) .45f else .55f, if (dark) .26f else .76f)
+    val ink = androidx.compose.ui.graphics.Color.hsl(h0, .5f, if (dark) .94f else .1f)
+    val mono = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp)
+    val facts = listOf(
+        "YEAR" to v("year"),
+        (if (v("seasons").isNotEmpty()) "SEASONS" else "MINUTES") to (v("seasons").ifEmpty { v("runtime") }),
+        "RATING" to if (rating > 0) "$rating / 10" else "",
+        "STATUS" to (statusLabels(Kind.Film).getOrNull(STATUS_KEYS.indexOf(v("status"))) ?: ""),
+    ).filter { it.second.isNotEmpty() }
+    val genres = v("genre").split(",", "/").map { it.trim() }.filter { it.isNotEmpty() }
+    val bars = androidx.compose.runtime.remember(b.id) { val r = java.util.Random(b.id.hashCode().toLong()); List(46) { 1 + r.nextInt(4) } }
+    Column(Modifier.fillMaxWidth().clip(TicketShape(28.dp, 232.dp, 12.dp)).background(block)) {
+        Row(Modifier.fillMaxWidth().height(232.dp).padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 16.dp)) {
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Text((if (v("series").isNotEmpty()) "SERIES" else "FILM") + " TICKET", style = mono, color = ink.copy(alpha = .75f))
+                if (showTitle && b.title.isNotEmpty()) Text(b.title, style = flexStyle(30.sp, wght = 780, rond = 20f, lh = 1.02f), color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                if (by.isNotEmpty()) Text(by, style = MaterialTheme.typography.bodyMedium, color = ink.copy(alpha = .85f), modifier = Modifier.padding(top = 4.dp))
+                Spacer(Modifier.weight(1f))
+                if (genres.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    genres.take(3).forEach { g -> Text(g, style = MaterialTheme.typography.labelMedium, color = ink, modifier = Modifier.clip(RoundedCornerShape(50)).background(ink.copy(alpha = .14f)).padding(horizontal = 10.dp, vertical = 4.dp), maxLines = 1) }
+                }
+            }
+            if (has) {
+                Spacer(Modifier.width(14.dp))
+                PhotoImage(b.path!!, 500, false, block, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(RoundedCornerShape(18.dp)))
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 18.dp)) {
+            if (facts.isNotEmpty()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                facts.forEach { (k, x) -> Column { Text(k, style = mono.copy(fontSize = 10.sp), color = ink.copy(alpha = .65f)); Text(x, style = MaterialTheme.typography.titleSmall, color = ink) } }
+            }
+            androidx.compose.foundation.Canvas(Modifier.padding(top = 16.dp).fillMaxWidth().height(34.dp)) {
+                var x = 0f
+                val u = size.width / (bars.sumOf { it + 1 })
+                for (n in bars) { drawRect(ink.copy(alpha = .85f), androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Size(n * u, size.height)); x += (n + 1) * u }
             }
         }
     }
