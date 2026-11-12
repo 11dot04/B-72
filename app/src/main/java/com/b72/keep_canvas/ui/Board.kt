@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -410,9 +412,10 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 dismissButton = { androidx.compose.material3.TextButton({ textEdit = null }) { Text("Cancel") } },
             )
         }
-        // the tools stand in a horizontal floating bar along the bottom, with undo and redo; a new note is its own larger button above its end
+        // the tools stand in a horizontal floating bar along the bottom (it scrolls sideways when it must), the new-note button beside it
+        Row(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 16.dp).clip(RoundedCornerShape(30.dp)).background(t.tc)
+            Modifier.weight(1f).clip(RoundedCornerShape(30.dp)).background(t.tc)
                 .horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -425,13 +428,15 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
             IconButton(onClick = { placed.redo() }, enabled = placed.canRedo, colors = on) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo") }
             IconButton(onClick = { force[0] = true; shuffle++; retidy++ }, colors = on) { Icon(Icons.Rounded.AutoFixHigh, "Arrange the canvas again") }
         }
+        Spacer(Modifier.width(10.dp))
         FloatingActionButton(
             onClick = onAdd,
-            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 92.dp).size(72.dp),
-            shape = RoundedCornerShape(26.dp),
+            modifier = Modifier.size(64.dp),
+            shape = RoundedCornerShape(22.dp),
             containerColor = t.primary,
             contentColor = t.onPrimary,
-        ) { Icon(Icons.Rounded.Edit, "New note", Modifier.size(28.dp)) }
+        ) { Icon(Icons.Rounded.Edit, "New note", Modifier.size(26.dp)) }
+        }
     }
 }
 }

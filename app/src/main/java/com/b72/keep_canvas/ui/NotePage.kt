@@ -85,6 +85,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.runtime.produceState
@@ -134,30 +136,17 @@ private val TECH = com.b72.keep_canvas.data.CUT_KEYS + setOf("rating", "desc")
  */
 /** Keeps what is being typed clear of the keyboard strip and the top bar with the least scrolling; a large thing (a photo, a card) uses the usual least-scroll rule. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private val typingSpec = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+private class TypingSpec(val typing: () -> Boolean) : androidx.compose.foundation.gestures.BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        // while a text field has the cursor the page follows the caret by its own rule (below), not by Compose's, so nothing fights over the scroll position
+        if (typing()) return 0f
         val trailing = offset + size
-        // something tall that is already partly on screen (the whole text field while a new line is being added) is left where it is; asking for
-        // its far edge is what used to throw the page to the bottom on every Enter
-        if (size > containerSize * .4f) return when {
-            offset < containerSize && trailing > 0f -> 0f
-            offset >= 0 && trailing <= containerSize -> 0f
-            offset < 0 && trailing > containerSize -> 0f
+        return when {
+            offset >= 0f && trailing <= containerSize -> 0f
+            offset < 0f && trailing > containerSize -> 0f
             kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
             else -> trailing - containerSize
         }
-        // a line being typed only moves the page once it nears the keyboard strip or the top bar, and then only by the least that clears it;
-        // pulling every line back to a fixed spot is what made the page drift up and down while typing
-        val low = containerSize * .22f
-        val high = containerSize * .12f
-        val d = when {
-            trailing > containerSize - low -> trailing - (containerSize - low)
-            offset < high -> offset - high
-            else -> 0f
-        }
-        // one line is only ever a line's height from where it should be; anything bigger is a stale position, and following it is what threw the page to the bottom
-        val cap = size + low
-        return d.coerceIn(-cap, cap)
     }
 }
 
@@ -191,6 +180,23 @@ fun NotePage(
 
 
     val ls = rememberLazyListState()
+    var vp by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var caret by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val dens = androidx.compose.ui.platform.LocalDensity.current
+    // the one rule that moves the page while typing: when the caret gets into the strip above the keyboard (where the formatting bar stands) or under
+    // the top bar, scroll just far enough to clear it. Inside the band nothing moves, so there is nothing to pull back.
+    LaunchedEffect(caret) {
+        val c = caret ?: return@LaunchedEffect
+        if (vp.height <= 0f) return@LaunchedEffect
+        val lowLimit = vp.bottom - with(dens) { 104.dp.toPx() }
+        val highLimit = vp.top + with(dens) { 84.dp.toPx() }
+        val d = when {
+            c.bottom > lowLimit -> c.bottom - lowLimit
+            c.top < highLimit -> c.top - highLimit
+            else -> 0f
+        }
+        if (kotlin.math.abs(d) > 1f) ls.dispatchRawDelta(d)
+    }
     // The big title scrolls away like any other content. The bar's own title takes over once the big one has slid under the
     // bar; where the big title really is gets measured, so the two are never on screen together.
     val barBottomPx = with(density) { 64.dp.toPx() }
@@ -234,10 +240,12 @@ fun NotePage(
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
 
         // the line being typed is kept near the middle, so neither the keyboard nor the formatting strip ever covers it
-        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides typingSpec) {
+        val richNow by androidx.compose.runtime.rememberUpdatedState(rich)
+        val spec = remember { TypingSpec { richNow != null } }
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides spec) {
         LazyColumn(
             state = ls,
-            modifier = Modifier.fillMaxSize().imePadding(),
+            modifier = Modifier.fillMaxSize().imePadding().onGloballyPositioned { vp = it.boundsInRoot() },
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 72.dp, bottom = bottom + (maxHeight * .5f).coerceAtLeast(112.dp)),
         ) {
             // the title is a field when there is none yet (or after a tap); otherwise it is the big flexing title
@@ -258,7 +266,7 @@ fun NotePage(
                     Box(Modifier.padding(end = barRoom)) { InlineBody(
                         b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || layoutId == "script", if (ti == 0) "Note" else "", pal, linked,
                         focus = autoFocus && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
-                        serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact,
+                        serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact, onCaret = { caret = it },
                     ) { t, sp, ind -> onRich(b.id, t, sp, ind) } }
                 }
                 if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
@@ -625,17 +633,31 @@ private fun RecipeHeader(b: Block, title: String, pull: androidx.compose.ui.unit
     val photo by produceState<ImageBitmap?>(b.path?.let { Images.peek(it, 1100) }, b.path) { value = b.path?.let { Images.load(it, 1100) } }
     val cut by produceState<ImageBitmap?>(b.cutPath()?.let { Images.peek(it, 1100) }, b.id) { value = b.cutPath()?.let { Images.load(it, 1100) } }
     val full = 430.dp
-    Box(Modifier.fillMaxWidth().height(full - pull).wrapContentHeight(Alignment.Top, unbounded = true)) {
-        Box(Modifier.fillMaxWidth().height(full).offset(y = -pull).shared(shared, "img-$noteId")) {
+    // the photo runs the whole width of the card, past the list's side padding, with round lower corners
+    val edge = 16.dp
+    Box(
+        Modifier.layout { m, c ->
+            val e = edge.roundToPx()
+            val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * e, maxWidth = c.maxWidth + 2 * e))
+            layout(c.maxWidth, p.height) { p.place(-e, 0) }
+        }.fillMaxWidth().height(full - pull).wrapContentHeight(Alignment.Top, unbounded = true),
+    ) {
+        Box(Modifier.fillMaxWidth().height(full).offset(y = -pull).shared(shared, "img-$noteId").clip(RoundedCornerShape(bottomStart = 36.dp, bottomEnd = 36.dp))) {
             photo?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = .32f), Color.Transparent, Color.Black.copy(alpha = .2f)))))
             Text(
                 title.ifBlank { "Recipe" }, maxLines = 3,
                 style = flexStyle(64.sp, wght = 800, wdth = 92f, lh = .95f), color = Color.White,
-                modifier = Modifier.align(Alignment.TopStart).padding(start = 16.dp, end = 16.dp, top = pull + 8.dp)
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, end = 20.dp, top = pull + 8.dp)
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClickLabel = "Edit title") { onEditTitle() },
             )
             cut?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            // the dish stands in front of the words, but they stay readable through it: a faint second copy of the title is drawn over the dish
+            if (cut != null) Text(
+                title.ifBlank { "Recipe" }, maxLines = 3,
+                style = flexStyle(64.sp, wght = 800, wdth = 92f, lh = .95f), color = Color.White.copy(alpha = .3f),
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, end = 20.dp, top = pull + 8.dp),
+            )
         }
     }
 }

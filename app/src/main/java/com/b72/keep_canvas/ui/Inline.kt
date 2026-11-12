@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,9 +92,10 @@ fun InlineTitle(initial: String, placeholder: String, pal: NotePalette, focus: B
 @Composable
 fun InlineBody(
     body: String, spans: String, indent: Boolean, placeholder: String, pal: NotePalette, linked: AnnotatedString, focus: Boolean,
-    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
+    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onCaret: (androidx.compose.ui.geometry.Rect) -> Unit = {}, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
 ) {
     val st = remember { RichState(body, parseSpans(spans), indent) }
+    var fieldAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var focused by remember { mutableStateOf(false) }
     val fr = remember { FocusRequester() }
     val links = remember(linked) { linked.getLinkAnnotations(0, linked.length).isNotEmpty() }
@@ -128,6 +130,17 @@ fun InlineBody(
     var lay by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     val style = if (st.indentOn) base.copy(textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = 28.sp)) else base
     val vt = remember(st.spans) { richTransformation(st.spans, 18f) }
+    // where the caret is on screen after each layout, so the page can keep it clear of the keyboard strip (the page does the scrolling, once, itself)
+    val caretCb by rememberUpdatedState(onCaret)
+    LaunchedEffect(lay) {
+        val l = lay ?: return@LaunchedEffect
+        val c = fieldAt ?: return@LaunchedEffect
+        if (!focused || !c.isAttached || !st.tv.selection.collapsed) return@LaunchedEffect
+        runCatching {
+            val r = l.getCursorRect(st.tv.selection.start.coerceIn(0, l.layoutInput.text.length))
+            caretCb(androidx.compose.ui.geometry.Rect(c.localToRoot(r.topLeft), r.size))
+        }
+    }
     Box(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(bottom = 12.dp).then(
             if (!numbered) Modifier else Modifier.drawBehind {
@@ -148,7 +161,7 @@ fun InlineBody(
             if (st.tv.text.isEmpty()) Text(placeholder, style = style, color = pal.fg.copy(alpha = .4f))
             BasicTextField(
                 st.tv, { st.edit(it) },
-                Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged {
+                Modifier.fillMaxWidth().focusRequester(fr).onGloballyPositioned { fieldAt = it }.onFocusChanged {
                     focused = it.isFocused
                     if (it.isFocused) onRich(st) else { onRich(null); if (links) editing = false }
                 },
