@@ -67,7 +67,7 @@ fun Modifier.shared(ctx: SharedCtx, key: String, text: Boolean = false, remeasur
 @Composable
 fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Boolean = true, reveal: Boolean = false, revealShift: Dp = 0.dp, revealMin: Dp = 56.dp): Modifier {
     // the spec's emphasized-decelerate curve: it leaves fast and takes its time to settle, which is what reads as smooth rather than abrupt
-    val spec = tween<Rect>(if (full) 500 else 380, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))
+    val spec = tween<Rect>(if (full) 500 else 380, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f))
     val bounds = BoundsTransform { _, _ -> spec }
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
     val screen = cfg.screenWidthDp.toFloat() * cfg.screenHeightDp
@@ -94,6 +94,10 @@ fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Bo
                 return androidx.compose.ui.unit.IntOffset((space.width - size.width) / 2, (-shiftPx * (1f - t)).toInt())
             }
         }
+    }
+    androidx.compose.runtime.DisposableEffect(key) {
+        Opening.live[key] = (Opening.live[key] ?: 0) + 1
+        onDispose { Opening.live[key] = ((Opening.live[key] ?: 1) - 1).coerceAtLeast(0) }
     }
     return with(ctx.st) {
         sharedBounds(
@@ -139,6 +143,8 @@ object Opening {
     fun centre(k: String) = centres[k]
     fun put(k: String, c: androidx.compose.ui.geometry.Offset) { centres[k] = c }
     fun drop(k: String) { centres.remove(k) }
+    /** How many containers with this key are composed right now: two means the tile a page grew from is still there to shrink back into. */
+    val live = androidx.compose.runtime.mutableStateMapOf<String, Int>()
 }
 
 /** Registers this tile's centre and, while another tile is opening, slides away from it and fades. */
@@ -147,7 +153,7 @@ fun Modifier.opener(key: String, shrink: Float = 0f): Modifier {
     val opening = Opening.id
     val away = opening != null && opening != key
     val t by androidx.compose.animation.core.animateFloatAsState(
-        if (away) 1f else 0f, tween(if (away) 380 else 260, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)), label = "opener",
+        if (away) 1f else 0f, tween(if (away) 380 else 260, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)), label = "opener",
     )
     androidx.compose.runtime.DisposableEffect(key) { onDispose { Opening.drop(key) } }
     return this

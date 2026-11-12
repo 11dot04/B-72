@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -290,15 +291,18 @@ fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Uni
             Text("RELATED", style = head, color = ink)
             Text("NOTES", style = head, color = ink)
         }
-        // an uncontained carousel: every card keeps its full size and the strip simply runs off the edge
-        androidx.compose.material3.carousel.HorizontalUncontainedCarousel(
-            state = androidx.compose.material3.carousel.rememberCarouselState { related.size },
-            itemWidth = 150.dp,
-            itemSpacing = 10.dp,
+        // an uncontained strip: every card keeps its full size and the strip runs off the edge; it is a plain snapping row, so it always scrolls to its very end
+        val rs = androidx.compose.foundation.lazy.rememberLazyListState()
+        androidx.compose.foundation.lazy.LazyRow(
+            state = rs,
+            flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(rs),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-            modifier = Modifier.padding(top = 16.dp).height(196.dp),
-        ) { i ->
-            RelatedTile(related[i], ink, onOpen, Modifier.fillMaxSize().maskClip(RoundedCornerShape(26.dp)))
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(196.dp),
+        ) {
+            items(related.size, key = { related[it].id }) { i ->
+                RelatedTile(related[i], ink, onOpen, Modifier.width(150.dp).fillMaxHeight().clip(RoundedCornerShape(26.dp)))
+            }
         }
     }
 }

@@ -150,11 +150,14 @@ private val typingSpec = object : androidx.compose.foundation.gestures.BringInto
         // pulling every line back to a fixed spot is what made the page drift up and down while typing
         val low = containerSize * .22f
         val high = containerSize * .12f
-        return when {
+        val d = when {
             trailing > containerSize - low -> trailing - (containerSize - low)
             offset < high -> offset - high
             else -> 0f
         }
+        // one line is only ever a line's height from where it should be; anything bigger is a stale position, and following it is what threw the page to the bottom
+        val cap = size + low
+        return d.coerceIn(-cap, cap)
     }
 }
 
@@ -249,7 +252,7 @@ fun NotePage(
             val bodies: @Composable (Boolean) -> Unit = { compact ->
                 val tbs = note.blocks.filter { it.kind == Kind.Text }
                 // the formatting bar stands on the right edge while typing, so the words make room for it instead of running under it
-                val barRoom by androidx.compose.animation.core.animateDpAsState(if (rich != null) 62.dp else 0.dp, androidx.compose.animation.core.tween(260), label = "barRoom")
+                val barRoom by androidx.compose.animation.core.animateDpAsState(if (rich != null) 0.dp else 0.dp, androidx.compose.animation.core.tween(260), label = "barRoom")
                 for ((ti, b) in tbs.withIndex()) {
                     val linked = rememberLinked(b.body, allNotes, pal.primary, onOpenNote)
                     Box(Modifier.padding(end = barRoom)) { InlineBody(
@@ -391,7 +394,7 @@ fun NotePage(
             }
             for (b in note.blocks) {
                 if (b.kind == Kind.Audio) item(key = "au-${b.id}") { AudioPlayer(b, pal, { repo?.removeBlock(note.id, b.id) }, Modifier.padding(bottom = 14.dp)) }
-                else if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w, onLyric = repo?.let { r -> { t: String -> r.setData(note.id, b.id, "lyric", kotlinx.serialization.json.JsonPrimitive(t)) } }, onData = repo?.let { r -> { k: String, v: kotlinx.serialization.json.JsonElement -> r.setData(note.id, b.id, k, v) } }, onCover = repo?.let { r -> { p: String -> r.setCover(note.id, b.id, p) } }) }
+                else if (b.kind in com.b72.keep_canvas.data.RECORD_KINDS) item { RecSection(b, title, pal, w, onLyric = repo?.let { r -> { t: String -> r.setData(note.id, b.id, "lyric", kotlinx.serialization.json.JsonPrimitive(t)) } }, onData = repo?.let { r -> { k: String, v: kotlinx.serialization.json.JsonElement -> r.setData(note.id, b.id, k, v) } }, onCover = repo?.let { r -> { p: String -> r.setCover(note.id, b.id, p) } }, hero = recipeHero?.id == b.id) }
                 else if (!hasContent(b, title)) Unit
                 else if (b.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster)) item { TplCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
                 else if (b.kind in CARD_KINDS) item { BlockCard(b, title, pal, Modifier.padding(bottom = 14.dp)) }
@@ -494,8 +497,8 @@ fun NotePage(
         rich?.let { r ->
             val fm = androidx.compose.ui.platform.LocalFocusManager.current
             val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-            Box(Modifier.fillMaxSize().imePadding().padding(top = 96.dp, bottom = 12.dp, end = 8.dp), contentAlignment = Alignment.CenterEnd) {
-                FormatBar(r, { fm.clearFocus(); kb?.hide() }, Modifier.heightIn(max = 460.dp))
+            Box(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp), contentAlignment = Alignment.BottomCenter) {
+                FormatBar(r, { fm.clearFocus(); kb?.hide() })
             }
         }
         if (brainstorm) BrainstormSheet(note, { brainstorm = false }, onAppend, { setupAi = true })

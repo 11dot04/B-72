@@ -122,7 +122,7 @@ private fun Notes(l: String, text: String, fg: androidx.compose.ui.graphics.Colo
 
 /** A film, book, track, recipe or link on the note page. [w] is the content width. */
 @Composable
-fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null, onData: ((String, kotlinx.serialization.json.JsonElement) -> Unit)? = null, onCover: ((String) -> Unit)? = null) {
+fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: Modifier = Modifier, onLyric: ((String) -> Unit)? = null, onData: ((String, kotlinx.serialization.json.JsonElement) -> Unit)? = null, onCover: ((String) -> Unit)? = null, hero: Boolean = false) {
     var pickCover by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var lyricSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val fg = pal.fg
@@ -224,23 +224,37 @@ fun RecSection(b: Block, noteTitle: String, pal: NotePalette, w: Dp, modifier: M
             Kind.Recipe -> {
                 val ing = v("ingredients").lines().filter { it.isNotBlank() }
                 val steps = v("steps").lines().filter { it.isNotBlank() }
-                // a dish with a clear subject breaks out of an expressive shape; otherwise a plain photo
-                if (has && canPopOut(b)) PopOut(b, pal.primary, pal.primary.copy(alpha = .47f), seedOf(b.id), Modifier.fillMaxWidth().height(w * .95f))
-                else if (has) PhotoImage(b.path!!, 1000, false, pal.primary, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(28.dp)))
-                if (showTitle && b.title.isNotEmpty()) Text(b.title, style = flexStyle(30.sp, wght = 760, rond = 30f, lh = 1.05f), color = fg, modifier = Modifier.padding(top = 14.dp))
-                FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (v("time").isNotEmpty() && v("time") != "0") InfoChip(Icons.Rounded.Timer, "${v("time")} min", fg)
-                    if (v("servings").isNotEmpty()) InfoChip(Icons.Rounded.Group, "Serves ${v("servings")}", fg)
+                // the page's header already shows the photo (and the title behind the dish) when [hero] is set, so it is not drawn twice
+                if (!hero) {
+                    if (has && canPopOut(b)) PopOut(b, pal.primary, pal.primary.copy(alpha = .47f), seedOf(b.id), Modifier.fillMaxWidth().height(w * .95f))
+                    else if (has) PhotoImage(b.path!!, 1000, false, pal.primary, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(28.dp)))
+                    if (showTitle && b.title.isNotEmpty()) Text(b.title, style = flexStyle(30.sp, wght = 760, rond = 30f, lh = 1.05f), color = fg, modifier = Modifier.padding(top = 14.dp))
                 }
-                if (ing.isNotEmpty()) Label("INGREDIENTS", fg)
-                for (e in ing) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                    Box(Modifier.padding(top = 10.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(fg))
-                    Text(e, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 23.sp), color = fg)
+                // the facts in the middle of the page, each a figure with what it is under it
+                val mins = v("time").takeIf { it.isNotEmpty() && it != "0" }
+                val serves = v("servings").takeIf { it.isNotEmpty() }
+                if (mins != null || serves != null) Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    if (mins != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$mins min", style = flexStyle(26.sp, wght = 600, lh = 1f), color = fg)
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Timer, null, Modifier.size(18.dp), tint = pal.primary); Spacer(Modifier.width(6.dp)); Text("Time", style = MaterialTheme.typography.labelLarge, color = pal.primary) }
+                    }
+                    if (serves != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(serves, style = flexStyle(26.sp, wght = 600, lh = 1f), color = fg)
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Group, null, Modifier.size(18.dp), tint = pal.primary); Spacer(Modifier.width(6.dp)); Text("Serves", style = MaterialTheme.typography.labelLarge, color = pal.primary) }
+                    }
                 }
-                if (steps.isNotEmpty()) Label("STEPS", fg)
+                if (ing.isNotEmpty()) Column(Modifier.padding(top = 22.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(fg.copy(alpha = .07f)).padding(20.dp)) {
+                    Text("Ingredients", style = flexStyle(24.sp, wght = 700, rond = 30f, lh = 1f), color = fg, modifier = Modifier.padding(bottom = 8.dp))
+                    for (e in ing) Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+                        Box(Modifier.padding(top = 10.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(pal.primary))
+                        Text(e, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 23.sp), color = fg)
+                    }
+                }
+                if (steps.isNotEmpty()) Text("Method", style = flexStyle(24.sp, wght = 700, rond = 30f, lh = 1f), color = fg, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
                 steps.forEachIndexed { i, s ->
-                    Row(Modifier.padding(bottom = 14.dp), verticalAlignment = Alignment.Top) {
-                        Text("${i + 1}", style = flexStyle(32.sp, wght = 800, lh = 1f), color = fg.copy(alpha = .43f), modifier = Modifier.width(46.dp))
+                    Row(Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(fg.copy(alpha = .07f)).padding(16.dp), verticalAlignment = Alignment.Top) {
+                        Box(Modifier.size(32.dp).clip(CircleShape).background(pal.primary), contentAlignment = Alignment.Center) { Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = pal.bg) }
+                        Spacer(Modifier.width(14.dp))
                         Text(s, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp), color = fg, modifier = Modifier.weight(1f))
                     }
                 }

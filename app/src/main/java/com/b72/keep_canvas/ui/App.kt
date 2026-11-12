@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.runtime.mutableStateOf
@@ -111,8 +112,11 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
                 // what the container grows over is dimmed as it goes (the spec's scrim) and brightens again on the way back
-                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)) }, label = "dim") { s -> if (s == androidx.compose.animation.EnterExitState.Visible) 0f else .32f }
-                Box(Modifier.fillMaxSize().drawWithContent { drawContent(); if (dim > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = dim)) }) {
+                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)) }, label = "dim") { s -> if (s == androidx.compose.animation.EnterExitState.Visible) 0f else .32f }
+                // a page leaving with no tile to shrink into (the list was scrolled, or another tab is showing) just fades, quickly, instead of lingering
+                val goneKey = id?.let { "card-$it" }
+                val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s -> if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null || (Opening.live[goneKey] ?: 0) > 1) 1f else 0f }
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ghost }.drawWithContent { drawContent(); if (dim > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = dim)) }) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
                     value = note?.let { repo.related(it.id) }.orEmpty()

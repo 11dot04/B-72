@@ -410,10 +410,11 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
                 dismissButton = { androidx.compose.material3.TextButton({ textEdit = null }) { Text("Cancel") } },
             )
         }
-        // the tools stand in a vertical floating bar at the edge, with undo and redo; a new note is its own larger button below
-        Column(
-            Modifier.align(Alignment.CenterEnd).navigationBarsPadding().padding(end = 10.dp, bottom = 96.dp).clip(RoundedCornerShape(30.dp)).background(t.tc).padding(vertical = 8.dp, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
+        // the tools stand in a horizontal floating bar along the bottom, with undo and redo; a new note is its own larger button above its end
+        Row(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 16.dp).clip(RoundedCornerShape(30.dp)).background(t.tc)
+                .horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             val on = IconButtonDefaults.iconButtonColors(contentColor = t.onTc, disabledContentColor = t.onTc.copy(alpha = .35f))
             IconButton(onClick = { trayMode = 1 }, colors = on) { Icon(Icons.Rounded.AddReaction, "Stickers and artifacts") }
@@ -426,7 +427,7 @@ fun BoardScreen(repo: Repo, loaded: Loaded?, tag: String, onBack: () -> Unit, on
         }
         FloatingActionButton(
             onClick = onAdd,
-            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 16.dp).size(72.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 92.dp).size(72.dp),
             shape = RoundedCornerShape(26.dp),
             containerColor = t.primary,
             contentColor = t.onPrimary,
