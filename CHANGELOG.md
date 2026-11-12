@@ -1,35 +1,33 @@
 # Changelog
 
-All notable changes. The newest version is on top; the release workflow uses the section for the tag being released as the release notes.
+The newest version is on top. The release workflow uses the section for the tag being released as the release notes.
 
-## 2.0.0
+## 1.0.0
 
-The first release of the native app (Jetpack Compose, Material 3 Expressive). It installs over the old Flutter build and reads its notes.
+The first public release.
 
-### Notes
-- Titles set in Google Sans Flex or Roboto Flex using the fonts' own axes: weight, width, optical size, stroke thickness, x-height, ascender, descender and figure height. No outlines, highlights or other effects on top.
-- A title that morphs between the note's tile and its page.
-- A photo's shape can overlap the title, by a sliver of the last line at most, so the title stays readable.
-- Formatting: bullet and numbered lists (Enter continues a list, Enter on an empty item ends it, numbers renumber themselves), quote and pull quote, block indent, first-line indent, left/centre/right/justified, sub- and superscript, spaced caps, two heading sizes, a centred break.
-- Undo and redo work for text, lists and formatting.
-- The line being typed stays near the middle of the screen; there is room to scroll under it.
-- Checklist progress is a Material 3 Expressive wavy ring with the count in the middle.
+**Notes**
+- Text, checklists, photos, voice recordings, drawings, quotes, links and cards in a single note, edited in place.
+- Rich formatting in a floating vertical toolbar: bullet and numbered lists, quotes and pull quotes, block and first-line indents, alignment including justified, sub- and superscript, spaced capitals, two heading sizes, a centred break. Undo and redo for everything.
+- Titles set to fill the page in Google Sans Flex or Roboto Flex through the fonts' own axes, with a style per note.
+- A photo's single clear subject can pop out in front of the title; recipes with such a photo get a full-bleed header.
+- Photos in a note are shown in a carousel; Related notes in another.
+- Web addresses written in a note are saved as bookmarks in the Library; saved links can be added to any note.
+- Search on its own page, with filters and recent searches.
 
-### Collections
-- Film stack and vinyl shelf redrawn; the panel under the shelf shows the description.
-- Books and songs show details in English, fetched once and kept: author, description, publisher, release date.
+**Library**
+- Films, books, songs and albums as cards with covers and details; a stack of cards for films, a vinyl shelf for records.
+- Links as bookmarks with site, kind of page, title, author, date, reading time, price and description.
+- Places, trips (with a travel-day status), receipts and products.
 
-### Screens and artifacts
-- Screenshot detail no longer prints all the text; weirdly cropped screenshots stay within their card.
-- A photo with no clear subject becomes a stamp (the whole picture, cut to a shape), not a bad cut-out sticker.
-- Stamps on canvases are dingbats in badges.
-- Artifacts widget.
-- Food and product artifacts show a facts panel.
+**Screens and artifacts**
+- Screenshots sorted with on-device text recognition, with swipe to keep or delete.
+- Die-cut stickers from photos with one clear subject, stamps from the rest; names, palettes and label facts for foods and products; camera or gallery; save a copy to Pictures/B-72; a home-screen widget.
 
-### Canvases
-- The hub and the board use the plain Material You surface; no gradients. Card rings match the ground exactly.
+**Canvases**
+- A board per tag with cards, artifacts, stamps, text and drawing. Shapes snap when they match and stay as drawn when they do not. Undo and redo, colours taken from the photos, light and dark.
 
-### App
-- Narrower floating navigation bar; redesigned side menu.
-- Adaptive launcher icon with a monochrome layer.
-- Release build type; CI builds both APKs and a tag builds a GitHub release.
+**App**
+- Material 3 Expressive throughout: container transforms between tiles, pages, search and boards; expanded navigation rail with a Settings page; expressive menus.
+- Optional on-device assistant (Gemma 3n E2B); backup to your own Google Drive; import from Google Keep; app lock; share into the app; home-screen widgets.
+- Everything is stored on the device. See PRIVACY.md.
