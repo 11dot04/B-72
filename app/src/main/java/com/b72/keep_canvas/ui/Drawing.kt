@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 
-private class Line(val pts: List<Offset>, val color: Color, val width: Float)
+private class Pen(val pts: List<Offset>, val color: Color, val width: Float)
 
 private fun smooth(pts: List<Offset>): Path = Path().apply {
     if (pts.isEmpty()) return@apply
@@ -83,8 +83,8 @@ fun DrawPane(repo: Repo, noteId: String, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val dens = LocalDensity.current
-    val lines = remember { mutableStateListOf<Line>() }
-    val undone = remember { mutableStateListOf<Line>() }
+    val lines = remember { mutableStateListOf<Pen>() }
+    val undone = remember { mutableStateListOf<Pen>() }
     var cur by remember { mutableStateOf<List<Offset>>(emptyList()) }
     val inks = listOf(cs.onSurface, cs.primary, cs.error, cs.tertiary, cs.secondary)
     var ink by remember { mutableStateOf(0) }
@@ -100,12 +100,12 @@ fun DrawPane(repo: Repo, noteId: String, onClose: () -> Unit) {
         Box(
             Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(24.dp)).background(paper).border(1.dp, cs.outlineVariant, RoundedCornerShape(24.dp))
                 .onSizeChanged { box = it }
-                .pointerInput(Unit) { detectTapGestures { p -> lines.add(Line(listOf(p), inkNow, wNow)); undone.clear() } }
+                .pointerInput(Unit) { detectTapGestures { p -> lines.add(Pen(listOf(p), inkNow, wNow)); undone.clear() } }
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = { cur = listOf(it) },
                         onDrag = { ch, _ -> cur = cur + ch.position; ch.consume() },
-                        onDragEnd = { if (cur.isNotEmpty()) { lines.add(Line(cur, inkNow, wNow)); undone.clear() }; cur = emptyList() },
+                        onDragEnd = { if (cur.isNotEmpty()) { lines.add(Pen(cur, inkNow, wNow)); undone.clear() }; cur = emptyList() },
                         onDragCancel = { cur = emptyList() },
                     )
                 },
