@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -119,8 +120,17 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
      * Background work on pictures, once each: the words in a photo (for search) and the subject's cut-out (for the pop-out
      * and for canvases that overlap cards). Each result is stored with its block, one note write per picture.
      */
-    suspend fun prepare() {
-        val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) }.map { n.id to it.id } }
+    private val prepLock = kotlinx.coroutines.sync.Mutex()
+    private var forceId: String? = null
+
+    /** Reads one note's words now (summary, tags, title), whatever the reading mode is. */
+    fun readNow(noteId: String) { scope.launch { forceId = noteId; prepare(); forceId = null } }
+
+    suspend fun prepare() = prepLock.withLock { prepareNow() }
+
+    private suspend fun prepareNow() {
+        val force = forceId
+        val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) || (n.id == force && aiStale(it, true)) }.map { n.id to it.id } }
         prepTotal = todo.size
         prepDone = 0
         var session: Assistant.Session? = null
@@ -148,7 +158,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             // the assistant (if installed) reads the text: summary, tags, facts, and a ticket the plain readers missed
             var cur = b.copy(data = d)
             var ai: Analysis? = null
-            if (aiStale(cur)) {
+            if (aiStale(cur, nid == force)) {
                 if (!tried) { tried = true; session = withContext(Dispatchers.Default) { Assistant.open(ctx) } }
                 session?.let { s ->
                     val text = cur.tripText()

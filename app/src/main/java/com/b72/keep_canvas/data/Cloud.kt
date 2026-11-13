@@ -22,6 +22,26 @@ object Cloud {
     var model by mutableStateOf(FLASH_LITE)
         private set
 
+    /** Free keys allow about 500 Flash-Lite and 20 Flash requests a day (and 15 and 5 a minute); the app stays a little under both. */
+    private fun dailyCap() = if (model == FLASH) 18 else 450
+    private var blockedUntil = 0L
+
+    /** How many cloud requests were made today. */
+    fun usedToday(ctx: Context): Int {
+        val p = prefs(ctx)
+        return if (p.getString("day", "") == java.time.LocalDate.now().toString()) p.getInt("used", 0) else 0
+    }
+    private fun count(ctx: Context) {
+        val today = java.time.LocalDate.now().toString()
+        val p = prefs(ctx)
+        p.edit().putString("day", today).putInt("used", usedToday(ctx) + 1).apply()
+    }
+    val cap: Int get() = dailyCap()
+
+    /** When notes are read: 0 as you write, 1 when you leave the note, 2 only when you ask. */
+    fun readMode(ctx: Context): Int = prefs(ctx).getInt("readMode", 1)
+    fun setReadMode(ctx: Context, m: Int) { prefs(ctx).edit().putInt("readMode", m).apply(); Assistant.refresh(ctx) }
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("b72_ai", Context.MODE_PRIVATE)
 
     fun key(ctx: Context): String = prefs(ctx).getString("gkey", "").orEmpty()
@@ -41,14 +61,20 @@ object Cloud {
     /** One answer from Gemini, or null when the call fails (no key, no network, quota). Blocking: call it off the main thread. */
     fun ask(ctx: Context, prompt: String): String? = try {
         val k = key(ctx)
-        if (k.isBlank()) null else {
+        if (k.isBlank() || System.currentTimeMillis() < blockedUntil || usedToday(ctx) >= dailyCap()) null else {
+            count(ctx)
             val c = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; doOutput = true; connectTimeout = 15_000; readTimeout = 60_000
                 setRequestProperty("Content-Type", "application/json"); setRequestProperty("x-goog-api-key", k)
             }
             val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
             c.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (c.responseCode !in 200..299) null
+            if (c.responseCode == 429) {
+                val why = runCatching { (c.errorStream ?: c.inputStream).bufferedReader().readText() }.getOrDefault("")
+                // a day's allowance gone waits for the day; a minute's, for the minute
+                blockedUntil = System.currentTimeMillis() + if (why.contains("PerDay", true)) 6 * 3_600_000L else 65_000L
+                null
+            } else if (c.responseCode !in 200..299) null
             else {
                 val r = JSONObject(c.inputStream.bufferedReader().readText())
                 r.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim().ifEmpty { null }

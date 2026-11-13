@@ -65,8 +65,13 @@ object Assistant {
 
     private fun idFile(ctx: Context) = File(ctx.filesDir, "b72/model/assistant.id")
 
+    /** True when notes are read as they are written; otherwise they are read on leaving the note or on request (see Cloud.readMode). */
+    var autoRead = false
+        private set
+
     fun refresh(ctx: Context) {
         Cloud.load(ctx)
+        autoRead = Cloud.readMode(ctx) == 0
         local = file(ctx).let { it.exists() && it.length() > 50_000_000 }
         legacy = local && runCatching { idFile(ctx).readText().trim() }.getOrNull() != MODEL_ID && !imported
     }
@@ -234,7 +239,7 @@ Never say anything about a person's body, face, health, age or identity.
 /** Kinds whose text is worth sending to the assistant. */
 private val AI_KINDS = setOf(Kind.Text, Kind.Poster, Kind.Info, Kind.Photo)
 
-fun aiStale(b: Block): Boolean = Assistant.installed && b.kind in AI_KINDS && b.tripText().length >= 40 && b.dbl("aiH") != tripHash(b).toDouble()
+fun aiStale(b: Block, force: Boolean = false): Boolean = Assistant.installed && (force || Assistant.autoRead) && b.kind in AI_KINDS && b.tripText().length >= 40 && b.dbl("aiH") != tripHash(b).toDouble()
 
 /** The facts the assistant found for a block, in the order it gave them. */
 fun Block.aiFacts(): List<AiFact> = (data["aiFacts"] as? JsonArray).orEmpty().mapNotNull { f ->
