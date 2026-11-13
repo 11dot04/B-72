@@ -90,3 +90,41 @@ object Vault {
         }
     } catch (e: GeneralSecurityException) { false } catch (e: java.io.IOException) { false }
 }
+
+/**
+ * The backup passphrase, remembered on this phone so a backup is one tap after the first. It is sealed with a key that lives in the hardware
+ * keystore and cannot leave the phone; a new phone has to be told the passphrase once to restore.
+ */
+object RememberedPass {
+    private const val ALIAS = "b72_backup_pass"
+
+    private fun key(): javax.crypto.SecretKey {
+        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey(ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
+        val g = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        g.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(ALIAS, android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE).build(),
+        )
+        return g.generateKey()
+    }
+
+    private fun prefs(ctx: android.content.Context) = ctx.getSharedPreferences("b72_backup", android.content.Context.MODE_PRIVATE)
+
+    fun save(ctx: android.content.Context, pass: String) {
+        runCatching {
+            val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+            val ct = c.doFinal(pass.toByteArray())
+            prefs(ctx).edit().putString("pass", android.util.Base64.encodeToString(c.iv + ct, android.util.Base64.NO_WRAP)).apply()
+        }
+    }
+
+    fun load(ctx: android.content.Context): String? = runCatching {
+        val raw = android.util.Base64.decode(prefs(ctx).getString("pass", null) ?: return null, android.util.Base64.NO_WRAP)
+        val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw.copyOfRange(0, 12))) }
+        String(c.doFinal(raw, 12, raw.size - 12))
+    }.getOrNull()
+
+    fun forget(ctx: android.content.Context) { prefs(ctx).edit().remove("pass").apply() }
+}

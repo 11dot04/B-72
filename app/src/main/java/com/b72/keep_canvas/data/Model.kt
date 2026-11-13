@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /** Same order as the Flutter app's enum: kinds were stored by index, so only ever append. */
-enum class Kind { Photo, Text, Checklist, Bare, Quote, Stat, Info, Link, Poster, Film, Track, Recipe, Book, Audio }
+enum class Kind { Photo, Text, Checklist, Bare, Quote, Stat, Info, Link, Poster, Film, Track, Recipe, Book, Audio, Drawing }
 
 /** On-disk format is identical to the Flutter app's notes.json so the two stay interchangeable. */
 @Serializable

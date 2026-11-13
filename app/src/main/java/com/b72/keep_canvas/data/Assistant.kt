@@ -47,8 +47,11 @@ object Assistant {
     const val MODEL_URL = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm"
     const val MODEL_ID = "gemma-3n-e2b"
 
-    var installed by mutableStateOf(false)
+    /** True when the model file is on this phone. */
+    var local by mutableStateOf(false)
         private set
+    /** True when something can answer: the model on the phone, or the cloud assistant when it is switched on. */
+    val installed: Boolean get() = local || Cloud.on
     /** 0..1 while downloading, -1 when idle. */
     var progress by mutableFloatStateOf(-1f)
         private set
@@ -63,8 +66,9 @@ object Assistant {
     private fun idFile(ctx: Context) = File(ctx.filesDir, "b72/model/assistant.id")
 
     fun refresh(ctx: Context) {
-        installed = file(ctx).let { it.exists() && it.length() > 50_000_000 }
-        legacy = installed && runCatching { idFile(ctx).readText().trim() }.getOrNull() != MODEL_ID && !imported
+        Cloud.load(ctx)
+        local = file(ctx).let { it.exists() && it.length() > 50_000_000 }
+        legacy = local && runCatching { idFile(ctx).readText().trim() }.getOrNull() != MODEL_ID && !imported
     }
 
     /** True while the model on the phone is the old Qwen one, so the dialog can offer the switch to Gemma. */
@@ -130,7 +134,7 @@ object Assistant {
             imported = true
             runCatching { idFile(ctx).writeText(MODEL_ID) }
             refresh(ctx)
-            installed
+            local
         }.getOrDefault(false)
     }
 
@@ -142,16 +146,17 @@ object Assistant {
     }
 
     /** One loaded model, used for a batch of notes and then closed (it holds a lot of memory). */
-    class Session internal constructor(private val engine: Engine) : AutoCloseable {
-        fun ask(prompt: String): String? = try {
+    class Session internal constructor(private val engine: Engine?, private val ctx: Context? = null) : AutoCloseable {
+        fun ask(prompt: String): String? = if (engine == null) ctx?.let { Cloud.ask(it, prompt) } else try {
             engine.createConversation().use { it.sendMessage(prompt).toString() }
         } catch (e: Throwable) { null }
 
-        override fun close() { runCatching { engine.close() } }
+        override fun close() { runCatching { engine?.close() } }
     }
 
     fun open(ctx: Context): Session? {
-        if (!installed) return null
+        if (Cloud.on) return Session(null, ctx.applicationContext)
+        if (!local) return null
         return try {
             val e = Engine(EngineConfig(modelPath = file(ctx).path, backend = Backend.CPU(), cacheDir = ctx.cacheDir.path))
             e.initialize()
