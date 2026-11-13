@@ -82,6 +82,19 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(20.dp))
+                var readMode by remember { mutableStateOf(Cloud.readMode(ctx)) }
+                Text("When notes are read", style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("As I write", "When I leave", "On request").forEachIndexed { i, l ->
+                        androidx.compose.material3.FilterChip(readMode == i, { readMode = i; Cloud.setReadMode(ctx, i) }, { Text(l) })
+                    }
+                }
+                Text(
+                    "Reading as you write suits the model on the phone. The cloud assistant has a daily allowance, so it is kinder to read a note once, when you leave it, " +
+                        "or only when you pick “Summarise and tag this note” in the note's menu.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(20.dp))
                 var gOn by remember { mutableStateOf(Cloud.wanted(ctx)) }
                 var gKey by remember { mutableStateOf(Cloud.key(ctx)) }
                 var gModel by remember { mutableStateOf(Cloud.model) }
@@ -103,6 +116,7 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                     Text("Use the cloud assistant", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     androidx.compose.material3.Switch(gOn && gKey.isNotBlank(), { gOn = it; Cloud.save(ctx, it, gKey, gModel) }, enabled = gKey.isNotBlank())
                 }
+                if (Cloud.on) Text("Cloud requests today: ${Cloud.usedToday(ctx)} of ${Cloud.cap}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
                 val msg = Assistant.message.ifEmpty { note }
                 if (msg.isNotEmpty()) Text(msg, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
             }

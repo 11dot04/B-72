@@ -68,7 +68,10 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     var tab by UiPrefs.tab
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
-    fun leave() { open?.let { repo.discardIfEmpty(it) }; draft = null; open = null }
+    fun leave() {
+        open?.let { repo.discardIfEmpty(it); if (com.b72.keep_canvas.data.Cloud.readMode(ctx) == 1) repo.readNow(it) }
+        draft = null; open = null
+    }
     // a note started from a + button is not opened: it is a card holding only what was asked for, and when it is kept it lands in the list as a tile
     var cardFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     fun begin(kind: Kind, tag: String?) {

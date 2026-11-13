@@ -368,7 +368,7 @@ fun EditSplit(
 
 /** The three-dot menu: when the note was made and last changed, what is in it, and (kept apart, in red) delete. */
 @Composable
-fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit, onParts: (() -> Unit)? = null, onArchive: (() -> Unit)? = null) {
+fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit, onTag: (String) -> Unit, onParts: (() -> Unit)? = null, onArchive: (() -> Unit)? = null, onRead: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val now = System.currentTimeMillis()
     val fmt = DateTimeFormatter.ofPattern("EEE d MMM yyyy · HH:mm")
@@ -425,6 +425,7 @@ fun DetailsMenu(note: Note, expanded: Boolean, onDismiss: () -> Unit, onDelete: 
                     }
                     Unit
                 }))
+                if (onRead != null) add(Triple(Icons.Rounded.AutoAwesome, "Summarise and tag this note", { onDismiss(); onRead(); android.widget.Toast.makeText(ctx, "Reading the note…", android.widget.Toast.LENGTH_SHORT).show() }))
                 if (onParts != null) add(Triple(Icons.Rounded.Layers, "Remove parts of this note", { onDismiss(); onParts() }))
                 if (onArchive != null) add(Triple(Icons.Rounded.Inventory2, "Archive", { onDismiss(); onArchive() }))
                 for (t in note.tags) add(Triple(Icons.Rounded.Dashboard, "Open the $t canvas", { onDismiss(); onTag(t) }))
