@@ -229,7 +229,7 @@ fun NotePage(
     viewer?.let { v -> PhotoViewer(photos.mapNotNull { it.path }, v) { viewer = null } }
     // The page is a card inset from the screen: grey all round (the status bar above it, a strip below it that holds undo, redo and the tag),
     // and the page's own colours only inside. The container transform grows a tile into this card, not into the whole screen.
-    val frame = MaterialTheme.colorScheme.surfaceContainerHigh
+    val frame = MaterialTheme.colorScheme.surface
     val frameA by shared.av.transition.animateFloat(transitionSpec = { tween(260) }, label = "frame") { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else 0f }
     Box(Modifier.fillMaxSize()) {
     Box(Modifier.matchParentSize().graphicsLayer { alpha = frameA }.background(frame))

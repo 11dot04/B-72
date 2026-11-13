@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -53,7 +53,7 @@ fun AssistantDialog(onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("On-device assistant") },
+        title = { Text("Assistant") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -84,7 +84,7 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(20.dp))
                 var readMode by remember { mutableStateOf(Cloud.readMode(ctx)) }
                 Text("When notes are read", style = MaterialTheme.typography.titleSmall)
-                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("As I write", "When I leave", "On request").forEachIndexed { i, l ->
                         androidx.compose.material3.FilterChip(readMode == i, { readMode = i; Cloud.setReadMode(ctx, i) }, { Text(l) })
                     }
@@ -108,7 +108,7 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                     gKey, { gKey = it; Cloud.save(ctx, gOn, it, gModel) }, singleLine = true, label = { Text("Google AI API key") },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.FilterChip(gModel == Cloud.FLASH_LITE, { gModel = Cloud.FLASH_LITE; Cloud.save(ctx, gOn, gKey, gModel) }, { Text("Flash-Lite") })
                     androidx.compose.material3.FilterChip(gModel == Cloud.FLASH, { gModel = Cloud.FLASH; Cloud.save(ctx, gOn, gKey, gModel) }, { Text("Flash") })
                 }

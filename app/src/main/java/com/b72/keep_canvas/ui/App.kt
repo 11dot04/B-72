@@ -100,15 +100,18 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     androidx.compose.runtime.LaunchedEffect(open, board) { if (open == null && board == null) Opening.clear() }
     // predictive back: while the gesture is held the page shrinks and slides with the finger, as the system previews it; letting go closes it,
     // and the container transform takes it from there
-    var backP by remember { mutableStateOf(0f) }
+    val backScope = androidx.compose.runtime.rememberCoroutineScope()
+    val backA = remember { androidx.compose.animation.core.Animatable(0f) }
+    val backP = backA.value
     var backEdge by remember { mutableStateOf(0) }
     androidx.activity.compose.PredictiveBackHandler(open != null || board != null) { progress ->
         try {
-            progress.collect { ev -> backP = ev.progress; backEdge = ev.swipeEdge }
-            backP = 0f
+            progress.collect { ev -> backA.snapTo(ev.progress * .5f); backEdge = ev.swipeEdge }
+            // on release the preview eases out while the container transform takes over: no snap, so no jolt
+            backScope.launch { backA.animateTo(0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f))) }
             if (open != null) leave() else board = null
         } catch (e: kotlinx.coroutines.CancellationException) {
-            backP = 0f
+            backScope.launch { backA.animateTo(0f, tween(220)) }
             throw e
         }
     }
@@ -131,7 +134,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s -> if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null || (Opening.live[goneKey] ?: 0) > 1) 1f else 0f }
                 Box(Modifier.fillMaxSize().graphicsLayer {
                     alpha = ghost
-                    if (backP > 0f && (id != null || board != null) && transition.targetState == androidx.compose.animation.EnterExitState.Visible) {
+                    if (backP > 0f && (id != null || board != null)  ) {
                         val s = 1f - .12f * backP
                         scaleX = s; scaleY = s
                         translationX = (if (backEdge == androidx.activity.BackEventCompat.EDGE_LEFT) 1f else -1f) * 18.dp.toPx() * backP
