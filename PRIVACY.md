@@ -23,6 +23,7 @@ Only when you do something that needs it, and only to the service named:
 | Read a page for a preview or an article summary | The site itself, Wikipedia | A normal page request |
 | Show a train or flight status | RailYatri, Indian Railways, Flightradar24 | Opened in your browser when you tap the button |
 | Sign in to Google and back up | Google (Auth, Drive) | Only the app's own backup folder, when you turn it on |
+| Cloud assistant (off by default, needs your own API key) | Google Gemini (generativelanguage.googleapis.com) | The text of the note being read, only when you turn the cloud option on and a read runs |
 | Download the assistant model | Hugging Face | A file request; no data about you |
 
 ## What the app reads from your phone
