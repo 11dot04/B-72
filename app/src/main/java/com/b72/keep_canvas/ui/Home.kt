@@ -68,6 +68,8 @@ import com.b72.keep_canvas.data.Repo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Link
@@ -229,12 +231,14 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
     }
   }
   var railOpen by remember { mutableStateOf(false) }
-  var settings by remember { mutableStateOf(false) }
+  var page by remember { mutableStateOf<String?>(null) }   // which of the rail's own pages is open: settings, stats, ai, backup, trash
+  val settings = page != null
   BackHandler(railOpen && !settings) { railOpen = false }
-  BackHandler(settings) { settings = false }
+  BackHandler(settings) { page = null }
   RailLayout(
-    open = railOpen, tab = tab, onTab = { railOpen = false; if (it != tab) onTab(it) }, onSettings = { railOpen = false; settings = true },
-    settings = settings, onCloseSettings = { settings = false }, settingsPage = { AppDrawer(repo) { settings = false } },
+    open = railOpen, tab = tab, onTab = { railOpen = false; if (it != tab) onTab(it) }, onSettings = { p -> railOpen = false; page = p },
+    settings = settings, onCloseSettings = { page = null },
+    settingsPage = { if (page == "stats") StatsPage(loaded?.library?.notes.orEmpty()) else AppDrawer(repo, jump = page.takeIf { it != "settings" }) { page = null } },
   ) {
   Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = MaterialTheme.colorScheme.surface) { inner ->
@@ -409,6 +413,7 @@ private val ADD_ITEMS = listOf(
     Triple(Kind.Photo, "Photos", Icons.Rounded.AddPhotoAlternate),
     Triple(Kind.Checklist, "Checklist", Icons.Rounded.Checklist),
     Triple(Kind.Quote, "Quote", Icons.Rounded.FormatQuote),
+    Triple(Kind.Drawing, "Drawing", Icons.Rounded.Draw),
 )
 
 /** A note that is at least a week old, picked by the day so it changes daily; returns it with its age in days. */
@@ -622,15 +627,15 @@ private fun seedMod(id: String, n: Int) = com.b72.keep_canvas.data.seedOf(id) % 
 
 /** The side menu: the on-device assistant, connected apps, security, and everything about getting data in and out. */
 @Composable
-private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
+private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var assistant by remember { mutableStateOf(false) }
     var services by remember { mutableStateOf(false) }
     var drive by remember { mutableStateOf(false) }
     var trash by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(jump) { when (jump) { "ai" -> assistant = true; "backup" -> drive = true; "trash" -> trash = true } }
     if (trash) TrashSheet(repo) { trash = false }
-    if (drive) DriveSheet(repo) { drive = false }
     if (assistant) AssistantDialog { assistant = false }
     if (services) ServicesSheet(repo) { services = false }
     fun say(t: String) = android.widget.Toast.makeText(ctx, t, android.widget.Toast.LENGTH_LONG).show()
@@ -725,14 +730,16 @@ private fun AppDrawer(repo: Repo, onClose: () -> Unit) {
                 },
                 Entry("Archive & trash", Icons.Rounded.Archive) { trash = true },
             ))
-            Group("Backup", listOf(
-                Entry("Back up to Google Drive", Icons.Rounded.CloudUpload) { drive = true },
-                Entry("Export backup", Icons.Rounded.Save) { save.launch("b72-backup.zip") },
-                Entry("Restore backup", Icons.Rounded.Restore) { load.launch(arrayOf("application/zip", "application/octet-stream")) },
-            ))
-            Group("Bring notes in", listOf(
+            Group("Backup and import", listOf(
+                Entry("Backup and restore", Icons.Rounded.CloudUpload) { drive = true },
                 Entry("Import from Google Keep", Icons.Rounded.Notes) { keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
             ))
+            if (drive) DriveSheet(
+                repo,
+                onSaveFile = { drive = false; save.launch("b72-backup.zip") },
+                onRestoreFile = { drive = false; load.launch(arrayOf("application/zip", "application/octet-stream")) },
+                onKeep = { drive = false; keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
+            ) { drive = false }
         }
     }
 }
@@ -868,7 +875,7 @@ private fun MatchPrompt(m: com.b72.keep_canvas.data.Match, onWrite: () -> Unit, 
  */
 @Composable
 private fun RailLayout(
-    open: Boolean, tab: Int, onTab: (Int) -> Unit, onSettings: () -> Unit,
+    open: Boolean, tab: Int, onTab: (Int) -> Unit, onSettings: (String) -> Unit,
     settings: Boolean, onCloseSettings: () -> Unit, settingsPage: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -895,9 +902,25 @@ private fun RailLayout(
                             Text(d.label, style = MaterialTheme.typography.labelLarge, color = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant, maxLines = 1)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+                    // what the old side menu held, one tap away: each opens straight onto its own sheet
+                    for ((key, name, icon) in listOf(
+                        Triple("stats", "Statistics", Icons.Rounded.Insights),
+                        Triple("ai", "Assistant", Icons.Rounded.AutoAwesome),
+                        Triple("backup", "Backup and import", Icons.Rounded.CloudUpload),
+                        Triple("trash", "Archive and trash", Icons.Rounded.Archive),
+                    )) Row(
+                        Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp)).clickable { onSettings(key) }.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, null, tint = cs.onSurfaceVariant)
+                        Spacer(Modifier.width(12.dp))
+                        Text(name, style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, maxLines = 1)
+                    }
                     Spacer(Modifier.weight(1f))
                     Row(
-                        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).clickable { onSettings() }.padding(horizontal = 16.dp),
+                        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).clickable { onSettings("settings") }.padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(Icons.Rounded.Settings, null, tint = cs.onSurfaceVariant)

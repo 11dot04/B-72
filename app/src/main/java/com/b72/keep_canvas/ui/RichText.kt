@@ -18,6 +18,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.FormatIndentDecrease
 import androidx.compose.material.icons.rounded.FormatIndentIncrease
@@ -124,6 +127,7 @@ fun styleOf(code: String, base: Float = 18f): SpanStyle? = when (code) {
     "cur" -> SpanStyle(fontFamily = Script, fontSize = (base * 1.45f).sp)
     "sup" -> SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = (base * .72f).sp)
     "sub" -> SpanStyle(baselineShift = BaselineShift.Subscript, fontSize = (base * .72f).sp)
+    "cd" -> SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .88f).sp, background = Color(0x33808080))
     "trk" -> SpanStyle(letterSpacing = 1.6.sp, fontSize = (base * .84f).sp, fontWeight = FontWeight.Medium)
     else -> null
 }
@@ -143,6 +147,7 @@ private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphSt
     val lvl = codes.firstNotNullOfOrNull { c -> if (c.startsWith("pi")) c.drop(2).toIntOrNull() else null } ?: 0
     var left = lvl * 26f
     if ("pq" in codes) left += 18f
+    if ("pk" in codes || "pn" in codes) left += 10f
     val pull = "pp" in codes
     var first = left
     var rest = left + hang
@@ -171,6 +176,8 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
         if (lineEnd > pos) {
             if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
             if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.5f).sp), pos, lineEnd)
+            if ("pk" in codes) b.addStyle(SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .88f).sp, background = Color(0x24808080)), pos, lineEnd)
+            if ("pn" in codes) b.addStyle(SpanStyle(background = Color(0x30FFB300), fontWeight = FontWeight.Medium), pos, lineEnd)
         }
         pos = end
     }
@@ -192,7 +199,7 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
         if (v.text != tv.text) {
             val old = tv.text
             spans = adjustSpans(spans, old, v.text, active); tv = v
-            if (v.text.length == old.length + 1) continueList()
+            if (v.text.length == old.length + 1) { if (!smartType()) continueList() }
             if (v.text.count { it == '\n' } != old.count { it == '\n' }) renumber()
         } else { tv = v; if (v.selection.collapsed) active = spans.filter { it.s < v.selection.start && v.selection.start <= it.e }.map { it.c }.toSet() }
     }
@@ -266,6 +273,58 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
     }
 
     fun bullet() = list(false)
+
+    /**
+     * Markdown as you type: `# ` and `## ` make headings, `> ` a quote, `- ` or `* ` a bullet, three backticks a code block, and a closed pair of
+     * `**`, `*`, `` ` ``, `~~` or `==` turns what is between into bold, italic, code, strike or highlight. Returns true when it changed something.
+     */
+    private fun smartType(): Boolean {
+        val t = tv.text; val c = tv.selection.start
+        if (!tv.selection.collapsed || c < 1) return false
+        val ls = t.lastIndexOf('\n', c - 1) + 1
+        val before = t.substring(ls, c)
+        val last = t[c - 1]
+        if (last == '\n') return exitBlock(t, c)
+        fun lineFormat(code: String, group: List<String> = emptyList()) { replaceRange(ls, before.length, ""); apply(code, true, group) }
+        if (last == ' ') {
+            when (before) {
+                "# " -> { replaceRange(ls, 2, ""); active = active + "h1"; return true }
+                "## " -> { replaceRange(ls, 3, ""); active = active + "h2"; return true }
+                "> " -> { lineFormat("pq", listOf("pp", "pk", "pn")); return true }
+                "! " -> { lineFormat("pn", listOf("pq", "pp", "pk")); return true }
+                "- ", "* " -> { replaceRange(ls, 2, "\u2022 "); return true }
+            }
+        }
+        if (before == "```") { lineFormat("pk", listOf("pq", "pp", "pn")); return true }
+        val inline = listOf(
+            "cd" to Regex("`([^`\n]+)`$"), "b" to Regex("\\*\\*([^*\n]+)\\*\\*$"), "s" to Regex("~~([^~\n]+)~~$"),
+            "hl" to Regex("==([^=\n]+)==$"), "i" to Regex("(?<![*\\w])\\*([^*\\s][^*\n]*)\\*$"),
+        )
+        for ((code, re) in inline) {
+            val m = re.find(before) ?: continue
+            val start = ls + m.range.first
+            val inner = m.groupValues[1]
+            replaceRange(start, c - start, inner)
+            spans = tidy(spans + Span(start, start + inner.length, code), tv.text.length)
+            active = active - code
+            return true
+        }
+        return false
+    }
+
+    /** Enter on an empty line inside a code block or a callout ends it, the way it ends a list. */
+    private fun exitBlock(t: String, c: Int): Boolean {
+        val prevStart = t.lastIndexOf('\n', c - 2) + 1
+        if (prevStart != c - 1) return false   // the line just left is not empty
+        for (code in listOf("pk", "pn")) {
+            if (spans.any { it.c == code && it.s <= prevStart && it.e >= c - 1 && it.e > prevStart - 1 }) {
+                spans = tidy(cut(code, prevStart - 1, c, spans), t.length)
+                active = active - code
+                return true
+            }
+        }
+        return false
+    }
 
     /** After Enter on a list line the next line starts with the next marker; Enter on an empty marker ends the list. */
     private fun continueList() {
@@ -401,7 +460,10 @@ fun FormatBar(st: RichState, onDone: () -> Unit, modifier: Modifier = Modifier) 
             gap()
             btn(Icons.Rounded.FormatListBulleted, "Bullets", false) { st.list(false) }
             btn(Icons.Rounded.FormatListNumbered, "Numbered list", false) { st.list(true) }
-            btn(Icons.Rounded.FormatQuote, "Quote", st.has("pq")) { st.para("pq", listOf("pp")) }
+            btn(Icons.Rounded.FormatQuote, "Quote", st.has("pq")) { st.para("pq", listOf("pp", "pk", "pn")) }
+            btn(Icons.Rounded.Code, "Code", st.has("cd")) { st.toggle("cd") }
+            btn(Icons.Rounded.Terminal, "Code block", st.has("pk")) { st.para("pk", listOf("pq", "pp", "pn")) }
+            btn(Icons.Rounded.Lightbulb, "Callout", st.has("pn")) { st.para("pn", listOf("pq", "pp", "pk")) }
             btn(null, "\u201C", st.has("pp")) { st.para("pp", listOf("pq")) }
             gap()
             btn(Icons.Rounded.FormatIndentDecrease, "Indent less", false) { st.indentBy(-1) }

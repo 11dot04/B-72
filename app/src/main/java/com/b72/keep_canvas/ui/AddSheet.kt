@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.FormatQuote
@@ -87,7 +88,7 @@ private val OPTS = listOf(
     Opt("link", "Link", Icons.Rounded.Link), Opt("quote", "Quote", Icons.Rounded.FormatQuote),
     Opt("film", "Film & show", Icons.Rounded.Movie), Opt("book", "Book", Icons.Rounded.MenuBook),
     Opt("track", "Track", Icons.Rounded.MusicNote), Opt("recipe", "Recipe", Icons.Rounded.LocalDining),
-    Opt("audio", "Audio", Icons.Rounded.Mic), Opt("scan", "Scan", Icons.Rounded.CameraAlt),
+    Opt("audio", "Audio", Icons.Rounded.Mic), Opt("scan", "Scan", Icons.Rounded.CameraAlt), Opt("draw", "Drawing", Icons.Rounded.Draw),
     Opt("text", "Note", Icons.Rounded.EditNote),
 )
 
@@ -170,7 +171,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
             if (mode == null) {
                 Text("Add to this note", style = flexStyle(androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp), wght = 720, rond = 40f))
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp).height(300.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(OPTS.filter { initial != null || it.id in setOf("photo", "scan", "list", "quote", "audio") }) { o ->
+                    items(OPTS.filter { initial != null || it.id in setOf("photo", "scan", "list", "quote", "audio", "draw") }) { o ->
                         Column(
                             Modifier.clip(RoundedCornerShape(22.dp)).background(cs.secondaryContainer).clickable(onClickLabel = o.label) { go(o.id) }.padding(vertical = 16.dp).fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -188,6 +189,7 @@ fun AddSheet(repo: Repo, noteId: String, hasList: Boolean, initial: String? = nu
                 }
                 when (m) {
                     "audio" -> VoicePane(repo, noteId, onClose)
+                    "draw" -> DrawPane(repo, noteId, onClose)
                     "text" -> {
                         OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(focus), label = { Text("Title") }, singleLine = true)
                         OutlinedTextField(text2, { text2 = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Note") }, minLines = 4, maxLines = 10)

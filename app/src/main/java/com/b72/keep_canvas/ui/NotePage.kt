@@ -172,7 +172,8 @@ fun NotePage(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         androidx.compose.runtime.withFrameNanos { }
         androidx.compose.runtime.withFrameNanos { }
-        if (shared.st.isTransitionActive) kotlinx.coroutines.withTimeoutOrNull(700) { androidx.compose.runtime.snapshotFlow { shared.st.isTransitionActive }.first { !it } }
+        // not the whole transition: the body joins while the card is still settling, so it is there by the time the eye gets to it
+        if (shared.st.isTransitionActive) kotlinx.coroutines.delay(110)
         ready = true
     }
     var adding by remember { mutableStateOf(addFirst != null) }

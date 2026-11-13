@@ -139,3 +139,18 @@ fun TabTitle(text: String, count: Int? = null, modifier: androidx.compose.ui.Mod
         )
     }
 }
+
+
+/** The monospace face for code: Geist Mono when the project ships it (assets/fonts or res/font), the system monospace otherwise. */
+object CodeFace {
+    var family: FontFamily = FontFamily.Monospace
+        private set
+    fun init(ctx: android.content.Context) {
+        val res = ctx.resources.getIdentifier("geist_mono", "font", ctx.packageName)
+        if (res != 0) { family = runCatching { FontFamily(Font(res, FontWeight.Normal)) }.getOrDefault(family); return }
+        for (n in listOf("GeistMono-Regular.ttf", "GeistMono[wght].ttf", "GeistMono.ttf", "geist_mono.ttf", "geistmono.ttf", "GeistMono-Variable.ttf")) {
+            val ok = runCatching { ctx.assets.open("fonts/$n").close() }.isSuccess
+            if (ok) { runCatching { family = FontFamily(android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/$n")) }; return }
+        }
+    }
+}

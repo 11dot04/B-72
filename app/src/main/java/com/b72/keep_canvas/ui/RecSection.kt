@@ -316,7 +316,7 @@ private fun FilmTicket(b: Block, showTitle: Boolean, meta: List<String>, by: Str
     val facts = listOf(
         "YEAR" to v("year"),
         (if (v("seasons").isNotEmpty()) "SEASONS" else "MINUTES") to (v("seasons").ifEmpty { v("runtime") }),
-        "RATING" to if (rating > 0) "$rating / 10" else "",
+        "RATING" to if (rating > 0) "$rating / 5" else "",
         "STATUS" to (statusLabels(Kind.Film).getOrNull(STATUS_KEYS.indexOf(v("status"))) ?: ""),
     ).filter { it.second.isNotEmpty() }
     val genres = v("genre").split(",", "/").map { it.trim() }.filter { it.isNotEmpty() }

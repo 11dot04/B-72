@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Backup
 import com.b72.keep_canvas.data.Drive
+import com.b72.keep_canvas.data.RememberedPass
 import com.b72.keep_canvas.data.Repo
 import com.b72.keep_canvas.data.Vault
 import kotlinx.coroutines.Dispatchers
@@ -49,11 +50,13 @@ import java.io.File
  * and lives in the app's private Drive folder (it does not show up among their files). Everything, photos included.
  */
 @Composable
-fun DriveSheet(repo: Repo, onClose: () -> Unit) {
+fun DriveSheet(repo: Repo, onSaveFile: () -> Unit = {}, onRestoreFile: () -> Unit = {}, onKeep: () -> Unit = {}, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    var pass by remember { mutableStateOf("") }
+    val remembered = remember { RememberedPass.load(ctx) }
+    var pass by remember { mutableStateOf(remembered.orEmpty()) }
+    var changing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var last by remember { mutableStateOf<String?>(null) }
@@ -90,7 +93,7 @@ fun DriveSheet(repo: Repo, onClose: () -> Unit) {
                 }.getOrElse { "Something went wrong: ${it.message}" }
             }
             msg = result; busy = false
-            if (action == "backup" && result.startsWith("Backed")) last = "just now"
+            if (action == "backup" && result.startsWith("Backed")) { last = "just now"; RememberedPass.save(ctx, pass); changing = false }
         }
     }
 
@@ -110,21 +113,33 @@ fun DriveSheet(repo: Repo, onClose: () -> Unit) {
 
     ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Drive backup", style = flexStyle(32.sp, wght = 720, wdth = 108f, rond = 40f), color = cs.onSurface)
-            Text(
-                "Your notes and photos, encrypted on this phone with a passphrase before they go to a private folder in your Google Drive. " +
-                    "Google never sees the passphrase, and neither do we. If you forget it, the backup cannot be opened.",
-                style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
-            )
-            last?.let { Text("Latest backup: $it", style = MaterialTheme.typography.labelLarge, color = cs.primary) }
-            OutlinedTextField(
-                pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text("Passphrase") }, singleLine = true, enabled = !busy,
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            )
+            Text("Backup", style = flexStyle(32.sp, wght = 720, wdth = 108f, rond = 40f), color = cs.onSurface)
+            last?.let { Text("Latest backup in your Drive: $it", style = MaterialTheme.typography.labelLarge, color = cs.primary) }
+            if (remembered == null || changing) {
+                Text(
+                    "Your notes and photos are encrypted on this phone before they go to a private folder in your Google Drive. Choose a passphrase once; it stays on this phone, " +
+                        "so next time it is a single tap. You will need it to restore on another phone, and if it is lost the backup cannot be opened.",
+                    style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text("Passphrase") }, singleLine = true, enabled = !busy,
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                )
+            } else {
+                Text("Encrypted on this phone, kept in a private folder of your Drive.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = { run("backup") }, enabled = !busy) { Text("Back up now") }
                 FilledTonalButton(onClick = { run("restore") }, enabled = !busy) { Text("Restore") }
                 if (busy) LoadingIndicator(Modifier.size(40.dp))
+            }
+            if (remembered != null && !changing) androidx.compose.material3.TextButton({ changing = true; pass = "" }) { Text("Change the passphrase") }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text("Other ways", style = MaterialTheme.typography.titleSmall, color = cs.onSurface)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedButton({ onSaveFile() }) { Text("Save a file") }
+                androidx.compose.material3.OutlinedButton({ onRestoreFile() }) { Text("Open a file") }
+                androidx.compose.material3.OutlinedButton({ onKeep() }) { Text("From Keep") }
             }
             if (msg.isNotEmpty()) Text(msg, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
         }
