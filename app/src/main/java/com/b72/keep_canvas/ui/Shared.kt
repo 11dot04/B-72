@@ -143,7 +143,9 @@ fun Modifier.keyContainer(key: String, radius: Dp = 28.dp, reveal: Boolean = fal
 object Opening {
     var id by androidx.compose.runtime.mutableStateOf<String?>(null)
     private val centres = HashMap<String, androidx.compose.ui.geometry.Offset>()
-    fun press(tapped: String) { id = tapped }
+    /** Set by the app: lays the tapped note's words out in the background while the container is still travelling. */
+    var warm: (String) -> Unit = {}
+    fun press(tapped: String) { id = tapped; warm(tapped) }
     fun clear() { id = null }
     fun centre(k: String) = centres[k]
     fun put(k: String, c: androidx.compose.ui.geometry.Offset) { centres[k] = c }
