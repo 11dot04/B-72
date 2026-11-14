@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/wq_light_pill" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="16dp" android:paddingEnd="8dp" android:paddingTop="8dp" android:paddingBottom="8dp">
+    <ImageView android:layout_width="24dp" android:layout_height="24dp" android:src="@drawable/wi_bulb" android:tint="@color/b72_wink" android:contentDescription="@null" />
+    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="10dp" android:ellipsize="end" android:maxLines="1" android:text="Notes" android:textColor="@color/b72_wink" android:textSize="16sp" />
+    <FrameLayout android:id="@+id/q_note" android:layout_width="wrap_content" android:layout_height="match_parent" android:background="@drawable/wq_dark_disc">
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerInside" android:padding="14dp" android:src="@drawable/wi_add" android:tint="@color/b72_wdisc" android:contentDescription="New note" />
+    </FrameLayout>
+</LinearLayout>

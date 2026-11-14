@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent">
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/wq_cookie" android:contentDescription="@null" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="10dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <FrameLayout android:id="@+id/q_list" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center" android:src="@drawable/wi_check" android:tint="@color/b72_wdisc" android:contentDescription="q_list" />
+        </FrameLayout>
+        <FrameLayout android:id="@+id/q_voice" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center" android:src="@drawable/wi_mic" android:tint="@color/b72_wdisc" android:contentDescription="q_voice" />
+        </FrameLayout>
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <FrameLayout android:id="@+id/q_draw" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center" android:src="@drawable/wi_draw" android:tint="@color/b72_wdisc" android:contentDescription="q_draw" />
+        </FrameLayout>
+        <FrameLayout android:id="@+id/q_photo" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center" android:src="@drawable/wi_camera" android:tint="@color/b72_wdisc" android:contentDescription="q_photo" />
+        </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
+    <FrameLayout android:id="@+id/q_note" android:layout_width="64dp" android:layout_height="64dp" android:layout_gravity="center" android:background="@drawable/wq_disc_sq">
+        <ImageView android:layout_width="28dp" android:layout_height="28dp" android:layout_gravity="center" android:src="@drawable/wi_add" android:tint="@color/b72_wink" android:contentDescription="New note" />
+    </FrameLayout>
+</FrameLayout>
