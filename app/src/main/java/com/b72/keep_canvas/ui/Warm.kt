@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Kind
 import com.b72.keep_canvas.data.Note
+import com.b72.keep_canvas.data.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
