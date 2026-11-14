@@ -66,9 +66,14 @@ fun Modifier.shared(ctx: SharedCtx, key: String, text: Boolean = false, remeasur
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Boolean = true, reveal: Boolean = false, revealShift: Dp = 0.dp, revealMin: Dp = 56.dp): Modifier {
-    // the spec's emphasized-decelerate curve: it leaves fast and takes its time to settle, which is what reads as smooth rather than abrupt
-    val spec = tween<Rect>(if (full) 500 else 380, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f))
-    val bounds = BoundsTransform { _, _ -> spec }
+    // springs, as in the Expressive motion scheme: growing uses the slow spatial spring (quick start, long settle, a little overshoot),
+    // closing a critically damped one (a glide back with no bounce); a card that only grows into a card uses the default spatial spring
+    val scheme = MaterialTheme.motionScheme
+    val grow = if (full) scheme.slowSpatialSpec<Rect>() else scheme.defaultSpatialSpec<Rect>()
+    val glide = androidx.compose.animation.core.spring<Rect>(dampingRatio = 1f, stiffness = 320f)
+    val bounds = BoundsTransform { initial, target -> if (target.width * target.height >= initial.width * initial.height) grow else glide }
+    val fadeInSpec = scheme.defaultEffectsSpec<Float>()
+    val fadeOutSpec = scheme.fastEffectsSpec<Float>()
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
     val screen = cfg.screenWidthDp.toFloat() * cfg.screenHeightDp
     val clip = remember(radius, full, screen) {
@@ -103,7 +108,7 @@ fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Bo
         sharedBounds(
             rememberSharedContentState(key), ctx.av,
             // fade through, as in the spec: what leaves is gone in 90 ms (so no scaled-up ghost of it rides the growing shape), then what arrives fades in
-            enter = fadeIn(tween(210, delayMillis = 90)), exit = fadeOut(tween(90)),
+            enter = fadeIn(fadeInSpec), exit = fadeOut(fadeOutSpec),
             boundsTransform = bounds,
             // a destination is revealed, not shrunk: it is laid out at its real size and the growing container uncovers it from the top, as in the spec's videos
             resizeMode = if (reveal) SharedTransitionScope.ResizeMode.scaleToBounds(androidx.compose.ui.layout.ContentScale.None, align) else SharedTransitionScope.ResizeMode.scaleToBounds(),
@@ -147,27 +152,12 @@ object Opening {
     val live = androidx.compose.runtime.mutableStateMapOf<String, Int>()
 }
 
-/** Registers this tile's centre and, while another tile is opening, slides away from it and fades. */
+/** Registers this tile's centre. (Neighbours no longer drift away: the container transform is the only thing that moves.) */
 @Composable
 fun Modifier.opener(key: String, shrink: Float = 0f): Modifier {
-    val opening = Opening.id
-    val away = opening != null && opening != key
-    val t by androidx.compose.animation.core.animateFloatAsState(
-        if (away) 1f else 0f, tween(if (away) 380 else 260, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)), label = "opener",
-    )
     androidx.compose.runtime.DisposableEffect(key) { onDispose { Opening.drop(key) } }
-    return this
-        .onGloballyPositioned { Opening.put(key, it.boundsInRoot().center) }
-        .graphicsLayer {
-            val from = opening?.let { Opening.centre(it) }
-            val me = Opening.centre(key)
-            if (from != null && me != null && t > 0f) {
-                val d = me - from
-                val len = kotlin.math.sqrt(d.x * d.x + d.y * d.y).coerceAtLeast(1f)
-                translationX = d.x / len * 56.dp.toPx() * t
-                translationY = d.y / len * 56.dp.toPx() * t
-            }
-            alpha = 1f - .85f * t
-            scaleX = 1f - shrink * t; scaleY = 1f - shrink * t
-        }
+    return this.onGloballyPositioned { Opening.put(key, it.boundsInRoot().center) }
 }
+
+/** Progress of a predictive-back gesture (0 to about .5), read where the card is drawn so the preview travels with the container. */
+val LocalBackProgress = compositionLocalOf<() -> Float> { { 0f } }

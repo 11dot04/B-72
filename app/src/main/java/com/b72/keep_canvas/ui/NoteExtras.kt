@@ -291,18 +291,17 @@ fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Uni
             Text("RELATED", style = head, color = ink)
             Text("NOTES", style = head, color = ink)
         }
-        // an uncontained strip: every card keeps its full size and the strip runs off the edge; it is a plain snapping row, so it always scrolls to its very end
-        val rs = androidx.compose.foundation.lazy.rememberLazyListState()
-        androidx.compose.foundation.lazy.LazyRow(
-            state = rs,
-            flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(rs),
+        //         // the uncontained carousel again: cards keep their size and shrink away as they leave the edge; the free fling (no snapping) lets it reach the very end
+        val cs2 = androidx.compose.material3.carousel.rememberCarouselState { related.size }
+        androidx.compose.material3.carousel.HorizontalUncontainedCarousel(
+            state = cs2,
+            itemWidth = 150.dp,
+            itemSpacing = 10.dp,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            flingBehavior = androidx.compose.material3.carousel.CarouselDefaults.noSnapFlingBehavior(),
             modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(196.dp),
-        ) {
-            items(related.size, key = { related[it].id }) { i ->
-                RelatedTile(related[i], ink, onOpen, Modifier.width(150.dp).fillMaxHeight().clip(RoundedCornerShape(26.dp)))
-            }
+        ) { i ->
+            RelatedTile(related[i], ink, onOpen, Modifier.fillMaxHeight().maskClip(RoundedCornerShape(26.dp)))
         }
     }
 }

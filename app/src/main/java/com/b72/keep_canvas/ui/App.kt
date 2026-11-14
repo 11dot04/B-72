@@ -102,7 +102,6 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // and the container transform takes it from there
     val backScope = androidx.compose.runtime.rememberCoroutineScope()
     val backA = remember { androidx.compose.animation.core.Animatable(0f) }
-    val backP = backA.value
     var backEdge by remember { mutableStateOf(0) }
     androidx.activity.compose.PredictiveBackHandler(open != null || board != null) { progress ->
         try {
@@ -127,20 +126,11 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
             ) { (id, tag) ->
                 val shared = SharedCtx(this@SharedTransitionLayout, this)
                 androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
-                // what the container grows over is dimmed as it goes (the spec's scrim) and brightens again on the way back
-                val dim by transition.animateFloat(transitionSpec = { tween(400, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)) }, label = "dim") { s -> if (s == androidx.compose.animation.EnterExitState.Visible) 0f else .32f }
                 // a page leaving with no tile to shrink into (the list was scrolled, or another tab is showing) just fades, quickly, instead of lingering
                 val goneKey = id?.let { "card-$it" }
                 val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s -> if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null || (Opening.live[goneKey] ?: 0) > 1) 1f else 0f }
-                Box(Modifier.fillMaxSize().graphicsLayer {
-                    alpha = ghost
-                    if (backP > 0f && (id != null || board != null)  ) {
-                        val s = 1f - .12f * backP
-                        scaleX = s; scaleY = s
-                        translationX = (if (backEdge == androidx.activity.BackEventCompat.EDGE_LEFT) 1f else -1f) * 18.dp.toPx() * backP
-                        shape = RoundedCornerShape((28 * backP).dp); clip = true
-                    }
-                }.drawWithContent { drawContent(); if (dim > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = dim)) }) {
+                androidx.compose.runtime.CompositionLocalProvider(LocalBackProgress provides { backA.value }) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ghost }) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
                 val relatedOf by androidx.compose.runtime.produceState(emptyList<com.b72.keep_canvas.data.Note>(), note?.id, loaded?.library?.notes?.size) {
                     value = note?.let { repo.related(it.id) }.orEmpty()
@@ -197,6 +187,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it }, tab = tab, onTab = { tab = it },
                         onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
                 } }
+                }
                 }
                 }
             }

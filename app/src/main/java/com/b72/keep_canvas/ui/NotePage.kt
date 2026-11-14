@@ -230,12 +230,13 @@ fun NotePage(
     // The page is a card inset from the screen: grey all round (the status bar above it, a strip below it that holds undo, redo and the tag),
     // and the page's own colours only inside. The container transform grows a tile into this card, not into the whole screen.
     val frame = MaterialTheme.colorScheme.surface
+    val back = LocalBackProgress.current
     val frameA by shared.av.transition.animateFloat(transitionSpec = { tween(260) }, label = "frame") { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else 0f }
     Box(Modifier.fillMaxSize()) {
     Box(Modifier.matchParentSize().graphicsLayer { alpha = frameA }.background(frame))
     Column(Modifier.fillMaxSize().imePadding().statusBarsPadding().navigationBarsPadding()) {
     Spacer(Modifier.height(6.dp))
-    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).container(shared, "card-${note.id}", 28.dp, reveal = true).clip(RoundedCornerShape(28.dp)).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
+    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).container(shared, "card-${note.id}", 28.dp, reveal = true).graphicsLayer { val p = back(); val k = 1f - .12f * p; scaleX = k; scaleY = k }.clip(RoundedCornerShape(28.dp)).background(pal.bg).nestedScroll(scrollBehavior.nestedScrollConnection)) {
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
