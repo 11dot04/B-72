@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FormatIndentDecrease
+import androidx.compose.material.icons.rounded.FormatIndentIncrease
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -95,6 +99,7 @@ fun InlineBody(
     onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onCaret: (androidx.compose.ui.geometry.Rect) -> Unit = {}, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
 ) {
     val st = remember { RichState(body, parseSpans(spans), indent) }
+    Redraws("text")
     var fieldAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var focused by remember { mutableStateOf(false) }
     val fr = remember { FocusRequester() }
@@ -147,7 +152,24 @@ fun InlineBody(
                 val l = lay ?: return@drawBehind
                 for (i in 4 until l.lineCount step 5) drawText(tm, "${i + 1}", Offset(0f, l.getLineTop(i)), style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = pal.fg.copy(alpha = .45f), fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
             }.padding(start = 32.dp),
-        ),
+        ).drawBehind {
+            // a code block is one rounded panel behind its lines, a little wider than the text, not a stripe behind each line
+            val l = lay ?: return@drawBehind
+            val len = l.layoutInput.text.length
+            if (len == 0) return@drawBehind
+            var from = -1; var to = -1
+            val runs = ArrayList<IntArray>()
+            for (sp in st.spans.filter { it.c == "pk" }.sortedBy { it.s }) {
+                val fl = l.getLineForOffset(sp.s.coerceIn(0, len)); val ll = l.getLineForOffset((sp.e - 1).coerceIn(sp.s.coerceIn(0, len), len))
+                if (from >= 0 && fl <= to + 1) to = maxOf(to, ll) else { if (from >= 0) runs += intArrayOf(from, to); from = fl; to = ll }
+            }
+            if (from >= 0) runs += intArrayOf(from, to)
+            val padX = 10.dp.toPx(); val padY = 5.dp.toPx()
+            for (r in runs) {
+                val top = l.getLineTop(r[0]) - padY; val bottom = l.getLineBottom(r[1]) + padY
+                drawRoundRect(pal.fg.copy(alpha = .09f), Offset(-padX, top), androidx.compose.ui.geometry.Size(size.width + padX * 2, bottom - top), androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()))
+            }
+        },
     ) {
         if (!editing && links && st.tv.text.isNotEmpty()) {
             val shown = remember(linked, st.spans) {
@@ -156,12 +178,24 @@ fun InlineBody(
                     applyFormats(this, linked.text, st.spans, 18f)
                 }
             }
-            Text(shown, style = style, modifier = Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = true })
+            Text(shown, style = style, onTextLayout = { lay = it }, modifier = Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = true })
         } else {
             if (st.tv.text.isEmpty()) Text(placeholder, style = style, color = pal.fg.copy(alpha = .4f))
             BasicTextField(
                 st.tv, { st.edit(it) },
-                Modifier.fillMaxWidth().focusRequester(fr).onGloballyPositioned { fieldAt = it }.onFocusChanged {
+                Modifier.fillMaxWidth().focusRequester(fr).onGloballyPositioned { fieldAt = it }.onPreviewKeyEvent { e ->
+                    // a hardware keyboard: Ctrl+B, I, U, Shift+X for strike, E for code, Tab / Shift+Tab to indent
+                    if (e.type != KeyEventType.KeyDown) false
+                    else if (e.isCtrlPressed) when (e.key) {
+                        Key.B -> { st.toggle("b"); true }
+                        Key.I -> { st.toggle("i"); true }
+                        Key.U -> { st.toggle("u"); true }
+                        Key.E -> { st.toggle("cd"); true }
+                        Key.X -> if (e.isShiftPressed) { st.toggle("s"); true } else false
+                        Key.H -> { st.toggle("hl"); true }
+                        else -> false
+                    } else if (e.key == Key.Tab) { st.indentBy(if (e.isShiftPressed) -1 else 1); true } else false
+                }.onFocusChanged {
                     focused = it.isFocused
                     if (it.isFocused) onRich(st) else { onRich(null); if (links) editing = false }
                 },
@@ -203,39 +237,72 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed
                 onClick = { items.removeAll { it.startsWith("x ") }; if (items.isEmpty()) items.add("") },
             ) { Text("Clear ticked", color = pal.primary) }
         }
+        // a subtask is a row that starts with a tab (after the "x " of a ticked one), so the older readers of the list still see ticked rows as ticked
+        fun isDone(x: String) = x.startsWith("x ")
+        fun bodyOf(x: String) = if (isDone(x)) x.substring(2) else x
+        fun isSub(x: String) = bodyOf(x).startsWith("\t")
+        fun textOf(x: String) = bodyOf(x).removePrefix("\t")
+        fun mk(d: Boolean, sb: Boolean, t: String) = (if (d) "x " else "") + (if (sb) "\t" else "") + t
+        // ticking a task ticks its subtasks; ticking the last open subtask ticks its task, and unticking one reopens it
+        fun tick(i: Int) {
+            val x = items[i]
+            if (textOf(x).isBlank()) return
+            val nd = !isDone(x)
+            items[i] = mk(nd, isSub(x), textOf(x))
+            if (!isSub(x)) {
+                var j = i + 1
+                while (j < items.size && isSub(items[j])) { if (textOf(items[j]).isNotBlank()) items[j] = mk(nd, true, textOf(items[j])); j++ }
+            } else {
+                var p = i - 1
+                while (p >= 0 && isSub(items[p])) p--
+                if (p >= 0 && textOf(items[p]).isNotBlank()) {
+                    var j = p + 1; var all = true
+                    while (j < items.size && isSub(items[j])) { if (textOf(items[j]).isNotBlank() && !isDone(items[j])) all = false; j++ }
+                    items[p] = mk(all, false, textOf(items[p]))
+                }
+            }
+        }
+        var focusedAt by remember { mutableStateOf(-1) }
         items.forEachIndexed { i, s ->
-            val done = s.startsWith("x ")
+            val done = isDone(s)
+            val sub = isSub(s)
+            val txt = textOf(s)
             val fr = focusers.getOrPut(i) { FocusRequester() }
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = if (sub) 34.dp else 0.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Checkbox, onClickLabel = if (done) "Untick" else "Tick") {
-                        if (s.isNotBlank()) items[i] = if (done) s.substring(2) else "x $s"
-                    },
+                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Checkbox, onClickLabel = if (done) "Untick" else "Tick") { tick(i) },
                     contentAlignment = Alignment.Center,
-                ) { Icon(if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, tint = if (done) pal.primary else pal.fg) }
+                ) { Icon(if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, Modifier.size(if (sub) 22.dp else 24.dp), tint = if (done) pal.primary else pal.fg) }
                 Spacer(Modifier.width(6.dp))
-                if (done) ScribbleText(s.substring(2), true, pal.fg, MaterialTheme.colorScheme.tertiary, style, Modifier.weight(1f), seed = seed)
+                if (done) ScribbleText(txt, true, pal.fg, MaterialTheme.colorScheme.tertiary, style, Modifier.weight(1f), seed = seed)
                 else Box(Modifier.weight(1f)) {
-                    if (s.isEmpty() && i == items.lastIndex) Text("List item", style = style, color = pal.fg.copy(alpha = .4f))
+                    if (txt.isEmpty() && i == items.lastIndex) Text(if (sub) "Subtask" else "List item", style = style, color = pal.fg.copy(alpha = .4f))
                     BasicTextField(
-                        s, { v ->
+                        txt, { v ->
                             if (v.contains('\n')) {
                                 val parts = v.split('\n')
-                                items[i] = parts.first()
-                                items.add(i + 1, parts.drop(1).joinToString(" "))
+                                items[i] = mk(false, sub, parts.first())
+                                items.add(i + 1, mk(false, sub, parts.drop(1).joinToString(" ")))
                                 want = i + 1
-                            } else items[i] = v
+                            } else items[i] = mk(false, sub, v)
                         },
-                        Modifier.fillMaxWidth().focusRequester(fr).onPreviewKeyEvent { e ->
-                            if (e.type == KeyEventType.KeyDown && e.key == Key.Backspace && s.isEmpty() && items.size > 1) {
-                                items.removeAt(i); want = (i - 1).coerceAtLeast(0); true
-                            } else false
+                        Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged { if (it.isFocused) focusedAt = i }.onPreviewKeyEvent { e ->
+                            when {
+                                e.type == KeyEventType.KeyDown && e.key == Key.Backspace && txt.isEmpty() && sub -> { items[i] = mk(false, false, ""); true }
+                                e.type == KeyEventType.KeyDown && e.key == Key.Backspace && txt.isEmpty() && items.size > 1 -> { items.removeAt(i); want = (i - 1).coerceAtLeast(0); true }
+                                e.type == KeyEventType.KeyDown && e.key == Key.Tab && i > 0 -> { items[i] = mk(false, !sub, txt); true }
+                                else -> false
+                            }
                         },
-                        textStyle = style, cursorBrush = SolidColor(pal.primary),
+                        textStyle = if (sub) style.copy(fontSize = style.fontSize * .94f) else style, cursorBrush = SolidColor(pal.primary),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = { items.add(i + 1, ""); want = i + 1 }),
+                        keyboardActions = KeyboardActions(onNext = { items.add(i + 1, mk(false, sub, "")); want = i + 1 }),
                     )
                 }
+                if (focusedAt == i && !done && i > 0) Box(
+                    Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = if (sub) "Make a task" else "Make a subtask") { items[i] = mk(false, !sub, txt) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(if (sub) Icons.Rounded.FormatIndentDecrease else Icons.Rounded.FormatIndentIncrease, null, Modifier.size(20.dp), tint = pal.fg.copy(alpha = .7f)) }
                 if (s.isNotEmpty() && items.size > 1) Box(
                     Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Remove item") { items.removeAt(i) },
                     contentAlignment = Alignment.Center,

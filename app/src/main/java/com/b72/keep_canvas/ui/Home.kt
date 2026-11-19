@@ -178,6 +178,7 @@ private val FILTERS = listOf(
 
 @Composable
 fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, tab: Int = 0, onTab: (Int) -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
+  Redraws("home")
   val appCtx = androidx.compose.ui.platform.LocalContext.current
   androidx.compose.runtime.LaunchedEffect(Unit) { com.b72.keep_canvas.data.Follow.load(appCtx) }
   val match by produceState<com.b72.keep_canvas.data.Match?>(null, com.b72.keep_canvas.data.Follow.teams.size) { value = com.b72.keep_canvas.data.Follow.recent(appCtx).firstOrNull() }
@@ -659,6 +660,17 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
             say(if (lib == null) "No Keep notes found in that file" else "Imported ${repo.merge(lib)} notes from Keep")
         }
     }
+    val md = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) scope.launch {
+            var n = 0
+            for (u in uris) {
+                val name = ctx.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "Imported note"
+                val text = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.openInputStream(u)!!.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull() }
+                if (text != null) { repo.addMarkdown(name, text); n++ }
+            }
+            say(if (n == 0) "Could not read those files" else "Added $n note${if (n == 1) "" else "s"} from markdown")
+        }
+    }
     var digestOn by remember { mutableStateOf(com.b72.keep_canvas.data.Digest.enabled(ctx)) }
     var lockOn by remember { mutableStateOf(com.b72.keep_canvas.data.AppLock.enabled(ctx)) }
     val cs = MaterialTheme.colorScheme
@@ -712,7 +724,7 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
                 Text("Settings and your data. All of it stays on this phone unless you back it up.", style = MaterialTheme.typography.bodyMedium, color = cs.onPrimaryContainer.copy(alpha = .8f), modifier = Modifier.padding(top = 6.dp))
             }
             Group("On this phone", listOf(
-                Entry("On-device assistant", Icons.Rounded.AutoAwesome) { assistant = true },
+                Entry("Assistant", Icons.Rounded.AutoAwesome) { assistant = true },
                 Entry("Connected apps", Icons.Rounded.Extension) { services = true },
                 Entry("Weekly digest", Icons.Rounded.Notifications, digestOn, keepOpen = true) { digestOn = !digestOn; com.b72.keep_canvas.data.Digest.setEnabled(ctx, digestOn); say(if (digestOn) "Sunday digest on" else "Sunday digest off") },
                 Entry("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } },
@@ -724,6 +736,7 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
             var duo by UiPrefs.duotone
             Choice("Photos on a note page", listOf("As taken" to Icons.Rounded.Image, "Duotone" to Icons.Rounded.Contrast), duo) { duo = it }
             Group("Privacy", listOf(
+                *(if (com.b72.keep_canvas.BuildConfig.DEBUG) arrayOf(Entry("Developer insights", Icons.Rounded.Notes, Insights.shown, keepOpen = true) { Insights.shown = !Insights.shown; UiPrefs.setInsights(Insights.shown) }) else emptyArray<Entry>()),
                 Entry("Lock the app", Icons.Rounded.Lock, lockOn, keepOpen = true) {
                     val on = !lockOn
                     if (com.b72.keep_canvas.data.AppLock.set(ctx, on)) { lockOn = on; say(if (on) "The app will ask for your PIN, pattern or fingerprint" else "App lock off") } else say("Set a screen lock on the phone first")
@@ -732,6 +745,7 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
             ))
             Group("Backup and import", listOf(
                 Entry("Backup and restore", Icons.Rounded.CloudUpload) { drive = true },
+                Entry("Import markdown or text files", Icons.Rounded.Notes) { md.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", "application/octet-stream")) },
                 Entry("Import from Google Keep", Icons.Rounded.Notes) { keep.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed")) },
             ))
             if (drive) DriveSheet(

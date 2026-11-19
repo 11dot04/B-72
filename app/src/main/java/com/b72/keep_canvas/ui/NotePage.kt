@@ -171,11 +171,15 @@ fun NotePage(
     var ready by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         androidx.compose.runtime.withFrameNanos { }
+        Insights.pageFrame()
         androidx.compose.runtime.withFrameNanos { }
         // not the whole transition: the body joins while the card is still settling, so it is there by the time the eye gets to it
         if (shared.st.isTransitionActive) kotlinx.coroutines.delay(110)
         ready = true
+        androidx.compose.runtime.withFrameNanos { }
+        Insights.pageBody()
     }
+    Redraws("page")
     var adding by remember { mutableStateOf(addFirst != null) }
     var tagging by remember { mutableStateOf(false) }
 

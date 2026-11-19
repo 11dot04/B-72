@@ -117,6 +117,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
 
     val notesNow by androidx.compose.runtime.rememberUpdatedState(loaded?.library?.notes.orEmpty())
     WarmText(notesNow)
+    Redraws("app")
+    InsightsOverlay()
     androidx.compose.runtime.LaunchedEffect(Unit) { Opening.warm = { wid -> notesNow.firstOrNull { it.id == wid }?.let { Warm.note(it) } } }
     Surface(color = MaterialTheme.colorScheme.surface) {
       Box(Modifier.fillMaxSize()) {

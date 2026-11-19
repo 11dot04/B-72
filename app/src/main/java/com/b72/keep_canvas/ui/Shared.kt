@@ -145,7 +145,7 @@ object Opening {
     private val centres = HashMap<String, androidx.compose.ui.geometry.Offset>()
     /** Set by the app: lays the tapped note's words out in the background while the container is still travelling. */
     var warm: (String) -> Unit = {}
-    fun press(tapped: String) { id = tapped; warm(tapped) }
+    fun press(tapped: String) { id = tapped; warm(tapped); Insights.tapped() }
     fun clear() { id = null }
     fun centre(k: String) = centres[k]
     fun put(k: String, c: androidx.compose.ui.geometry.Offset) { centres[k] = c }

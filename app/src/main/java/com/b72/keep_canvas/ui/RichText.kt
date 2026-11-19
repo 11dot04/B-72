@@ -146,6 +146,7 @@ private fun hangOf(line: String, base: Float): Float = when {
 private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphStyle? {
     val lvl = codes.firstNotNullOfOrNull { c -> if (c.startsWith("pi")) c.drop(2).toIntOrNull() else null } ?: 0
     var left = lvl * 26f
+    if (hang > 0f) left += 14f   // a bullet or a number sits in from the margin, as in a printed list
     if ("pq" in codes) left += 18f
     if ("pk" in codes || "pn" in codes) left += 10f
     val pull = "pp" in codes
@@ -160,7 +161,7 @@ private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphSt
         else -> TextAlign.Unspecified
     }
     if (first == 0f && rest == 0f && align == TextAlign.Unspecified && !pull) return null
-    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.5f * 1.22f).sp else TextUnit.Unspecified)
+    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else TextUnit.Unspecified)
 }
 
 /** Letter formats first, then one paragraph style per line that has a code, a list marker or both. */
@@ -175,8 +176,8 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
         paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base)?.let { b.addStyle(it, pos, end) }
         if (lineEnd > pos) {
             if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
-            if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.5f).sp), pos, lineEnd)
-            if ("pk" in codes) b.addStyle(SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .88f).sp, background = Color(0x24808080)), pos, lineEnd)
+            if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.22f).sp), pos, lineEnd)
+            if ("pk" in codes) b.addStyle(SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .86f).sp), pos, lineEnd)
             if ("pn" in codes) b.addStyle(SpanStyle(background = Color(0x30FFB300), fontWeight = FontWeight.Medium), pos, lineEnd)
         }
         pos = end
@@ -289,10 +290,10 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
         if (last == ' ') {
             when (before) {
                 "# " -> { replaceRange(ls, 2, ""); active = active + "h1"; return true }
-                "## " -> { replaceRange(ls, 3, ""); active = active + "h2"; return true }
+                "## ", "### " -> { replaceRange(ls, before.length, ""); active = active + "h2"; return true }
                 "> " -> { lineFormat("pq", listOf("pp", "pk", "pn")); return true }
                 "! " -> { lineFormat("pn", listOf("pq", "pp", "pk")); return true }
-                "- ", "* " -> { replaceRange(ls, 2, "\u2022 "); return true }
+                "- ", "* ", "+ " -> { replaceRange(ls, 2, "\u2022 "); return true }
             }
         }
         if (before == "```") { lineFormat("pk", listOf("pq", "pp", "pn")); return true }
@@ -315,6 +316,12 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
     /** Enter on an empty line inside a code block or a callout ends it, the way it ends a list. */
     private fun exitBlock(t: String, c: Int): Boolean {
         val prevStart = t.lastIndexOf('\n', c - 2) + 1
+        // a line of three dashes, stars or underscores, then Enter, becomes the centred break
+        if (c - 1 - prevStart == 3 && t.substring(prevStart, c - 1).let { it == "---" || it == "***" || it == "___" }) {
+            replaceRange(prevStart, 3, "* * *")
+            spans = tidy(spans + Span(prevStart, prevStart + 5, "pc"), tv.text.length)
+            return true
+        }
         if (prevStart != c - 1) return false   // the line just left is not empty
         for (code in listOf("pk", "pn")) {
             if (spans.any { it.c == code && it.s <= prevStart && it.e >= c - 1 && it.e > prevStart - 1 }) {
