@@ -152,7 +152,7 @@ object Assistant {
 
     /** One loaded model, used for a batch of notes and then closed (it holds a lot of memory). */
     class Session internal constructor(private val engine: Engine?, private val ctx: Context? = null) : AutoCloseable {
-        fun ask(prompt: String): String? = if (engine == null) ctx?.let { Cloud.ask(it, prompt) } else try {
+        fun ask(prompt: String, json: Boolean = false): String? = if (engine == null) ctx?.let { Cloud.ask(it, prompt, json) } else try {
             engine.createConversation().use { it.sendMessage(prompt).toString() }
         } catch (e: Throwable) { null }
 
@@ -206,9 +206,9 @@ Note:
     }
 
     /** One free-form answer (the brainstorm): loads the model, asks, and lets go of it again. */
-    suspend fun generate(ctx: Context, prompt: String): String? = withContext(Dispatchers.Default) {
+    suspend fun generate(ctx: Context, prompt: String, json: Boolean = false): String? = withContext(Dispatchers.Default) {
         val s = open(ctx) ?: return@withContext null
-        try { s.ask(prompt)?.trim()?.takeIf { it.isNotEmpty() } } finally { s.close() }
+        try { s.ask(prompt, json)?.trim()?.takeIf { it.isNotEmpty() } } finally { s.close() }
     }
 
     private const val IDEAS = """Someone saved a photo to their notes. Work out what it is, then give up to 3 helpful things. Reply with ONLY a JSON array, nothing else.

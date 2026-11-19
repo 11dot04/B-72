@@ -233,6 +233,14 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         upsert(n.copy(blocks = n.blocks + newBlock(Kind.Text, "ai${System.nanoTime()}", body = text.trim())))
     }
 
+    /** What the assistant suggested, added as a block of its own: a small label with a hairline, then the lines. The person's words are not touched. */
+    fun appendSection(noteId: String, label: String, lines: List<String>) {
+        val n = note(noteId) ?: return
+        val body = label + "\n" + lines.joinToString("\n")
+        val b = newBlock(Kind.Text, "ai${System.nanoTime()}", body = body).copy(data = mapOf("spans" to JsonPrimitive("0,${label.length},pl")))
+        upsert(n.copy(blocks = n.blocks + b))
+    }
+
     /** Renames a tag everywhere; if the new name is already a tag the two simply become one. Its canvas marks and stickers move along. */
     fun renameTag(old: String, new: String) {
         val l = loaded?.library ?: return

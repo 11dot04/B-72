@@ -35,7 +35,7 @@ object Related {
     }
 
     /** The [k] notes most related to [of], best first. [vector] gives a note's meaning vector when a model is available. */
-    fun rank(all: List<Note>, of: Note, k: Int = 6, vector: ((Note) -> FloatArray?)? = null): List<Note> {
+    fun rank(all: List<Note>, of: Note, k: Int = 6, vector: ((Note) -> FloatArray?)? = null, floorOverride: Float? = null): List<Note> {
         if (all.size < 2) return emptyList()
         val docs = all.associate { it.id to tokens(it.searchText()) }
         val df = HashMap<String, Int>()
@@ -59,7 +59,7 @@ object Related {
             if (o.id in linked) score += 1f
             o to score
         }
-        val floor = if (myVec != null) .3f else .08f
+        val floor = floorOverride ?: if (myVec != null) .3f else .08f
         return scored.filter { it.second >= floor || it.first.id in linked }.sortedByDescending { it.second }.take(k).map { it.first }
     }
 }

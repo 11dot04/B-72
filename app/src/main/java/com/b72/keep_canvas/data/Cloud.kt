@@ -59,7 +59,7 @@ object Cloud {
     }
 
     /** One answer from Gemini, or null when the call fails (no key, no network, quota). Blocking: call it off the main thread. */
-    fun ask(ctx: Context, prompt: String): String? = try {
+    fun ask(ctx: Context, prompt: String, json: Boolean = false): String? = try {
         val k = key(ctx)
         if (k.isBlank() || System.currentTimeMillis() < blockedUntil || usedToday(ctx) >= dailyCap()) null else {
             count(ctx)
@@ -68,6 +68,7 @@ object Cloud {
                 setRequestProperty("Content-Type", "application/json"); setRequestProperty("x-goog-api-key", k)
             }
             val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                .put("generationConfig", JSONObject().put("temperature", if (json) 0.3 else 0.7).apply { if (json) put("responseMimeType", "application/json") })
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             if (c.responseCode == 429) {
                 val why = runCatching { (c.errorStream ?: c.inputStream).bufferedReader().readText() }.getOrDefault("")
