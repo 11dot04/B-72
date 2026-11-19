@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Dashboard
@@ -476,51 +477,86 @@ private fun Block.wordCount(): Int {
 
 // ---------------------------------------------------------------- brainstorm
 
-private val ASKS = listOf("Next steps", "Questions to explore", "Connect the dots", "Say it shorter")
+/** A small-caps label with a hairline running to the far edge: how an assistant's addition is marked off from the writer's own words. */
+@Composable
+fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.8.sp, fontWeight = FontWeight.Medium), color = cs.onSurfaceVariant)
+        Box(Modifier.padding(start = 12.dp).weight(1f).height(1.dp).background(cs.outlineVariant))
+    }
+}
 
-/** A conversation with the on-device assistant about one note. What it writes can be added to the note. */
+/**
+ * A thinking partner for one note. Each ask comes back as separate suggestions, each with the words of the note it comes from, and any of them
+ * can be added to the note on its own: as a block of its own under a small label, so it is never mixed into what you wrote.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrainstormSheet(note: Note, onDismiss: () -> Unit, onAppend: (String) -> Unit, onSetup: () -> Unit) {
+fun BrainstormSheet(note: Note, all: List<Note>, onDismiss: () -> Unit, onInsert: (label: String, lines: List<String>) -> Unit, onOpenNote: (String) -> Unit, onSetup: () -> Unit) {
     val ctx = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val cs = MaterialTheme.colorScheme
     var ask by remember { mutableStateOf("") }
-    var answer by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf<com.b72.keep_canvas.data.BsResult?>(null) }
+    var failed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    fun run(q: String) {
-        if (busy || q.isBlank()) return
-        busy = true; answer = ""
-        val text = note.blocks.joinToString("\n") { it.tripText() }.take(3000)
-        scope.launch {
-            val prompt = "You are a thoughtful thinking partner. Here is a personal note:\n\"\"\"\n$text\n\"\"\"\nTask: $q\nReply in plain text, under 120 words, no preamble."
-            answer = Assistant.generate(ctx, prompt) ?: "The assistant could not answer. Try again."
-            busy = false
-        }
+    val added = remember { androidx.compose.runtime.mutableStateListOf<Int>() }
+    fun go(block: suspend () -> com.b72.keep_canvas.data.BsResult?) {
+        if (busy) return
+        busy = true; result = null; failed = false; added.clear()
+        scope.launch { val r = block(); result = r; failed = r == null; busy = false }
     }
+    fun line(i: com.b72.keep_canvas.data.BsItem) = "\u2022 " + i.text + (i.noteTitle?.let { " [[$it]]" } ?: "")
+    val ready = Assistant.installed || com.b72.keep_canvas.data.Cloud.on
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Text("Brainstorm", style = flexStyle(32.sp, wght = 720, wdth = 108f, rond = 40f), color = cs.onSurface)
             Text(note.title.ifBlank { "This note" }, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (!Assistant.installed) {
-                Text("This runs on the on-device assistant, which is not installed yet. Nothing leaves your phone.", style = MaterialTheme.typography.bodyLarge)
+            if (!ready) {
+                Text("This needs the assistant: the on-device one, or the cloud one with your own key.", style = MaterialTheme.typography.bodyLarge)
                 Button(onClick = { onDismiss(); onSetup() }) { Text("Set up the assistant") }
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (a in ASKS) AssistChip(onClick = { run(a) }, label = { Text(a) }, enabled = !busy)
+                    for (k in com.b72.keep_canvas.data.BsKind.entries) AssistChip(onClick = { go { com.b72.keep_canvas.data.Brainstorm.run(ctx, k, note, all) } }, label = { Text(k.label) }, enabled = !busy)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(ask, { ask = it }, Modifier.weight(1f), placeholder = { Text("Or ask anything about it") }, singleLine = true, shape = RoundedCornerShape(24.dp))
-                    IconButton(onClick = { run(ask) }, enabled = !busy && ask.isNotBlank()) { Icon(Icons.AutoMirrored.Rounded.Send, "Ask") }
+                    IconButton(onClick = { val q = ask; go { com.b72.keep_canvas.data.Brainstorm.ask(ctx, note, q) } }, enabled = !busy && ask.isNotBlank()) { Icon(Icons.AutoMirrored.Rounded.Send, "Ask") }
                 }
                 if (busy) LoadingIndicator(Modifier.size(48.dp).align(Alignment.CenterHorizontally))
-                if (answer.isNotEmpty()) {
-                    Surface(shape = RoundedCornerShape(28.dp), color = cs.tertiaryContainer) {
-                        androidx.compose.foundation.text.selection.SelectionContainer {
-                            Text(answer, style = TextStyle(fontFamily = Serif, fontSize = 18.sp, lineHeight = 25.sp, color = cs.onTertiaryContainer), modifier = Modifier.padding(20.dp))
+                if (failed) Text("The assistant could not answer just now. Check the key or the day's allowance in Assistant settings, then try again.", style = MaterialTheme.typography.bodyMedium, color = cs.error)
+                val r = result
+                if (r != null) {
+                    SectionLabel(r.section, Modifier.padding(top = 6.dp))
+                    r.note?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant) }
+                    r.prose?.let { prose ->
+                        Surface(shape = RoundedCornerShape(28.dp), color = cs.tertiaryContainer) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(prose, style = TextStyle(fontFamily = Serif, fontSize = 18.sp, lineHeight = 25.sp, color = cs.onTertiaryContainer), modifier = Modifier.padding(20.dp))
+                            }
+                        }
+                        FilledTonalButton(onClick = { onInsert(r.section, listOf(prose)); onDismiss() }) { Text("Add to this note") }
+                    }
+                    r.items.forEachIndexed { idx, it ->
+                        val done = idx in added
+                        Surface(shape = RoundedCornerShape(22.dp), color = if (done) cs.surfaceContainer else cs.surfaceContainerHigh) {
+                            Row(Modifier.padding(start = 18.dp, top = 14.dp, bottom = 14.dp, end = 6.dp), verticalAlignment = Alignment.Top) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    it.quote?.let { q -> Text("\u201C$q\u201D", style = TextStyle(fontFamily = Serif, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 14.sp, color = cs.onSurfaceVariant), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                                    Text(it.text, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+                                    if (it.noteId != null) AssistChip(onClick = { onDismiss(); onOpenNote(it.noteId) }, label = { Text(it.noteTitle.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Rounded.Link, null, Modifier.size(18.dp)) })
+                                }
+                                IconButton(onClick = { if (!done) { onInsert(r.section, listOf(line(it))); added += idx } }, enabled = !done) {
+                                    Icon(if (done) Icons.Rounded.Check else Icons.Rounded.Add, if (done) "Added" else "Add to this note")
+                                }
+                            }
                         }
                     }
-                    FilledTonalButton(onClick = { onAppend(answer); onDismiss() }) { Text("Add to this note") }
+                    if (r.items.size > 1 && added.size < r.items.size) FilledTonalButton(onClick = { onInsert(r.section, r.items.filterIndexed { i, _ -> i !in added }.map { line(it) }); onDismiss() }) { Text("Add all to this note") }
                 }
             }
         }

@@ -157,7 +157,7 @@ fun NotePage(
     onSetData: (blockId: String, key: String, value: Int) -> Unit = { _, _, _ -> },
     onOpenNote: (String) -> Unit = {}, related: List<Note> = emptyList(),
     onRemind: (Long) -> Unit = {}, allNotes: List<Note> = emptyList(), onAddTag: (String) -> Unit = {}, onRemoveTag: (String) -> Unit = {},
-    onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {},
+    onSmart: (Boolean) -> Unit = {}, onAppend: (String) -> Unit = {}, onInsert: (String, List<String>) -> Unit = { _, _ -> },
     onStar: () -> Unit = {}, onTitle: (String) -> Unit = {}, onRich: (blockId: String, text: String, spans: String, indent: Boolean) -> Unit = { _, _, _, _ -> }, onLayout: (String) -> Unit = {}, repo: com.b72.keep_canvas.data.Repo? = null, addFirst: String? = null, onAddFirstDone: () -> Unit = {},
     onItems: (blockId: String, items: List<String>) -> Unit = { _, _ -> }, autoFocus: Boolean = false,
 ) {
@@ -515,7 +515,7 @@ fun NotePage(
                 FormatBar(r, { fm.clearFocus(); kb?.hide() })
             }
         }
-        if (brainstorm) BrainstormSheet(note, { brainstorm = false }, onAppend, { setupAi = true })
+        if (brainstorm) BrainstormSheet(note, allNotes, { brainstorm = false }, onInsert, onOpenNote, { setupAi = true })
         if (setupAi) AssistantDialog { setupAi = false }
         if (pickDate) {
             val dp = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)

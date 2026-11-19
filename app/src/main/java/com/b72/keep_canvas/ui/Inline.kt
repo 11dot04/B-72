@@ -169,6 +169,13 @@ fun InlineBody(
                 val top = l.getLineTop(r[0]) - padY; val bottom = l.getLineBottom(r[1]) + padY
                 drawRoundRect(pal.fg.copy(alpha = .09f), Offset(-padX, top), androidx.compose.ui.geometry.Size(size.width + padX * 2, bottom - top), androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()))
             }
+            // a label line (small caps) gets a hairline from the end of its words to the right edge
+            for (sp in st.spans.filter { it.c == "pl" }) {
+                val line = l.getLineForOffset(sp.s.coerceIn(0, len))
+                val y = (l.getLineTop(line) + l.getLineBottom(line)) / 2f
+                val x = l.getLineRight(line) + 12.dp.toPx()
+                if (x < size.width) drawLine(pal.fg.copy(alpha = .22f), Offset(x, y), Offset(size.width, y), 1.dp.toPx())
+            }
         },
     ) {
         if (!editing && links && st.tv.text.isNotEmpty()) {

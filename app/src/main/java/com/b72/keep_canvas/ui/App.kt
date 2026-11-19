@@ -162,6 +162,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                         if (on && !com.b72.keep_canvas.data.Assistant.installed) android.widget.Toast.makeText(ctx, "Smart layout is on. Install the assistant for deeper extraction.", android.widget.Toast.LENGTH_LONG).show()
                     },
                     onAppend = { repo.appendText(note.id, it) },
+                    onInsert = { label, lines -> repo.appendSection(note.id, label, lines) },
                     onAddTag = { t -> repo.upsert(note.copy(tags = (note.tags + t).distinct())) },
                     onRemoveTag = { t -> repo.upsert(note.copy(tags = note.tags - t)) },
                     onOpenNote = { open = it },

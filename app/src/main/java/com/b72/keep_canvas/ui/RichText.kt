@@ -178,6 +178,7 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
             if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
             if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.22f).sp), pos, lineEnd)
             if ("pk" in codes) b.addStyle(SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .86f).sp), pos, lineEnd)
+            if ("pl" in codes) b.addStyle(SpanStyle(fontSize = (base * .7f).sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Medium, color = Color(0xB3808080)), pos, lineEnd)
             if ("pn" in codes) b.addStyle(SpanStyle(background = Color(0x30FFB300), fontWeight = FontWeight.Medium), pos, lineEnd)
         }
         pos = end
