@@ -348,6 +348,20 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         return id
     }
 
+    /** A markdown file becomes a note: its first heading is the title, the rest keeps its formatting, task lines become a checklist. */
+    fun addMarkdown(fileName: String, src: String): String {
+        val id = (System.currentTimeMillis() * 1000 + (System.nanoTime() % 1000)).toString()
+        val r = Markdown.parse(src, fileName.substringBeforeLast('.').replace('_', ' ').replace('-', ' ').trim())
+        val blocks = buildList {
+            if (r.title.isNotBlank()) add(newBlock(Kind.Bare, "t$id", title = r.title))
+            if (r.text.isNotBlank()) add(newBlock(Kind.Text, "in_$id", body = r.text).copy(data = if (r.spans.isNotEmpty()) mapOf("spans" to JsonPrimitive(r.spans)) else emptyMap()))
+            if (r.tasks.isNotEmpty()) add(newBlock(Kind.Checklist, "c$id", title = "List", items = r.tasks))
+        }
+        upsert(Note(id = id, blocks = blocks))
+        harvestLinks(id)
+        return id
+    }
+
     // ---- inline editing: the note page edits in place, so each field saves on its own
 
     /** A new note with one empty block of [kind] (text or checklist), ready to type into. Returns its id. */
