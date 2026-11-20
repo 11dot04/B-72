@@ -197,12 +197,35 @@ class RichState(text: String, spans: List<Span>, var indent: Boolean) {
     var active by mutableStateOf(emptySet<String>())
     var indentOn by mutableStateOf(indent)
 
+    /** Told when Enter ends a line (the line's words), and as words are typed (the line up to the cursor): how the @ helpers notice a request. */
+    var onLine: ((String) -> Unit)? = null
+    var onTyping: ((String) -> Unit)? = null
+
+    /** Swaps the first [old] in the text for [new]; false when it is no longer there. */
+    fun replaceToken(old: String, new: String): Boolean {
+        val i = tv.text.indexOf(old)
+        if (i < 0) return false
+        replaceRange(i, old.length, new, caretAfter = true)
+        return true
+    }
+
+    /** Replaces the [len] characters just before the cursor. */
+    fun completeBeforeCaret(len: Int, with: String) {
+        val c = tv.selection.start
+        if (len in 0..c) replaceRange(c - len, len, with, caretAfter = true)
+    }
+
     fun edit(v: TextFieldValue) {
         if (v.text != tv.text) {
             val old = tv.text
+            if (v.text.length == old.length + 1 && v.selection.collapsed) {
+                val c = v.selection.start
+                if (c > 0 && v.text[c - 1] == '\n') onLine?.invoke(v.text.substring(v.text.lastIndexOf('\n', c - 2) + 1, c - 1))
+            }
             spans = adjustSpans(spans, old, v.text, active); tv = v
             if (v.text.length == old.length + 1) { if (!smartType()) continueList() }
             if (v.text.count { it == '\n' } != old.count { it == '\n' }) renumber()
+            tv.selection.start.let { c -> onTyping?.invoke(tv.text.substring(tv.text.lastIndexOf('\n', c - 1) + 1, c.coerceAtLeast(0))) }
         } else { tv = v; if (v.selection.collapsed) active = spans.filter { it.s < v.selection.start && v.selection.start <= it.e }.map { it.c }.toSet() }
     }
 

@@ -162,6 +162,10 @@ fun NotePage(
     onItems: (blockId: String, items: List<String>) -> Unit = { _, _ -> }, autoFocus: Boolean = false,
 ) {
     val pal = rememberNotePalette(note)
+    val allNow by androidx.compose.runtime.rememberUpdatedState(allNotes)
+    val atScope = androidx.compose.runtime.rememberCoroutineScope()
+    val atCtx = androidx.compose.ui.platform.LocalContext.current
+    val at = remember(note.id) { AtHelper(atCtx, atScope, { allNow }, note.id) }
     val density = LocalDensity.current
     // duotone is a setting of the app (in the side menu), not something each page carries
     val tint = UiPrefs.duotone.value == 1
@@ -272,7 +276,7 @@ fun NotePage(
                     Box(Modifier.padding(end = barRoom)) { InlineBody(
                         b.body, b.str("spans").orEmpty(), (b.dbl("indent") ?: 0.0) > 0 || layoutId == "script", if (ti == 0) "Note" else "", pal, linked,
                         focus = autoFocus && ti == 0 && b.body.isEmpty() && !hasList, onRich = { rich = it },
-                        serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact, onCaret = { caret = it },
+                        serif = layoutId == "script" || layoutId == "ledger", numbered = layoutId == "ledger", compact = compact, onCaret = { caret = it }, helper = at,
                     ) { t, sp, ind -> onRich(b.id, t, sp, ind) } }
                 }
                 if (tbs.isEmpty() && !hasList && note.blocks.none { it.kind == Kind.Poster }) InlineBody("", "", false, "Add a note", pal, androidx.compose.ui.text.AnnotatedString(""), focus = false, onRich = { rich = it }, serif = false, numbered = false, compact = compact) { t, sp, ind -> onRich("in_${note.id}", t, sp, ind) }
@@ -512,7 +516,10 @@ fun NotePage(
             val fm = androidx.compose.ui.platform.LocalFocusManager.current
             val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
             Box(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp), contentAlignment = Alignment.BottomCenter) {
-                FormatBar(r, { fm.clearFocus(); kb?.hide() })
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AtBar(at)
+                    FormatBar(r, { fm.clearFocus(); kb?.hide() })
+                }
             }
         }
         if (brainstorm) BrainstormSheet(note, allNotes, { brainstorm = false }, onInsert, onOpenNote, { setupAi = true })

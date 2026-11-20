@@ -96,10 +96,12 @@ fun InlineTitle(initial: String, placeholder: String, pal: NotePalette, focus: B
 @Composable
 fun InlineBody(
     body: String, spans: String, indent: Boolean, placeholder: String, pal: NotePalette, linked: AnnotatedString, focus: Boolean,
-    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onCaret: (androidx.compose.ui.geometry.Rect) -> Unit = {}, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
+    onRich: (RichState?) -> Unit, serif: Boolean = false, numbered: Boolean = false, compact: Boolean = false, onCaret: (androidx.compose.ui.geometry.Rect) -> Unit = {}, helper: AtHelper? = null, onChange: (text: String, spans: String, indent: Boolean) -> Unit,
 ) {
     val st = remember { RichState(body, parseSpans(spans), indent) }
     Redraws("text")
+    st.onLine = helper?.let { h -> { line: String -> h.submit(st, line) } }
+    st.onTyping = helper?.let { h -> { line: String -> h.typing(st, line) } }
     var fieldAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var focused by remember { mutableStateOf(false) }
     val fr = remember { FocusRequester() }
