@@ -122,7 +122,8 @@ fun LinkCard(b: Block, fg: Color, accent: Color, modifier: Modifier = Modifier) 
             if (facts.isNotEmpty()) Text(facts.joinToString("  ·  ").uppercase(), style = Mono, color = fg.copy(alpha = .7f), modifier = Modifier.padding(top = 8.dp))
             if (b.field("price").isNotEmpty()) Text(b.field("price"), style = flexStyle(26.sp, wght = 760, rond = 30f, lh = 1f), color = fg, modifier = Modifier.padding(top = 10.dp))
             if (b.field("stats").isNotEmpty()) StatGrid(b.field("stats"), b.field("src"), fg)
-            if (b.field("desc").isNotEmpty() && b.field("stats").isEmpty()) Text(b.field("desc"), maxLines = 5, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .82f), modifier = Modifier.padding(top = 10.dp))
+            if (b.field("desc").isNotEmpty() && b.field("stats").isEmpty()) Text("SUMMARY", style = Mono, color = fg.copy(alpha = .6f), modifier = Modifier.padding(top = 14.dp))
+            if (b.field("desc").isNotEmpty() && b.field("stats").isEmpty()) Text(b.field("desc"), maxLines = 5, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp), color = fg.copy(alpha = .82f), modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(linkHost(b), style = Mono.copy(fontSize = 11.sp), color = fg.copy(alpha = .85f), maxLines = 1)
                 Text(linkPath(b), style = Mono.copy(fontSize = 11.sp), color = fg.copy(alpha = .5f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -168,5 +169,37 @@ fun LinkRow(note: Note, b: Block, onOpen: () -> Unit, modifier: Modifier = Modif
             Text(facts.joinToString("  ·  ").uppercase(), style = Mono, color = cs.onSurfaceVariant.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         }
         IconButton({ runCatching { uri.openUri(linkUrl(b)) } }, Modifier.size(36.dp)) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "Open in the browser", Modifier.size(20.dp), tint = cs.onSurfaceVariant) }
+    }
+}
+
+/**
+ * One bookmark in the Links grid, in the manner of a visual bookmark board: the picture leads (its height varies so the columns breathe),
+ * then the site, the title, a line of what it says, and the note's tags. A bookmark with no picture gets a tinted panel with the site's icon.
+ */
+@Composable
+fun LinkTile(note: Note, b: Block, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val site = b.field("site").ifBlank { linkHost(b) }
+    val about = b.field("desc").ifBlank { note.snippet(140) }
+    val shape = RoundedCornerShape(26.dp)
+    val ratios = floatArrayOf(1f, .8f, 1.3f)
+    val ratio = ratios[(b.id.hashCode() and 0x7fffffff) % ratios.size]
+    val tints = listOf(cs.secondaryContainer to cs.onSecondaryContainer, cs.tertiaryContainer to cs.onTertiaryContainer, cs.primaryContainer to cs.onPrimaryContainer)
+    val (tint, ink) = tints[(linkHost(b).hashCode() and 0x7fffffff) % tints.size]
+    Column(modifier.fillMaxWidth().noteContainer(note.id, 26.dp).clip(shape).background(cs.surfaceContainerHigh).clickable(onClickLabel = "Open the note", onClick = onOpen)) {
+        Box(Modifier.fillMaxWidth()) {
+            if (b.path != null) PhotoImage(b.path!!, 700, false, cs.primary, Modifier.fillMaxWidth().aspectRatio(ratio))
+            else Box(Modifier.fillMaxWidth().aspectRatio(1.6f).background(tint), contentAlignment = Alignment.Center) { SiteBadge(b, ink.copy(alpha = .12f), ink, 48.dp) }
+            Pill(linkType(b), Color.Black.copy(alpha = .55f), Color.White, Modifier.align(Alignment.TopStart).padding(10.dp))
+        }
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SiteBadge(b, cs.surface, cs.onSurface, 16.dp)
+                Text(site.uppercase(), style = Mono, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+            }
+            Text(b.title.ifBlank { linkHost(b) + linkPath(b) }, style = flexStyle(18.sp, wght = 560, lh = 1.1f), color = cs.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+            if (about.isNotBlank()) Text(about, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = if (b.path != null) 2 else 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            if (note.tags.isNotEmpty()) Text(note.tags.take(3).joinToString("  ") { "#$it" }, style = Mono, color = cs.onSurfaceVariant.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }

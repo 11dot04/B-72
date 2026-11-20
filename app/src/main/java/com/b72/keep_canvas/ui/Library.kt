@@ -39,6 +39,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MusicNote
@@ -646,20 +648,44 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
 }
 
 
-/** The Links shelf is a list, not a carousel: bookmarks are looked through and searched, so they are filtered by site and each says what it is. */
+/**
+ * The Links shelf, as a visual board in the manner of MyMind: two columns of cards led by their pictures, no folders. Find things by
+ * typing anything about them (a word from the title or summary, the site, the kind of thing, a tag), or narrow by kind.
+ */
 @Composable
 private fun LinkShelf(items: List<Pair<Note, Block>>, onOpen: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    var site by rememberSaveable { mutableStateOf("") }
-    var limit by rememberSaveable { mutableIntStateOf(15) }
-    val sites = remember(items) { items.groupingBy { linkHost(it.second) }.eachCount().filterKeys { it.isNotEmpty() }.entries.sortedByDescending { it.value }.take(10) }
-    val shown = remember(items, site) { if (site.isEmpty()) items else items.filter { linkHost(it.second) == site } }
-    if (sites.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.material3.FilterChip(site.isEmpty(), { site = "" }, label = { Text("All sites") })
-        for ((h, n) in sites) androidx.compose.material3.FilterChip(site == h, { site = if (site == h) "" else h }, label = { Text("$h  $n") })
+    var q by rememberSaveable { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf("") }
+    var limit by rememberSaveable { mutableIntStateOf(20) }
+    val kinds = remember(items) { items.groupingBy { linkType(it.second) }.eachCount().entries.sortedByDescending { it.value } }
+    val words = q.trim().lowercase().split(' ').filter { it.isNotBlank() }
+    val shown = remember(items, q, kind) {
+        items.filter { (n, b) ->
+            (kind.isEmpty() || linkType(b) == kind) && (words.isEmpty() || run {
+                val hay = (b.title + " " + b.field("desc") + " " + b.field("site") + " " + linkHost(b) + " " + linkType(b) + " " + b.field("author") + " " + b.field("note") + " " + n.title + " " + n.tags.joinToString(" ")).lowercase()
+                words.all { it in hay }
+            })
+        }
     }
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        for ((n, b) in shown.take(limit)) LinkRow(n, b, { onOpen(n.id) })
-        if (shown.size > limit) androidx.compose.material3.TextButton({ limit += 20 }, Modifier.align(Alignment.CenterHorizontally)) { Text("Show more (${shown.size - limit})") }
+    androidx.compose.material3.OutlinedTextField(
+        q, { q = it }, singleLine = true, placeholder = { Text("Search your links") },
+        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+        trailingIcon = { if (q.isNotEmpty()) androidx.compose.material3.IconButton({ q = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
+        shape = CircleShape, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+    )
+    if (kinds.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.material3.FilterChip(kind.isEmpty(), { kind = "" }, label = { Text("Everything") })
+        for ((k, n) in kinds) androidx.compose.material3.FilterChip(kind == k, { kind = if (kind == k) "" else k }, label = { Text("$k  $n") })
+    }
+    if (shown.isEmpty()) Text("Nothing matches.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+    val part = shown.take(limit)
+    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (col in 0..1) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            part.forEachIndexed { i, (n, b) -> if (i % 2 == col) LinkTile(n, b, { onOpen(n.id) }) }
+        }
+    }
+    if (shown.size > limit) Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.TextButton({ limit += 20 }) { Text("Show more (${shown.size - limit})") }
     }
 }
