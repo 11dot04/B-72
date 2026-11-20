@@ -24,9 +24,9 @@ import java.io.File
 class Shot(val id: Long, val uri: Uri, val taken: Long, val w: Int, val h: Int)
 
 /** What the phone worked out about one screenshot, and what was decided about it. [state]: "new", "kept" or "drop" (queued for deletion). */
-class ShotInfo(
+data class ShotInfo(
     val title: String, val summary: String, val category: String, val oneTime: Boolean, val tags: List<String>, val text: String,
-    val state: String = "new", val ai: Boolean = false,
+    val state: String = "new", val ai: Boolean = false, val col: String = "",
 )
 
 /**
@@ -50,7 +50,7 @@ object Shots {
             fun s(n: String) = (i[n] as? JsonPrimitive)?.contentOrNull.orEmpty()
             infos[id] = ShotInfo(
                 s("t"), s("s"), s("c"), (i["o"] as? JsonPrimitive)?.booleanOrNull == true,
-                (i["g"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }, s("x"), s("st").ifEmpty { "new" }, (i["a"] as? JsonPrimitive)?.booleanOrNull == true,
+                (i["g"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }, s("x"), s("st").ifEmpty { "new" }, (i["a"] as? JsonPrimitive)?.booleanOrNull == true, s("col"),
             )
         }
     }
@@ -58,7 +58,7 @@ object Shots {
     fun save(ctx: Context) {
         val o = buildJsonObject {
             for ((id, i) in infos.toMap()) put(id.toString(), buildJsonObject {
-                put("t", i.title); put("s", i.summary); put("c", i.category); put("o", i.oneTime); put("x", i.text.take(1500)); put("st", i.state); put("a", i.ai)
+                put("t", i.title); put("s", i.summary); put("c", i.category); put("o", i.oneTime); put("x", i.text.take(1500)); put("st", i.state); put("a", i.ai); put("col", i.col)
                 put("g", buildJsonArray { i.tags.forEach { add(JsonPrimitive(it)) } })
             })
         }
@@ -67,7 +67,14 @@ object Shots {
 
     fun setState(ctx: Context, id: Long, state: String) {
         val i = infos[id] ?: ShotInfo("Screenshot", "", "other", false, emptyList(), "")
-        infos[id] = ShotInfo(i.title, i.summary, i.category, i.oneTime, i.tags, i.text, state, i.ai)
+        infos[id] = i.copy(state = state)
+        save(ctx)
+    }
+
+    /** Puts a screenshot in a collection (an empty name takes it out). */
+    fun setCollection(ctx: Context, id: Long, name: String) {
+        val i = infos[id] ?: return
+        infos[id] = i.copy(col = name.trim().take(40))
         save(ctx)
     }
 
