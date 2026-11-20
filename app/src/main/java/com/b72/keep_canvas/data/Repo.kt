@@ -34,7 +34,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
     suspend fun related(id: String, k: Int = 6): List<Note> = withContext(Dispatchers.Default) {
         val all = loaded?.library?.notes ?: return@withContext emptyList()
         val me = all.firstOrNull { it.id == id } ?: return@withContext emptyList()
-        Related.rank(all, me, k) { brain.vector(it) }
+        Related.rank(all, me, k, vector = { brain.vector(it) })
     }
 
     /** What each note says, as vectors (only for the notes that have words, and only when the language model is packaged). */
