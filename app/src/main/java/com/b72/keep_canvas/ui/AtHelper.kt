@@ -160,7 +160,7 @@ fun AtBar(h: AtHelper) {
                             }
                             Icon(Icons.Rounded.Add, "Use this", Modifier.padding(start = 10.dp).size(22.dp), tint = cs.primary)
                         }
-                        else -> Text(s.message, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp, end = 12.dp))
+                        else -> Text(s.message, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp, end = 12.dp))
                     }
                 }
             }
