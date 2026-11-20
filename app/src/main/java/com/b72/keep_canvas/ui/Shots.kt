@@ -49,6 +49,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Favorite
@@ -61,6 +66,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -223,7 +229,7 @@ fun ShotsScreen() {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when (tab) {
                         0 -> ReviewPane(queue, onDecide = { s, st -> Shots.setState(ctx, s.id, st) }, onUndo = { id -> Shots.setState(ctx, id, "new") }, scanned = scanned && reading == null)
-                        1 -> KeptPane(kept, infos, onDelete = { delete(listOf(it)) }, onBackToReview = { Shots.setState(ctx, it.id, "new") })
+                        1 -> KeptPane(kept, infos, onDelete = { delete(listOf(it)) }, onBackToReview = { Shots.setState(ctx, it.id, "new") }, onCollect = { sh, n -> Shots.setCollection(ctx, sh.id, n) })
                         else -> CleanPane(queued, suggested, infos, onDelete = { delete(it) }, onKeep = { Shots.setState(ctx, it.id, "kept") })
                     }
                 }
@@ -234,6 +240,7 @@ fun ShotsScreen() {
 }
 
 /** The deck: the top screenshot follows a finger, goes right to keep or left to delete; the next one waits behind it. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUndo: (Long) -> Unit, scanned: Boolean) {
     val cs = MaterialTheme.colorScheme
@@ -267,12 +274,12 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
             // the next card, waiting
             shown.getOrNull(1)?.let { nx ->
-                ShotImage(nx, 900, Modifier.fillMaxHeight().aspectRatio(cardAspect(nx), matchHeightConstraintsFirst = true).graphicsLayer {
+                ShotImage(nx, 900, Modifier.fillMaxSize().graphicsLayer {
                     val k = (abs(x.value) / thr).coerceIn(0f, 1f); scaleX = .93f + .07f * k; scaleY = .93f + .07f * k; alpha = .7f + .3f * k
-                }.clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHighest), if (fitsCard(nx)) ContentScale.Crop else ContentScale.Fit)
+                }.clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHighest), ContentScale.Fit)
             }
             Box(
-                Modifier.fillMaxHeight().aspectRatio(cardAspect(top), matchHeightConstraintsFirst = true)
+                Modifier.fillMaxSize()
                     .graphicsLayer { translationX = x.value; rotationZ = x.value / wPx * 14f }
                     .clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHighest)
                     .pointerInput(top.id) {
@@ -283,15 +290,23 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
                         )
                     },
             ) {
-                ShotImage(top, 1400, Modifier.fillMaxSize(), if (fitsCard(top)) ContentScale.Crop else ContentScale.Fit)
-                // what the phone made of it, over the foot of the picture
-                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = .55f)).padding(14.dp)) {
-                    if (info != null) {
-                        Text(info.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = flexStyle(20.sp, wght = 640, lh = 1.1f), color = Color.White)
-                        if (info.summary.isNotEmpty()) Text(info.summary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .85f), modifier = Modifier.padding(top = 2.dp))
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(categoryLabel(info.category), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = .2f)).padding(horizontal = 9.dp, vertical = 3.dp))
-                            if (info.oneTime) Text("Probably only needed once", style = MaterialTheme.typography.labelSmall, color = cs.onTertiaryContainer, modifier = Modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(horizontal = 9.dp, vertical = 3.dp))
+                Column(Modifier.fillMaxSize()) {
+                    // the whole screenshot, letterboxed when its shape is not the card's
+                    Box(Modifier.weight(1f).fillMaxWidth().background(cs.surfaceContainerHighest)) { ShotImage(top, 1400, Modifier.fillMaxSize(), ContentScale.Fit) }
+                    // what the phone made of it, in a panel of its own under the picture (tap the sentence to read all of it)
+                    var more by remember(top.id) { mutableStateOf(false) }
+                    Column(Modifier.fillMaxWidth().background(cs.surfaceContainerHigh).padding(horizontal = 18.dp, vertical = 14.dp)) {
+                        if (info == null) Text("Reading\u2026", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                        else {
+                            Text(info.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = flexStyle(22.sp, wght = 660, lh = 1.1f), color = cs.onSurface)
+                            if (info.summary.isNotEmpty()) Text(
+                                info.summary, maxLines = if (more) 8 else 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp).clickable(onClickLabel = if (more) "Show less" else "Show all") { more = !more },
+                            )
+                            FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(categoryLabel(info.category), style = MaterialTheme.typography.labelMedium, color = cs.onSecondaryContainer, modifier = Modifier.clip(CircleShape).background(cs.secondaryContainer).padding(horizontal = 10.dp, vertical = 4.dp))
+                                if (info.oneTime) Text("Probably only needed once", style = MaterialTheme.typography.labelMedium, color = cs.onTertiaryContainer, modifier = Modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(horizontal = 10.dp, vertical = 4.dp))
+                            }
                         }
                     }
                 }
@@ -312,27 +327,123 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
 private fun cardAspect(s: Shot) = (s.w.toFloat() / s.h.coerceAtLeast(1)).coerceIn(.46f, .75f)
 private fun fitsCard(s: Shot): Boolean { val a = s.w.toFloat() / s.h.coerceAtLeast(1); return a in .46f..0.75f }
 
-/** The ones kept: a grid that can be searched by anything written in the screenshot, its title or its tags. */
+/**
+ * The ones kept. Search by what is written in them, or ask a question in your own words and get the answer in a sentence, drawn only from
+ * your screenshots. Filter by what they are, and gather them into collections. Opening one shows what the phone made of it.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Shot) -> Unit, onBackToReview: (Shot) -> Unit) {
+private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Shot) -> Unit, onBackToReview: (Shot) -> Unit, onCollect: (Shot, String) -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var q by remember { mutableStateOf("") }
     var cat by remember { mutableStateOf<String?>(null) }
+    var col by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<Shot?>(null) }
+    var answer by remember { mutableStateOf<String?>(null) }
+    var matches by remember { mutableStateOf<List<Shot>>(emptyList()) }
+    var asking by remember { mutableStateOf(false) }
     val cats = kept.mapNotNull { infos[it.id]?.category }.distinct()
+    val collections = kept.mapNotNull { infos[it.id]?.col?.takeIf { c -> c.isNotBlank() } }.distinct().sorted()
+    val words = q.trim().lowercase().split(' ').filter { it.isNotBlank() }
     val list = kept.filter { s ->
         val i = infos[s.id] ?: return@filter false
-        (cat == null || i.category == cat) && (q.isBlank() || q.trim().lowercase().split(' ').all { w -> i.title.lowercase().contains(w) || i.summary.lowercase().contains(w) || i.text.lowercase().contains(w) || i.tags.any { it.contains(w) } })
+        (col == null || i.col == col) && (cat == null || i.category == cat) &&
+            (words.isEmpty() || words.all { w -> i.title.lowercase().contains(w) || i.summary.lowercase().contains(w) || i.text.lowercase().contains(w) || i.tags.any { it.contains(w) } })
     }
+    val shown = if (answer != null) matches else list
+
+    fun ask() {
+        if (asking || q.isBlank()) return
+        asking = true; answer = null
+        val question = q.trim()
+        scope.launch {
+            val ws = question.lowercase().split(Regex("\\W+")).filter { it.length > 2 }
+            val ranked = kept.map { s ->
+                val i = infos[s.id]
+                val t = if (i == null) "" else (i.title + " " + i.summary + " " + i.text + " " + i.tags.joinToString(" ")).lowercase()
+                s to ws.count { it in t }
+            }.filter { it.second > 0 }.sortedByDescending { it.second }.take(8).map { it.first }
+            matches = ranked
+            answer = when {
+                ranked.isEmpty() -> "None of your kept screenshots mention that."
+                !Assistant.installed && !com.b72.keep_canvas.data.Cloud.on -> "These look closest. Switch on the assistant (side menu, Settings) to get an answer in a sentence."
+                else -> {
+                    val body = ranked.mapIndexed { n, s -> val i = infos[s.id]; "[${n + 1}] ${i?.title.orEmpty()}: ${i?.summary.orEmpty()} ${i?.text.orEmpty().replace('\n', ' ').take(350)}" }.joinToString("\n")
+                    Assistant.generate(ctx, "Answer the question using ONLY the text of these phone screenshots. One or two plain sentences, the answer first, no preamble. If they do not contain the answer, say so.\nQuestion: $question\nScreenshots:\n$body")
+                        ?: "Could not answer just now. The matching screenshots are below."
+                }
+            }
+            asking = false
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(q, { q = it }, singleLine = true, placeholder = { Text("Search what is written in them") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, shape = CircleShape, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
+        OutlinedTextField(
+            q, { q = it; answer = null }, singleLine = true, placeholder = { Text("Search, or ask in your own words") },
+            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+            trailingIcon = { IconButton(onClick = { ask() }, enabled = q.isNotBlank() && !asking) { Icon(Icons.Rounded.AutoAwesome, "Ask") } },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (q.trim().endsWith("?")) ask() }),
+            shape = CircleShape, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        )
         if (cats.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (c in cats) FilterChip(cat == c, { cat = if (cat == c) null else c }, label = { Text(categoryLabel(c)) })
         }
-        if (list.isEmpty()) Text(if (kept.isEmpty()) "Nothing kept yet. Swipe right on a screenshot in Review." else "Nothing matches.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp))
-        else LazyVerticalGrid(GridCells.Fixed(2), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 150.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(list, key = { it.id }) { s ->
+        if (asking) LoadingIndicator(Modifier.padding(20.dp).size(40.dp).align(Alignment.CenterHorizontally))
+        LazyVerticalGrid(
+            GridCells.Fixed(2), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 150.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(1f),
+        ) {
+            // the answer, in the manner of Pixel Screenshots: a sentence, where it came from, and what it came from
+            answer?.let { a ->
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                        Text("FROM YOUR SCREENSHOTS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)
+                        Text(a, style = flexStyle(24.sp, wght = 480, lh = 1.2f), color = cs.onSurface, modifier = Modifier.padding(top = 8.dp))
+                        Text("Written by AI from the text in your screenshots. It may be wrong; check the ones below.", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+            // collections, as stacks of what is in them
+            if (answer == null && q.isBlank() && col == null && collections.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                Column {
+                    Text("COLLECTIONS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (name in collections) {
+                            val inside = kept.filter { infos[it.id]?.col == name }
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerHigh).clickable { col = name }.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.width(96.dp).height(64.dp)) {
+                                    inside.take(3).forEachIndexed { n, s ->
+                                        ShotImage(s, 240, Modifier.padding(start = (n * 24).dp).width(48.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).border(2.dp, cs.surfaceContainerHigh, RoundedCornerShape(10.dp)))
+                                    }
+                                }
+                                Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                                    Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${inside.size} screenshot${if (inside.size == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                    Text("ALL", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 18.dp))
+                }
+            }
+            col?.let { c ->
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable { col = null }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Close, "Leave the collection", Modifier.size(20.dp))
+                        Text(c, style = flexStyle(26.sp, wght = 680, lh = 1.1f), modifier = Modifier.padding(start = 10.dp))
+                    }
+                }
+            }
+            if (shown.isEmpty() && !asking) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                Text(if (kept.isEmpty()) "Nothing kept yet. Swipe right on a screenshot in Review." else "Nothing matches.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp))
+            }
+            items(shown, key = { it.id }) { s ->
                 val i = infos[s.id]
                 Column(Modifier.clickable(onClickLabel = "Open") { open = s }) {
                     ShotImage(s, 500, Modifier.fillMaxWidth().aspectRatio(.62f).clip(RoundedCornerShape(22.dp)))
@@ -344,11 +455,19 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Sh
     }
     open?.let { s ->
         val i = infos[s.id]
-        val ctx = LocalContext.current
+        var naming by remember { mutableStateOf(false) }
         ModalBottomSheet(onDismissRequest = { open = null }) {
             Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
                 Box(Modifier.fillMaxWidth().heightIn(max = 380.dp).clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
                     ShotImage(s, 1400, Modifier.fillMaxWidth().heightIn(max = 380.dp), ContentScale.Fit)
+                }
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalIconButton(onClick = {
+                        runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("image/*").putExtra(Intent.EXTRA_STREAM, s.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null)) }
+                    }) { Icon(Icons.Rounded.Share, "Share") }
+                    FilledTonalIconButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(s.uri, "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } }) { Icon(Icons.Rounded.OpenInNew, "Open in another app") }
+                    FilledTonalIconButton(onClick = { onBackToReview(s); open = null }) { Icon(Icons.Rounded.Undo, "Review again") }
+                    FilledTonalIconButton(onClick = { onDelete(s); open = null }) { Icon(Icons.Rounded.Delete, "Delete", tint = cs.error) }
                 }
                 Text(i?.title.orEmpty(), style = flexStyle(26.sp, wght = 700, lh = 1.1f), modifier = Modifier.padding(top = 14.dp))
                 if (!i?.summary.isNullOrEmpty()) Text(i!!.summary, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -356,6 +475,11 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Sh
                     if (i != null) Text(categoryLabel(i.category), style = MaterialTheme.typography.labelLarge, color = cs.onSecondaryContainer, modifier = Modifier.clip(CircleShape).background(cs.secondaryContainer).padding(horizontal = 12.dp, vertical = 5.dp))
                     if (i?.oneTime == true) Text("Probably only needed once", style = MaterialTheme.typography.labelLarge, color = cs.onTertiaryContainer, modifier = Modifier.clip(CircleShape).background(cs.tertiaryContainer).padding(horizontal = 12.dp, vertical = 5.dp))
                     i?.tags?.forEach { Text("#$it", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, modifier = Modifier.clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 5.dp)) }
+                }
+                Text("COLLECTION", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (c in collections) FilterChip(i?.col == c, { onCollect(s, if (i?.col == c) "" else c) }, label = { Text(c) })
+                    AssistChip(onClick = { naming = true }, label = { Text("New collection") }, leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) })
                 }
                 // everything the phone read in it is kept for search, but it is not laid out here unless asked for
                 var showText by remember(s.id) { mutableStateOf(false) }
@@ -367,12 +491,16 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Sh
                         }
                     }
                 }
-                Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.OutlinedButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(s.uri, "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } }) { Text("Open") }
-                    androidx.compose.material3.OutlinedButton(onClick = { onBackToReview(s); open = null }) { Text("Review again") }
-                    TextButton(onClick = { onDelete(s); open = null }) { Text("Delete", color = cs.error) }
-                }
             }
+        }
+        if (naming) {
+            var name by remember { mutableStateOf("") }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { naming = false }, title = { Text("New collection") },
+                text = { OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Trip to Spain") }) },
+                confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onCollect(s, name); naming = false }, enabled = name.isNotBlank()) { Text("Add") } },
+                dismissButton = { TextButton(onClick = { naming = false }) { Text("Cancel") } },
+            )
         }
     }
 }
