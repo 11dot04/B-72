@@ -175,6 +175,8 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                     d = d + ("aiIdeas" to ideasToData(found)) + ("ideasV" to JsonPrimitive(IDEAS_V))
                 }
             }
+            // dates, addresses, phone numbers, flights and parcels in the words, found by ML Kit with no assistant needed
+            if (entStale(cur)) Entities.find(cur.body)?.let { hits -> d = d + ("ent" to entToData(hits)) + ("entH" to JsonPrimitive(cur.body.hashCode().toDouble())) }
             var trip: Trip? = cur.trip()
             var tripChanged = false
             if (tripStale(cur) || ai != null) {
@@ -571,7 +573,7 @@ private val CUT_KINDS = setOf(Kind.Photo, Kind.Recipe)
 /** True when a picture still has its text read or its subject cut. */
 const val OCR_V = 2.0
 
-fun needsWork(b: Block) = ideasStale(b) || (b.path != null && ((b.kind == Kind.Photo && ("ocr" !in b.data || b.dbl("ocrV") != OCR_V || "lbl" !in b.data)) || (b.kind in CUT_KINDS && cutStale(b)))) || tripStale(b) || aiStale(b)
+fun needsWork(b: Block) = ideasStale(b) || (b.path != null && ((b.kind == Kind.Photo && ("ocr" !in b.data || b.dbl("ocrV") != OCR_V || "lbl" !in b.data)) || (b.kind in CUT_KINDS && cutStale(b)))) || tripStale(b) || aiStale(b) || entStale(b)
 
 /** True until the photo has been cut with the current recipe. */
 fun cutStale(b: Block) = (b.dbl("cutV") ?: 0.0) < CUT_VERSION

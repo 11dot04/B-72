@@ -158,12 +158,27 @@ fun looksStructured(body: String): String? {
     }
 }
 
+/** What ML Kit found in the words (a date said as "tomorrow at 8", an address, a flight, a parcel) added as facts the plain readers did not have. */
+private fun Poster.withEntities(b: Block): Poster {
+    val es = b.entities()
+    if (es.isEmpty() || rows.size >= 2) return this
+    val have = (facts + listOfNotNull(big)).map { it.label.lowercase() }.toMutableSet()
+    val add = ArrayList<Fact>()
+    for (e in es) {
+        if (e.kind.lowercase() in have || facts.any { it.value.contains(e.text, true) }) continue
+        have.add(e.kind.lowercase()); add.add(Fact(e.kind, e.text))
+    }
+    if (add.isEmpty()) return this
+    val order = listOf("Where", "When", "Flight", "Tracking", "Link", "Email", "Phone")
+    return Poster(head, big, (facts + add).sortedBy { order.indexOf(it.label).let { i -> if (i < 0) 99 else i } }.take(8), rest, rows)
+}
+
 /**
  * The poster for a block: the plain readers' result, upgraded with what the assistant found (any labels at all,
  * not only the ones the readers know). The fact it marked as the point of the note becomes the big figure.
  */
 fun posterFor(title: String, b: Block): Poster {
-    val p = parsePoster(title, b.body)
+    val p = parsePoster(title, b.body).withEntities(b)
     if (p.rows.size >= 2 && p.big?.label == "Balance") return if (p.head.isBlank()) Poster(b.str("aiTitle").orEmpty(), p.big, p.facts, p.rest, p.rows) else p
     val ai = cleanFacts(b.aiFacts().map { Fact(it.label, it.value, it.star) })
     if (ai.isEmpty()) return if (p.head.isBlank()) Poster(b.str("aiTitle").orEmpty(), p.big, p.facts, p.rest, p.rows) else p

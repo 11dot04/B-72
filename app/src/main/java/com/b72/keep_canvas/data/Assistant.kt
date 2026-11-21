@@ -4,11 +4,16 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.mlkit.genai.prompt.DownloadStatus
+import com.google.mlkit.genai.prompt.FeatureStatus
+import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.GenerativeModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,11 +52,51 @@ object Assistant {
     const val MODEL_URL = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm"
     const val MODEL_ID = "gemma-3n-e2b"
 
+    /** A model that can be downloaded to the phone. All of them are Gemma, so they share one licence and one token. */
+    class LocalModel(val id: String, val name: String, val url: String, val size: String, val blurb: String)
+
+    val MODELS = listOf(
+        LocalModel(
+            "gemma3-1b", "Gemma 3 1B", "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm", "about 0.6 GB",
+            "Small and quick. Fine for tags, titles and one-line summaries; weaker at questions across several notes.",
+        ),
+        LocalModel(MODEL_ID, "Gemma 3n E2B", MODEL_URL, "about 3.4 GB", "Reads notes and tickets best of the models you can keep on the phone, but it is slow on most phones."),
+    )
+
+    /** Gemini Nano through Google's AICore, on the phones that have it: nothing to download into this app, and no key. 0 not checked, 1 ready, 2 can be downloaded, 3 downloading, 4 not on this phone. */
+    var nanoState by mutableIntStateOf(0)
+        private set
+    val nanoReady: Boolean get() = nanoState == 1
+    private val nanoClient: GenerativeModel by lazy { Generation.getClient() }
+
+    suspend fun checkNano() {
+        nanoState = runCatching {
+            when (nanoClient.checkStatus()) {
+                FeatureStatus.AVAILABLE -> 1
+                FeatureStatus.DOWNLOADABLE -> 2
+                FeatureStatus.DOWNLOADING -> 3
+                else -> 4
+            }
+        }.getOrDefault(4)
+    }
+
+    /** Asks AICore to fetch Gemini Nano (once, by the system, shared with every app that uses it). */
+    fun downloadNano() {
+        if (nanoState == 3) return
+        nanoState = 3
+        scope.launch {
+            runCatching {
+                nanoClient.download().collect { st -> if (st is DownloadStatus.DownloadFailed) message = "Gemini Nano did not download. Try again on Wi-Fi." }
+            }
+            checkNano()
+        }
+    }
+
     /** True when the model file is on this phone. */
     var local by mutableStateOf(false)
         private set
     /** True when something can answer: the model on the phone, or the cloud assistant when it is switched on. */
-    val installed: Boolean get() = local || Cloud.on
+    val installed: Boolean get() = local || Cloud.on || nanoReady
     /** 0..1 while downloading, -1 when idle. */
     var progress by mutableFloatStateOf(-1f)
         private set
@@ -73,13 +118,19 @@ object Assistant {
         Cloud.load(ctx)
         autoRead = Cloud.readMode(ctx) == 0
         local = file(ctx).let { it.exists() && it.length() > 50_000_000 }
-        legacy = local && runCatching { idFile(ctx).readText().trim() }.getOrNull() != MODEL_ID && !imported
+        val id = runCatching { idFile(ctx).readText().trim() }.getOrNull().orEmpty()
+        legacy = local && MODELS.none { it.id == id } && !imported
+        modelName = if (!local) "" else MODELS.firstOrNull { it.id == id }?.name ?: "A model file you added"
+        if (nanoState == 0) scope.launch { checkNano() }
     }
 
     /** True while the model on the phone is the old Qwen one, so the dialog can offer the switch to Gemma. */
     var legacy by mutableStateOf(false)
         private set
     private var imported = false
+    /** The name of the model on the phone, "" when there is none. */
+    var modelName by mutableStateOf("")
+        private set
 
     fun token(ctx: Context): String = ctx.getSharedPreferences("b72_ai", Context.MODE_PRIVATE).getString("hf", "").orEmpty()
     fun setToken(ctx: Context, t: String) { ctx.getSharedPreferences("b72_ai", Context.MODE_PRIVATE).edit().putString("hf", t.trim()).apply() }
@@ -87,7 +138,8 @@ object Assistant {
     val downloading get() = job?.isActive == true
 
     /** Downloads the model (resuming a partial file). Runs on its own scope so closing the dialog does not stop it. */
-    fun download(ctx: Context, url: String = MODEL_URL, token: String = token(ctx)) {
+    fun download(ctx: Context, model: LocalModel = MODELS.last(), token: String = token(ctx)) {
+        val url = model.url
         if (downloading) return
         val app = ctx.applicationContext
         job = scope.launch {
@@ -121,7 +173,7 @@ object Assistant {
                 }
                 if (dest.exists()) dest.delete()
                 if (!part.renameTo(dest)) error("Could not save the model")
-                runCatching { idFile(app).writeText(MODEL_ID) }
+                runCatching { idFile(app).writeText(model.id) }
                 refresh(app)
                 message = "Assistant ready"
             } catch (e: Throwable) {
@@ -150,17 +202,21 @@ object Assistant {
         refresh(ctx)
     }
 
-    /** One loaded model, used for a batch of notes and then closed (it holds a lot of memory). */
-    class Session internal constructor(private val engine: Engine?, private val ctx: Context? = null) : AutoCloseable {
-        fun ask(prompt: String, json: Boolean = false): String? = if (engine == null) ctx?.let { Cloud.ask(it, prompt, json) } else try {
-            engine.createConversation().use { it.sendMessage(prompt).toString() }
-        } catch (e: Throwable) { null }
+    /** One way of asking, used for a batch of notes and then closed (a model on the phone holds a lot of memory). Cloud, Gemini Nano or the downloaded model, in that order. */
+    class Session internal constructor(private val engine: Engine?, private val ctx: Context? = null, private val nano: GenerativeModel? = null) : AutoCloseable {
+        fun ask(prompt: String, json: Boolean = false): String? = when {
+            // Gemini Nano only answers while the app is on screen; a refusal is just "no answer yet" and the note is read again later
+            nano != null -> try { kotlinx.coroutines.runBlocking { nano.generateContent(prompt).candidates.firstOrNull()?.text } } catch (e: Throwable) { null }
+            engine == null -> ctx?.let { Cloud.ask(it, prompt, json) }
+            else -> try { engine.createConversation().use { it.sendMessage(prompt).toString() } } catch (e: Throwable) { null }
+        }
 
         override fun close() { runCatching { engine?.close() } }
     }
 
     fun open(ctx: Context): Session? {
         if (Cloud.on) return Session(null, ctx.applicationContext)
+        if (nanoReady) return Session(null, null, nanoClient)
         if (!local) return null
         return try {
             val e = Engine(EngineConfig(modelPath = file(ctx).path, backend = Backend.CPU(), cacheDir = ctx.cacheDir.path))
