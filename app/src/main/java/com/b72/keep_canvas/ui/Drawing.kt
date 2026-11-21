@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +96,7 @@ fun DrawPane(repo: Repo, noteId: String, onClose: () -> Unit) {
     val inkNow by rememberUpdatedState(inks[ink])
     val wNow by rememberUpdatedState(with(dens) { widthsDp[thick].dp.toPx() })
     var saving by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { com.b72.keep_canvas.data.InkText.warm() }
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Box(
@@ -141,6 +143,8 @@ fun DrawPane(repo: Repo, noteId: String, onClose: () -> Unit) {
                     val snapshot = lines.toList(); val w = box.width; val h = box.height; val bg = paper.toArgb()
                     scope.launch {
                         val block = withContext(Dispatchers.IO) {
+                            // handwriting, read by ML Kit, goes in as the picture's text so search finds the drawing by what it says
+                            val said = com.b72.keep_canvas.data.InkText.read(snapshot.map { l -> l.pts.map { it.x to it.y } })?.takeIf { t -> t.count { it.isLetterOrDigit() } >= 3 }.orEmpty()
                             runCatching {
                                 val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
                                 val cv = android.graphics.Canvas(bmp)
@@ -155,7 +159,7 @@ fun DrawPane(repo: Repo, noteId: String, onClose: () -> Unit) {
                                 val f = java.io.File(imageDir(ctx), "${System.currentTimeMillis()}_draw.png")
                                 f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
                                 newBlock(Kind.Photo, "d${System.nanoTime()}", path = f.path, aspect = (h.toDouble() / w).coerceIn(.6, 1.4))
-                                    .let { b -> b.copy(data = b.data + mapOf("ocr" to JsonPrimitive(""), "ocrV" to JsonPrimitive(com.b72.keep_canvas.data.OCR_V), "lbl" to JsonPrimitive("drawing"), "cutV" to JsonPrimitive(99.0))) }
+                                    .let { b -> b.copy(data = b.data + mapOf("ocr" to JsonPrimitive(said), "ocrV" to JsonPrimitive(com.b72.keep_canvas.data.OCR_V), "lbl" to JsonPrimitive("drawing"), "cutV" to JsonPrimitive(99.0))) }
                             }.getOrNull()
                         }
                         block?.let { repo.appendBlock(noteId, it) }

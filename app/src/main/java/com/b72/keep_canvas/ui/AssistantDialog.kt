@@ -36,7 +36,7 @@ import com.b72.keep_canvas.data.Assistant
 import com.b72.keep_canvas.data.Cloud
 import kotlinx.coroutines.launch
 
-/** Switch the optional on-device assistant on: download its model (about 1.6 GB), use a file you already have, or remove it. */
+/** The assistant: where it gets its answers from (the cloud, Gemini Nano on a phone that has it, or a model kept on the phone), and a check of what this phone can do. */
 @Composable
 fun AssistantDialog(onDismiss: () -> Unit) {
     val ctx = LocalContext.current
@@ -57,12 +57,32 @@ fun AssistantDialog(onDismiss: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "A small language model that runs on this phone, with nothing sent anywhere. It adds a one-line summary and suggested tags to your notes, " +
-                        "picks out the figure that matters in smart layouts (any kind of data, not just the usual ones) and reads tickets more reliably. " +
-                        "Without it everything still works.",
+                    "A language model that adds a one-line summary and suggested tags to your notes, picks out the figure that matters in smart layouts " +
+                        "and reads tickets more reliably. It answers from the first of these that is available: the cloud assistant (if you switch it on below), " +
+                        "Gemini Nano (if this phone has it), or a model kept on the phone. Without any of them everything still works.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(16.dp))
+                Text("This phone", style = MaterialTheme.typography.titleSmall)
+                val nanoText = when (Assistant.nanoState) {
+                    1 -> "Gemini Nano: ready. Used when the app is open; nothing is downloaded into B-72."
+                    2 -> "Gemini Nano: this phone supports it, but the system has not downloaded it yet."
+                    3 -> "Gemini Nano: downloading…"
+                    4 -> "Gemini Nano: not available on this phone (it needs a supported device, a locked bootloader and an up-to-date AICore)."
+                    else -> "Gemini Nano: not checked yet."
+                }
+                Text(nanoText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (Assistant.nanoState == 2) Button(onClick = { Assistant.downloadNano() }) { Text("Download Gemini Nano") }
+                    TextButton(onClick = { scope.launch { Assistant.checkNano() } }) { Text("Check again") }
+                }
+                Text(
+                    "Reading text in photos, labelling, cut-outs, dates and addresses in notes, and handwriting work on any phone. They fetch small models from Google the first time.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("A model kept on this phone", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(6.dp))
                 when {
                     Assistant.progress >= 0f -> {
                         LinearWavyProgressIndicator(progress = { Assistant.progress }, modifier = Modifier.fillMaxWidth())
@@ -70,14 +90,18 @@ fun AssistantDialog(onDismiss: () -> Unit) {
                     }
                     importing -> Text("Copying the model…", style = MaterialTheme.typography.labelLarge)
                     Assistant.local -> {
-                        Text(if (Assistant.legacy) "The old, smaller model is installed. Remove it to switch to Gemma 3n E2B, which reads notes and artifacts better." else "Ready. Notes are read in the background when you save them.", style = MaterialTheme.typography.titleSmall)
+                        Text(if (Assistant.legacy) "An old model is installed. Remove it to choose one of the Gemma models." else "${Assistant.modelName}: ready. Notes are read in the background when you save them.", style = MaterialTheme.typography.titleSmall)
                         OutlinedButton(onClick = { Assistant.remove(ctx); note = "Assistant removed" }, modifier = Modifier.padding(top = 12.dp)) { Text("Remove the model") }
                     }
                     else -> {
                         var token by remember { mutableStateOf(Assistant.token(ctx)) }
-                        Text("Gemma 3n E2B. Google asks you to accept its licence once, on the model's Hugging Face page (google/gemma-3n-E2B-it-litert-lm); then paste a read token from that account here.", style = MaterialTheme.typography.bodySmall)
+                        Text("Google asks you to accept the Gemma licence once on a model's Hugging Face page (for example litert-community/Gemma3-1B-IT); then paste a read token from that account here. One token works for both models.", style = MaterialTheme.typography.bodySmall)
                         androidx.compose.material3.OutlinedTextField(token, { token = it; Assistant.setToken(ctx, it) }, singleLine = true, label = { Text("Hugging Face token") }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
-                        Button(onClick = { Assistant.download(ctx, token = token) }) { Text("Download (about 3.4 GB, best on Wi-Fi)") }
+                        for (m in Assistant.MODELS) {
+                            Text("${m.name}  ·  ${m.size}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                            Text(m.blurb, style = MaterialTheme.typography.bodySmall)
+                            Button(onClick = { Assistant.download(ctx, m, token) }, modifier = Modifier.padding(top = 4.dp)) { Text("Download (best on Wi-Fi)") }
+                        }
                         TextButton(onClick = { pick.launch(arrayOf("*/*")) }) { Text("Use a model file I already have") }
                     }
                 }
