@@ -2,6 +2,7 @@
 
 package com.b72.keep_canvas.ui
 
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -498,7 +499,8 @@ fun NotePage(
             trailingContent = {
                 Box {
                     IconButton(onClick = { details = true }) { Icon(Icons.Rounded.MoreVert, "Details and more") }
-                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag, onParts = if (repo != null) ({ parts = true }) else null, onArchive = if (repo != null) ({ repo.archive(note.id); onBack() }) else null, onRead = if (repo != null && com.b72.keep_canvas.data.Assistant.installed) ({ repo.readNow(note.id) }) else null)
+                    DetailsMenu(note, details, { details = false }, { askDelete = true }, share, onTag, onParts = if (repo != null) ({ parts = true }) else null, onArchive = if (repo != null) ({ repo.archive(note.id); onBack() }) else null, onRead = if (repo != null && com.b72.keep_canvas.data.Assistant.installed) ({ repo.readNow(note.id) }) else null,
+                        moveTo = if (repo != null) com.b72.keep_canvas.data.Profiles.all.filter { it.id != repo.profileId } else emptyList(), onMove = { to -> if (repo != null) atScope.launch { if (repo.moveToProfile(note.id, to)) onBack() } })
                 }
             },
             content = {

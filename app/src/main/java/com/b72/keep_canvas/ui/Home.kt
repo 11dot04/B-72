@@ -177,7 +177,7 @@ private val FILTERS = listOf(
 )
 
 @Composable
-fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, tab: Int = 0, onTab: (Int) -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
+fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared: SharedCtx, onSwitchProfile: (String) -> Unit = {}, onNewProfile: (String, Int) -> Unit = { _, _ -> }, onDeleteProfile: (String) -> Unit = {}, onOpen: (String) -> Unit, onAdd: (Kind) -> Unit, onTag: (String) -> Unit = {}, onStickers: () -> Unit = {}, tab: Int = 0, onTab: (Int) -> Unit = {}, onMatch: (title: String, tag: String) -> Unit = { _, _ -> }) {
   Redraws("home")
   val appCtx = androidx.compose.ui.platform.LocalContext.current
   androidx.compose.runtime.LaunchedEffect(Unit) { com.b72.keep_canvas.data.Follow.load(appCtx) }
@@ -237,7 +237,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
   BackHandler(railOpen && !settings) { railOpen = false }
   BackHandler(settings) { page = null }
   RailLayout(
-    open = railOpen, tab = tab, onTab = { railOpen = false; if (it != tab) onTab(it) }, onSettings = { p -> railOpen = false; page = p },
+    open = railOpen, repo = repo, onSwitchProfile = { railOpen = false; onSwitchProfile(it) }, onNewProfile = { n, h -> railOpen = false; onNewProfile(n, h) }, onDeleteProfile = { railOpen = false; onDeleteProfile(it) }, tab = tab, onTab = { railOpen = false; if (it != tab) onTab(it) }, onSettings = { p -> railOpen = false; page = p },
     settings = settings, onCloseSettings = { page = null },
     settingsPage = { if (page == "stats") StatsPage(loaded?.library?.notes.orEmpty()) else AppDrawer(repo, jump = page.takeIf { it != "settings" }) { page = null } },
   ) {
@@ -388,7 +388,11 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         KeepBar(
             q, { q = it }, cols == 1, { cols = if (cols == 1) 2 else 1 }, sort, { sort = it },
             count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
-            menu = { androidx.compose.material3.IconButton({ railOpen = !railOpen }) { Icon(Icons.Rounded.Menu, "Menu") } },
+            menu = {
+                androidx.compose.material3.IconButton({ railOpen = !railOpen }) {
+                    Box { Icon(Icons.Rounded.Menu, "Menu"); if (com.b72.keep_canvas.data.Profiles.all.size > 1) Box(Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp)) { ProfileAvatar(com.b72.keep_canvas.data.Profiles.all.firstOrNull { it.id == repo.profileId } ?: com.b72.keep_canvas.data.Profiles.active, 14.dp) } }
+                }
+            },
             onSearch = { searching = true }, container = Modifier.container(SharedCtx(shared.st, this), "search", 28.dp),
         )
     }
@@ -893,7 +897,7 @@ private fun MatchPrompt(m: com.b72.keep_canvas.data.Match, onWrite: () -> Unit, 
  */
 @Composable
 private fun RailLayout(
-    open: Boolean, tab: Int, onTab: (Int) -> Unit, onSettings: (String) -> Unit,
+    open: Boolean, repo: Repo, onSwitchProfile: (String) -> Unit, onNewProfile: (String, Int) -> Unit, onDeleteProfile: (String) -> Unit, tab: Int, onTab: (Int) -> Unit, onSettings: (String) -> Unit,
     settings: Boolean, onCloseSettings: () -> Unit, settingsPage: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -906,7 +910,9 @@ private fun RailLayout(
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.width(w).fillMaxHeight().clipToBounds()) {
                 Column(Modifier.requiredWidth(272.dp).fillMaxHeight().background(cs.surface).statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp)) {
-                    Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 56.dp, bottom = 20.dp))
+                    Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 56.dp, bottom = 16.dp))
+                    ProfileSwitcher(repo, onSwitchProfile, onNewProfile, onDeleteProfile)
+                    Spacer(Modifier.height(12.dp))
                     for ((i, d) in DESTS.withIndex()) {
                         val on = i == tab
                         Row(

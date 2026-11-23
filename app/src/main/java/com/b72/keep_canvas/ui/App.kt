@@ -85,12 +85,15 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // a launcher shortcut starts a new note of one kind; a reminder notification opens its note
     LaunchedEffect(start) {
         if (start != null) {
-            start.openId?.let { open = it; board = null }
+            // a reminder for a note in another profile brings that profile up first
+            start.openId?.let { id -> repo.awaitLoaded(); repo.profileOf(id)?.takeIf { it != repo.profileId }?.let { repo.switchProfile(it) }; open = id; board = null }
             start.newKind?.let { begin(it, null) }
             start.tab?.let { tab = it; open = null; board = null }
             onLaunchHandled()
         }
     }
+    // another profile: whatever was open belongs to the one being left
+    fun switchTo(id: String) { scope.launch { leave(); board = null; tab = 0; repo.switchProfile(id) } }
     val grid = rememberLazyStaggeredGridState()
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val fx = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -190,8 +193,9 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                     2 -> LibraryScreen(loaded, { open = it }, onAdd = { begin(it, null) })
                     4 -> ShotsScreen()
                     3 -> StickersScreen(repo, loaded, onBack = { tab = 0 }, onCanvas = { board = it })
-                    else -> HomeScreen(repo, loaded, grid, shared, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it }, tab = tab, onTab = { tab = it },
-                        onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id })
+                    else -> androidx.compose.runtime.key(repo.profileId) { HomeScreen(repo, loaded, grid, shared,
+                        onSwitchProfile = { switchTo(it) }, onNewProfile = { n, h -> scope.launch { leave(); board = null; tab = 0; repo.addProfile(n, h) } }, onDeleteProfile = { scope.launch { leave(); board = null; repo.removeProfile(it) } }, onOpen = { open = it }, onAdd = { begin(it, null) }, onTag = { board = it }, tab = tab, onTab = { tab = it },
+                        onMatch = { title, tag -> val id = repo.newDraft(Kind.Text, tag); repo.setTitle(id, title); draft = id; open = id }) }
                 } }
                 }
                 }
