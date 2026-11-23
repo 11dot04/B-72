@@ -209,6 +209,21 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         runCatching { File(path).delete() }
     }
 
+    /** Removes an artifact like [removeSticker] and returns what brings it back: its file, its entry and the places it was put on canvases. */
+    fun removeStickerUndo(path: String): () -> Unit {
+        val l = loaded?.library ?: return {}
+        val saved = File(ctx.cacheDir, "undo-sticker-${System.nanoTime()}")
+        runCatching { File(path).copyTo(saved, true) }
+        val entry = l.stickers.filter { (it as? kotlinx.serialization.json.JsonObject)?.get("p")?.let { p -> (p as? JsonPrimitive)?.content } == path }
+        val spots = l.placed.mapValues { (_, v) -> v.filter { it.k == "s:$path" } }.filterValues { it.isNotEmpty() }
+        removeSticker(path)
+        return {
+            runCatching { saved.copyTo(File(path), true) }
+            loaded?.library?.let { cur -> commit(cur.copy(stickers = cur.stickers + entry, placed = (cur.placed.keys + spots.keys).associateWith { k -> cur.placed[k].orEmpty() + spots[k].orEmpty() })) }
+            runCatching { saved.delete() }
+        }
+    }
+
     /** Sets one loose value on one block (for example the pop-out override). */
     fun setData(noteId: String, blockId: String, key: String, value: kotlinx.serialization.json.JsonElement) {
         val n = note(noteId) ?: return
