@@ -106,4 +106,4 @@ Pushing a tag that starts with `v` builds the APK and attaches it to a GitHub re
 
 ## Licence
 
-[MIT](LICENSE). Fonts, libraries and models keep their own licences: see [THIRD_PARTY.md](THIRD_PARTY.md).
+[Apache 2.0](LICENSE). Fonts, libraries and models keep their own licences: see [THIRD_PARTY.md](THIRD_PARTY.md).
