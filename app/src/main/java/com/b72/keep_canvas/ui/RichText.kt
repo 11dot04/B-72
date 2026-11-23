@@ -143,7 +143,7 @@ private fun hangOf(line: String, base: Float): Float = when {
     else -> NUM.find(line)?.let { (it.groupValues[1].length * .56f + .55f) * base } ?: 0f
 }
 
-private fun paraStyle(codes: Set<String>, hang: Float, base: Float, blank: Boolean = false): ParagraphStyle? {
+private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphStyle? {
     val lvl = codes.firstNotNullOfOrNull { c -> if (c.startsWith("pi")) c.drop(2).toIntOrNull() else null } ?: 0
     var left = lvl * 26f
     if (hang > 0f) left += 14f   // a bullet or a number sits in from the margin, as in a printed list
@@ -161,19 +161,24 @@ private fun paraStyle(codes: Set<String>, hang: Float, base: Float, blank: Boole
         else -> TextAlign.Unspecified
     }
     if (first == 0f && rest == 0f && align == TextAlign.Unspecified && !pull) return null
-    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else if ("pk" in codes) (base * (if (blank) .5f else 1.32f)).sp else TextUnit.Unspecified)   // a blank line inside code is a thin gap, not a whole empty line
+    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else if ("pk" in codes) (base * 1.32f).sp else TextUnit.Unspecified)
 }
 
 /** Letter formats first, then one paragraph style per line that has a code, a list marker or both. */
 fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, base: Float) {
     for (sp in spans) if (!isPara(sp.c)) styleOf(sp.c, base)?.let { b.addStyle(it, sp.s.coerceIn(0, text.length), sp.e.coerceIn(0, text.length)) }
     var pos = 0
+    var runFrom = -1; var runStyle: ParagraphStyle? = null
+    fun closeRun(to: Int) { runStyle?.let { b.addStyle(it, runFrom, to) }; runStyle = null; runFrom = -1 }
     while (pos < text.length) {
         val nl = text.indexOf('\n', pos)
         val end = if (nl < 0) text.length else nl + 1
         val lineEnd = if (nl < 0) text.length else nl
         val codes = spans.filter { isPara(it.c) && it.s < end && it.e > pos }.map { it.c }.toSet()
-        paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base, blank = lineEnd == pos)?.let { b.addStyle(it, pos, end) }
+        // Compose lays every paragraph out with a trailing empty line when it ends in a newline, so one paragraph per line left a full blank line
+        // between consecutive quote, code or list lines. Neighbouring lines with the same style are one paragraph instead, newlines inside it.
+        val ps = paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base)
+        if (ps != runStyle) { closeRun(pos); if (ps != null) { runStyle = ps; runFrom = pos } }
         if (lineEnd > pos) {
             if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
             if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.22f).sp), pos, lineEnd)
@@ -183,6 +188,7 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
         }
         pos = end
     }
+    closeRun(text.length)
 }
 
 fun styled(text: String, spans: List<Span>, base: Float = 18f): AnnotatedString = buildAnnotatedString {
