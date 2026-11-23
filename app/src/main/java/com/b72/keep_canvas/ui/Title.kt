@@ -30,13 +30,13 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** The last word of a title may change with a second setting of the same typeface: [Flip] swaps the weight, [Axes] swaps the parametric axes. */
+/** One word of a title (the longest) may change with a second setting of the same typeface: [Flip] swaps the weight, [Axes] swaps the parametric axes. */
 enum class Accent { None, Flip, Axes }
 
 /**
  * One personality for a title; each note picks one from its id so a grid reads like a magazine rack. Nothing here is drawn on top of the
  * letters: every difference comes from the variable font's own axes. [ax] are Roboto Flex's parametric axes (stroke thickness, x-height,
- * ascender, descender, figure height); [ax2] is the second setting the last word takes with [Accent.Axes].
+ * ascender, descender, figure height); [ax2] is the second setting the accented word takes with [Accent.Axes].
  */
 class TitleLook(
     val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None, val rf: Boolean = false,
@@ -56,9 +56,33 @@ private val Looks = listOf(
         ax2 = mapOf("XOPQ" to 40f, "YOPQ" to 128f)),                       // thick stems and hairline bars; the last word reverses it
     TitleLook(700, 0f, 0f, rf = true, ax = mapOf("YTUC" to 756f, "YTFI" to 788f, "YTDE" to -120f, "XTRA" to 560f)), // tall capitals and figures, short tails
     TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -270f), accent = Accent.Flip), // small x-height, long ascenders and tails
+    // more of Google Sans Flex, the face the app leans on: plain weights across the range, none with an accent word
+    TitleLook(500, 0f, 0f),                                                // even, medium
+    TitleLook(240, 100f, 0f),                                              // light and round
+    TitleLook(950, 40f, 0f),                                               // black, barely softened
+    TitleLook(380, 0f, -6f),                                               // light, leaning
+    TitleLook(640, 100f, 0f),                                              // semibold, round
+    TitleLook(860, 0f, 0f),                                                // heavy and sharp
 )
 
 fun lookFor(seed: String) = Looks[seedOf(seed) % Looks.size]
+
+/** Only about half of the titles whose look has an accent word actually show it, so the grid is not a row of the same trick. A style picked by hand always does. */
+private fun accentOn(k: TitleLook, seed: String, style: String) = k.accent != Accent.None && (StyleLooks.containsKey(style) || (seedOf(seed) / Looks.size) % 2 == 0)
+
+private val WordRx = Regex("[\\p{L}\\p{N}][\\p{L}\\p{N}'\u2019\\-]*")
+
+/**
+ * Where the accent word sits: the longest word of the whole title (the first one if two tie), as a character range in its line.
+ * Null for a title of one word, or when no word is long enough to carry it.
+ */
+fun accentRanges(lines: List<String>): List<IntRange?> {
+    val words = lines.flatMapIndexed { li, l -> WordRx.findAll(l).map { li to it.range } }
+    if (words.size < 2) return lines.map { null }
+    val best = words.maxByOrNull { (li, r) -> (r.last - r.first + 1) * 100 - li * 10 - r.first.coerceAtMost(9) } ?: return lines.map { null }
+    if (best.second.last - best.second.first + 1 < 4) return lines.map { null }
+    return lines.indices.map { if (it == best.first) best.second else null }
+}
 
 /** A note's own choice of title style (kept in the note's layout field). Anything else is "Auto": the look its id picks. */
 private val StyleLooks = mapOf(
@@ -137,7 +161,7 @@ fun breakTitle(raw: String, maxLines: Int = 3): List<String> {
 class Piece(val text: AnnotatedString, val style: TextStyle)
 
 /** One title line in a given look. Measuring and drawing both go through here. */
-fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: Color, accent: Boolean, d: Density): Piece {
+fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: Color, accent: IntRange?, d: Density): Piece {
     val t = if (k.upper) line.uppercase() else line
     val sz = with(d) { sPx.toSp() }
     val base = TextStyle(
@@ -154,10 +178,9 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
         // the width axis animates, so glyphs are drawn as paths instead of snapped to hinted pixels
         textMotion = androidx.compose.ui.text.style.TextMotion.Animated,
     )
-    val i = t.lastIndexOf(' ')
-    if (!accent || i < 0 || k.accent == Accent.None) return Piece(AnnotatedString(t), base)
+    if (accent == null || k.accent == Accent.None || accent.first < 0 || accent.last >= t.length) return Piece(AnnotatedString(t), base)
     val od = (sPx / d.density).coerceIn(8f, 144f)
-    val last = when (k.accent) {
+    val hit = when (k.accent) {
         Accent.Axes -> SpanStyle(fontFamily = Rf.family(k.wght, wd, od, grade, axes = k.ax2 ?: k.ax))
         else -> {
             val w2 = if (k.wght < 500) 900 else 200
@@ -165,8 +188,9 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
         }
     }
     val text = buildAnnotatedString {
-        append(t.substring(0, i + 1))
-        withStyle(last) { append(t.substring(i + 1)) }
+        append(t.substring(0, accent.first))
+        withStyle(hit) { append(t.substring(accent.first, accent.last + 1)) }
+        append(t.substring(accent.last + 1))
     }
     return Piece(text, base)
 }
@@ -195,18 +219,17 @@ class TitleLay(
     val heights: List<Float>,
     val grade: Float,
     val density: Density,
+    val accents: List<IntRange?>,
 ) {
-    fun accentAt(i: Int) = look.accent != Accent.None && i == lines.lastIndex && lines[i].contains(' ')
-
     /** One line at an explicit size and width axis, for the move between a tile's title and the page's. */
-    fun pieceAt(i: Int, color: Color, size: Float, wdth: Float): Piece = mk(lines[i], size, (wdth / 3).roundToInt() * 3f, look, grade, color, accentAt(i), density)
+    fun pieceAt(i: Int, color: Color, size: Float, wdth: Float): Piece = mk(lines[i], size, (wdth / 3).roundToInt() * 3f, look, grade, color, accents[i], density)
 
     /** [flex] 0..1 animates the width axis from condensed to the full-width fit. Steps are quantised so fonts are reused. */
     fun piece(i: Int, color: Color, flex: Float): Piece {
         val f = flex.coerceIn(0f, 1f)
         val wd = 25 + (wdths[i] - 25) * f
         val q = if (f >= .999f) wdths[i].roundToInt().toFloat() else (wd / 3).roundToInt() * 3f
-        return mk(lines[i], sizes[i], q, look, grade, color, accentAt(i), density)
+        return mk(lines[i], sizes[i], q, look, grade, color, accents[i], density)
     }
 }
 
@@ -221,8 +244,9 @@ fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, 
     val sz = ArrayList<Float>()
     val wd = ArrayList<Float>()
     val hs = ArrayList<Float>()
-    for (line in lines) {
-        val acc = k.accent != Accent.None && line === lines.last() && line.contains(' ')
+    val accents = if (accentOn(k, seed.ifEmpty { text }, style)) accentRanges(lines) else lines.map { null }
+    for ((li, line) in lines.withIndex()) {
+        val acc = accents[li]
         fun piece(s: Float, x: Float) = mk(line, s, x, k, grade, Color.Unspecified, acc, d)
         // a hair of margin: heavy and slanted letters can overhang their advance width
         val width = { s: Float, x: Float -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }
@@ -242,7 +266,7 @@ fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, 
         val p = piece(fs, f.second)
         hs.add(m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.height.toFloat())
     }
-    return TitleLay(k, lines, sz, wd, hs, grade, d).also {
+    return TitleLay(k, lines, sz, wd, hs, grade, d, accents).also {
         if (layCache.size > 400) layCache.clear()
         layCache[key] = it
     }

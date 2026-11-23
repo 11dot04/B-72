@@ -45,6 +45,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -155,21 +156,43 @@ fun InlineBody(
                 for (i in 4 until l.lineCount step 5) drawText(tm, "${i + 1}", Offset(0f, l.getLineTop(i)), style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = pal.fg.copy(alpha = .45f), fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
             }.padding(start = 32.dp),
         ).drawBehind {
-            // a code block is one rounded panel behind its lines, a little wider than the text, not a stripe behind each line
+            // a code block, or a note, is one rounded panel behind its lines, a little wider than the text, not a stripe behind each line
             val l = lay ?: return@drawBehind
             val len = l.layoutInput.text.length
             if (len == 0) return@drawBehind
-            var from = -1; var to = -1
-            val runs = ArrayList<IntArray>()
-            for (sp in st.spans.filter { it.c == "pk" }.sortedBy { it.s }) {
-                val fl = l.getLineForOffset(sp.s.coerceIn(0, len)); val ll = l.getLineForOffset((sp.e - 1).coerceIn(sp.s.coerceIn(0, len), len))
-                if (from >= 0 && fl <= to + 1) to = maxOf(to, ll) else { if (from >= 0) runs += intArrayOf(from, to); from = fl; to = ll }
+            fun runsOf(code: String): List<IntArray> {
+                var from = -1; var to = -1
+                val runs = ArrayList<IntArray>()
+                for (sp in st.spans.filter { it.c == code }.sortedBy { it.s }) {
+                    val fl = l.getLineForOffset(sp.s.coerceIn(0, len)); val ll = l.getLineForOffset((sp.e - 1).coerceIn(sp.s.coerceIn(0, len), len))
+                    if (from >= 0 && fl <= to + 1) to = maxOf(to, ll) else { if (from >= 0) runs += intArrayOf(from, to); from = fl; to = ll }
+                }
+                if (from >= 0) runs += intArrayOf(from, to)
+                return runs
             }
-            if (from >= 0) runs += intArrayOf(from, to)
             val padX = 10.dp.toPx(); val padY = 5.dp.toPx()
-            for (r in runs) {
+            for ((code, tint) in listOf("pk" to pal.fg.copy(alpha = .09f), "pn" to Color(0x2EFFB300))) for (r in runsOf(code)) {
                 val top = l.getLineTop(r[0]) - padY; val bottom = l.getLineBottom(r[1]) + padY
-                drawRoundRect(pal.fg.copy(alpha = .09f), Offset(-padX, top), androidx.compose.ui.geometry.Size(size.width + padX * 2, bottom - top), androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()))
+                drawRoundRect(tint, Offset(-padX, top), androidx.compose.ui.geometry.Size(size.width + padX * 2, bottom - top), androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()))
+            }
+            // a quote has a rule down its left side
+            for (r in runsOf("pq")) {
+                val top = l.getLineTop(r[0]) + 3.dp.toPx(); val bottom = l.getLineBottom(r[1]) - 3.dp.toPx()
+                drawRoundRect(pal.fg.copy(alpha = .3f), Offset(2.dp.toPx(), top), androidx.compose.ui.geometry.Size(3.dp.toPx(), (bottom - top).coerceAtLeast(0f)), androidx.compose.ui.geometry.CornerRadius(1.5f.dp.toPx()))
+            }
+            // inline code: a small pill behind each stretch, per line it wraps onto, as tall as the letters and not as tall as the line
+            for (sp in st.spans.filter { it.c == "cd" }) {
+                val a0 = sp.s.coerceIn(0, len); val b0 = sp.e.coerceIn(a0, len)
+                if (b0 <= a0) continue
+                var i = a0
+                while (i < b0) {
+                    val line = l.getLineForOffset(i)
+                    val lineEnd = minOf(b0, l.getLineEnd(line, visibleEnd = true).coerceAtLeast(i + 1))
+                    val left = l.getBoundingBox(i).left; val right = l.getBoundingBox(lineEnd - 1).right
+                    val lt = l.getLineTop(line); val lb = l.getLineBottom(line); val gap = (lb - lt) * .13f
+                    if (right > left) drawRoundRect(pal.fg.copy(alpha = .12f), Offset(left - 2.dp.toPx(), lt + gap), androidx.compose.ui.geometry.Size(right - left + 4.dp.toPx(), lb - lt - gap * 2), androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
+                    i = lineEnd
+                }
             }
             // a label line (small caps) gets a hairline from the end of its words to the right edge
             for (sp in st.spans.filter { it.c == "pl" }) {

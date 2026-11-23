@@ -531,22 +531,11 @@ private fun Tile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
     ) {
-        img?.let { Image(it, null, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
+        img?.let { Image(it, n.title.ifBlank { null }, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
         if (starred) Icon(Icons.Rounded.Star, "Starred", Modifier.align(Alignment.TopEnd).padding(10.dp).size(20.dp), tint = if (img != null) Color(0xFFFFC928) else fg)
         val t = n.title
         if (img != null) {
-            if (t.isNotEmpty()) Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000))))
-                    .padding(14.dp),
-            ) {
-                // every title fills its tile's width in its own look; the same title flexes on the note page
-                Column {
-                    FitTitle(t, Color.White, n.id, Modifier, maxLines = 3, style = n.layout)
-                }
-            }
+            // a photo note's tile is its picture and nothing else (the one-column tile keeps the title, where it is large enough to read)
             if (hasList || hasTrip) Box(
                 Modifier.align(Alignment.TopEnd).padding(10.dp).size(32.dp).clip(MaterialShapes.Cookie6Sided.toShape()).background(cs.surface.copy(alpha = .88f)),
                 contentAlignment = Alignment.Center,

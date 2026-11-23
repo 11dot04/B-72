@@ -127,7 +127,7 @@ fun styleOf(code: String, base: Float = 18f): SpanStyle? = when (code) {
     "cur" -> SpanStyle(fontFamily = Script, fontSize = (base * 1.45f).sp)
     "sup" -> SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = (base * .72f).sp)
     "sub" -> SpanStyle(baselineShift = BaselineShift.Subscript, fontSize = (base * .72f).sp)
-    "cd" -> SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .88f).sp, background = Color(0x33808080))
+    "cd" -> SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .88f).sp)   // its pill is drawn behind the text by the note body, one per line it wraps onto
     "trk" -> SpanStyle(letterSpacing = 1.6.sp, fontSize = (base * .84f).sp, fontWeight = FontWeight.Medium)
     else -> null
 }
@@ -161,7 +161,7 @@ private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphSt
         else -> TextAlign.Unspecified
     }
     if (first == 0f && rest == 0f && align == TextAlign.Unspecified && !pull) return null
-    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else TextUnit.Unspecified)
+    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else if ("pk" in codes) (base * 1.32f).sp else TextUnit.Unspecified)
 }
 
 /** Letter formats first, then one paragraph style per line that has a code, a list marker or both. */
@@ -179,7 +179,7 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
             if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.22f).sp), pos, lineEnd)
             if ("pk" in codes) b.addStyle(SpanStyle(fontFamily = CodeFace.family, fontSize = (base * .86f).sp), pos, lineEnd)
             if ("pl" in codes) b.addStyle(SpanStyle(fontSize = (base * .7f).sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Medium, color = Color(0xB3808080)), pos, lineEnd)
-            if ("pn" in codes) b.addStyle(SpanStyle(background = Color(0x30FFB300), fontWeight = FontWeight.Medium), pos, lineEnd)
+            if ("pn" in codes) b.addStyle(SpanStyle(fontWeight = FontWeight.Medium), pos, lineEnd)   // the amber panel behind it is drawn by the note body
         }
         pos = end
     }
