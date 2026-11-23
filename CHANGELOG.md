@@ -15,6 +15,9 @@ The first public release.
 - Web addresses written in a note are saved as bookmarks in the Library; saved links can be added to any note.
 - Search on its own page, with filters and recent searches.
 
+**Profiles**
+- Keep work and personal notes apart: each profile has its own notes, tags, library, canvases, artifacts, archive and trash, with a switcher at the top of the side rail. Notes can be moved between profiles from their menu. The notes you already have become the first profile.
+
 **Library**
 - Films, books, songs and albums as cards with covers and details; a stack of cards for films, a vinyl shelf for records.
 - Links as bookmarks with site, kind of page, title, author, date, reading time, price and description.
