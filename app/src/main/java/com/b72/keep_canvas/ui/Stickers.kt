@@ -246,7 +246,10 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
           val p = shownPage ?: return@AnimatedVisibility
           val pageCtx = LocalShared.current?.let { SharedCtx(it.st, this) }
           Box(Modifier.let { if (pageCtx != null) it.container(pageCtx, "art-$p", 28.dp) else it }) {
-            ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = { repo.removeSticker(p); view = null }, onSaveCopy = { scope.launch { keepInGallery(ctx, File(p)); snack.showSnackbar(if (android.os.Build.VERSION.SDK_INT >= 29) "Saved to Pictures/B-72" else "Saving to the gallery needs Android 10 or newer") } })
+            ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = {
+                val undo = repo.removeStickerUndo(p); view = null
+                scope.launch { if (snack.showSnackbar("Artifact deleted", actionLabel = "Undo", withDismissAction = true, duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) undo() }
+            }, onSaveCopy = { scope.launch { keepInGallery(ctx, File(p)); snack.showSnackbar(if (android.os.Build.VERSION.SDK_INT >= 29) "Saved to Pictures/B-72" else "Saving to the gallery needs Android 10 or newer") } })
           }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 170.dp, start = 16.dp, end = 16.dp))

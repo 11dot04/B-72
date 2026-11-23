@@ -312,6 +312,19 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                     Text("Ask your notes: \u201c${q.trim()}\u201d", style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // a new user's first look: three lines on what the app can do, once
+            if (UiPrefs.tipsSeen.value == 0 && q.isBlank() && filter == "All") item(span = StaggeredGridItemSpan.FullLine, key = "tips") {
+                val cs = MaterialTheme.colorScheme
+                Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(28.dp)).background(cs.secondaryContainer).padding(20.dp)) {
+                    Text("A FEW THINGS TO TRY", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .8.sp), color = cs.onSecondaryContainer.copy(alpha = .75f))
+                    for (line in listOf(
+                        "Tap + to keep a note, a film, a book, a song, a recipe or a link.",
+                        "In a note, type @read, @watch or @listen and a title to add it from the web.",
+                        "Share a photo, a page or a screenshot to B-72 from any app.",
+                    )) Text(line, style = MaterialTheme.typography.bodyLarge, color = cs.onSecondaryContainer, modifier = Modifier.padding(top = 10.dp))
+                    androidx.compose.material3.TextButton(onClick = { UiPrefs.tipsSeen.set(1) }, Modifier.padding(top = 6.dp)) { Text("Got it") }
+                }
+            }
             // starred notes first, as a row you can slide through
             if (starred.isNotEmpty() && q.isBlank() && filter == "All") item(span = StaggeredGridItemSpan.FullLine, key = "starred") {
                 val cs = MaterialTheme.colorScheme
@@ -461,11 +474,12 @@ private fun FeatureTile(n: Note, shared: SharedCtx, grow: Boolean = true, onClic
         listOf(cs.surfaceContainerHigh to cs.onSurface, cs.surfaceContainerHighest to cs.onSurface, cs.surfaceContainer to cs.onSurface)
     }
     val (bg, fg) = tones[seedMod(n.id, tones.size)]
+    val ticks = rememberTicks()
     val path = n.cover?.path
     val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 900) }, n.id) { value = path?.let { Images.load(it, 900) } }
     val shape = RoundedCornerShape(36.dp)
     val t = n.title
-    Box(Modifier.fillMaxWidth().then(if (grow) Modifier.container(shared, "card-${n.id}", 36.dp) else Modifier).clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = onClick)) {
+    Box(Modifier.fillMaxWidth().then(if (grow) Modifier.container(shared, "card-${n.id}", 36.dp) else Modifier).clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = { ticks.tick(); onClick() })) {
         if (img != null) {
             Box(Modifier.fillMaxWidth().aspectRatio(.92f)) {
                 Image(
@@ -511,6 +525,7 @@ private fun Tile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -
     }
     val (bg, fg) = tones[seedMod(n.id, tones.size)]
     val src = remember { MutableInteractionSource() }
+    val ticks = rememberTicks()
     val pressed by src.collectIsPressedAsState()
     // spatial spring: the tile changes size, so it may overshoot a little
     val press by animateFloatAsState(if (pressed) .96f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "press")
@@ -529,7 +544,7 @@ private fun Tile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -
             .then(if (grow) Modifier.container(shared, "card-${n.id}", 18.dp) else Modifier)
             .clip(TileShape)
             .background(bg)
-            .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = onClick),
+            .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = { ticks.tick(); onClick() }),
     ) {
         img?.let { Image(it, n.title.ifBlank { null }, Modifier.fillMaxSize().shared(shared, "img-${n.id}"), contentScale = ContentScale.Crop) }
         if (starred) Icon(Icons.Rounded.Star, "Starred", Modifier.align(Alignment.TopEnd).padding(10.dp).size(20.dp), tint = if (img != null) Color(0xFFFFC928) else fg)

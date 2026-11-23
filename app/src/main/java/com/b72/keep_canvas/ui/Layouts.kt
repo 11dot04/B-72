@@ -70,6 +70,7 @@ val LAYOUTS = listOf(
     PageLayout("figure", "Roboto Flex, figures", "Tall capitals and figures, short tails"),
     PageLayout("long", "Roboto Flex, long tails", "Light, small lowercase, long ascenders and descenders"),
     PageLayout("slant", "Slanted", "Round and leaning"),
+    PageLayout("instrument", "Instrument Serif", "An elegant display serif (needs its font in the project)"),
 )
 
 /** What the page does with no choice made: the layout that suits this note's photos and words. */

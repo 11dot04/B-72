@@ -51,7 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Unit = {}, start: com.b72.keep_canvas.data.Launch? = null, onLaunchHandled: () -> Unit = {}) {
     val ctx = LocalContext.current
-    UiPrefs.init(ctx); Rf.init(ctx); CodeFace.init(ctx)
+    UiPrefs.init(ctx); Rf.init(ctx); CodeFace.init(ctx); TitleFaces.init(ctx)
     val scope = rememberCoroutineScope()
     val repo = remember { Repo(ctx.applicationContext, scope) }
     LaunchedEffect(Unit) { com.b72.keep_canvas.data.Assistant.refresh(ctx.applicationContext); repo.init() }

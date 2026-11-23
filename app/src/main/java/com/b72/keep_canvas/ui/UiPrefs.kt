@@ -14,6 +14,7 @@ class IntPref(private val key: String, def: Int) {
     val value: Int get() = st
     operator fun getValue(t: Any?, p: KProperty<*>): Int = st
     operator fun setValue(t: Any?, p: KProperty<*>, v: Int) { st = v; UiPrefs.save(key, v) }
+    fun set(v: Int) { st = v; UiPrefs.save(key, v) }
 }
 
 /**
@@ -40,6 +41,8 @@ object UiPrefs {
     val duotone = IntPref("duotone", 1)
     /** Debug builds only: the insights strip. */
     val insights = IntPref("insights", 0)
+    /** 1 once the first-look tips on Home have been dismissed. */
+    val tipsSeen = IntPref("tipsSeen", 0)
 
     /** The last few searches that led to a note, newest first. */
     var recents by androidx.compose.runtime.mutableStateOf(listOf<String>())
@@ -56,7 +59,7 @@ object UiPrefs {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
-        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone, insights).forEach { it.load(p) }
+        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone, insights, tipsSeen).forEach { it.load(p) }
         Insights.shown = insights.value == 1
         recents = p.getString("recents", "").orEmpty().split('\u001f').filter { it.isNotBlank() }
     }

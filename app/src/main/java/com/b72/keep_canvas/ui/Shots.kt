@@ -73,6 +73,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -262,7 +263,11 @@ private fun ReviewPane(queue: List<Shot>, onDecide: (Shot, String) -> Unit, onUn
     }
     val info = Shots.infos[top.id]
     val thr = wPx * .3f
+    val ticks = rememberTicks()
+    // a tick as the card passes the point where letting go will decide it
+    LaunchedEffect(top.id) { androidx.compose.runtime.snapshotFlow { abs(x.value) > thr }.distinctUntilChanged().collect { if (it) ticks.threshold() } }
     fun fling(dir: Int) {
+        if (dir > 0) ticks.confirm() else ticks.reject()
         scope.launch {
             x.animateTo(dir * wPx * 1.4f, tween(220))
             gone = top.id; history.add(top.id)

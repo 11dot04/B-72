@@ -149,6 +149,7 @@ fun InlineBody(
             caretCb(androidx.compose.ui.geometry.Rect(c.localToRoot(r.topLeft), r.size))
         }
     }
+    val pill = MaterialTheme.colorScheme.tertiary.copy(alpha = .26f)
     Box(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(bottom = 12.dp).then(
             if (!numbered) Modifier else Modifier.drawBehind {
@@ -180,7 +181,7 @@ fun InlineBody(
                 val top = l.getLineTop(r[0]) + 3.dp.toPx(); val bottom = l.getLineBottom(r[1]) - 3.dp.toPx()
                 drawRoundRect(pal.fg.copy(alpha = .3f), Offset(2.dp.toPx(), top), androidx.compose.ui.geometry.Size(3.dp.toPx(), (bottom - top).coerceAtLeast(0f)), androidx.compose.ui.geometry.CornerRadius(1.5f.dp.toPx()))
             }
-            // inline code: a small pill behind each stretch, per line it wraps onto, as tall as the letters and not as tall as the line
+            // inline code: a round pill in the tertiary colour behind each stretch, per line it wraps onto, as tall as the letters and not as tall as the line
             for (sp in st.spans.filter { it.c == "cd" }) {
                 val a0 = sp.s.coerceIn(0, len); val b0 = sp.e.coerceIn(a0, len)
                 if (b0 <= a0) continue
@@ -189,8 +190,8 @@ fun InlineBody(
                     val line = l.getLineForOffset(i)
                     val lineEnd = minOf(b0, l.getLineEnd(line, visibleEnd = true).coerceAtLeast(i + 1))
                     val left = l.getBoundingBox(i).left; val right = l.getBoundingBox(lineEnd - 1).right
-                    val lt = l.getLineTop(line); val lb = l.getLineBottom(line); val gap = (lb - lt) * .13f
-                    if (right > left) drawRoundRect(pal.fg.copy(alpha = .12f), Offset(left - 2.dp.toPx(), lt + gap), androidx.compose.ui.geometry.Size(right - left + 4.dp.toPx(), lb - lt - gap * 2), androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
+                    val lt = l.getLineTop(line); val lb = l.getLineBottom(line); val gap = (lb - lt) * .1f
+                    if (right > left) drawRoundRect(pill, Offset(left - 5.dp.toPx(), lt + gap), androidx.compose.ui.geometry.Size(right - left + 10.dp.toPx(), lb - lt - gap * 2), androidx.compose.ui.geometry.CornerRadius((lb - lt - gap * 2) / 2f))
                     i = lineEnd
                 }
             }
@@ -276,10 +277,12 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed
         fun textOf(x: String) = bodyOf(x).removePrefix("\t")
         fun mk(d: Boolean, sb: Boolean, t: String) = (if (d) "x " else "") + (if (sb) "\t" else "") + t
         // ticking a task ticks its subtasks; ticking the last open subtask ticks its task, and unticking one reopens it
+        val ticks = rememberTicks()
         fun tick(i: Int) {
             val x = items[i]
             if (textOf(x).isBlank()) return
             val nd = !isDone(x)
+            ticks.toggle(nd)
             items[i] = mk(nd, isSub(x), textOf(x))
             if (!isSub(x)) {
                 var j = i + 1
@@ -338,7 +341,7 @@ fun InlineChecklist(items0: List<String>, pal: NotePalette, focus: Boolean, seed
                 if (s.isNotEmpty() && items.size > 1) Box(
                     Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Remove item") { items.removeAt(i) },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = pal.fg.copy(alpha = .5f)) }
+                ) { Icon(Icons.Rounded.Close, "Remove item", Modifier.size(18.dp), tint = pal.fg.copy(alpha = .5f)) }
             }
         }
         Row(

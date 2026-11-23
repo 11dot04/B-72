@@ -260,6 +260,7 @@ fun PlacedTray(marks: Boolean, stickers: List<String>, onStamp: (String, Int) ->
 fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, modifier: Modifier = Modifier) {
     val pts = remember { mutableStateListOf<androidx.compose.ui.geometry.Offset>() }
     val pal = LocalMarkColors.current
+    val ticks = rememberTicks()
     val hsNow by androidx.compose.runtime.rememberUpdatedState(hs)
     val vsNow by androidx.compose.runtime.rememberUpdatedState(vs)
     Canvas(
@@ -270,7 +271,9 @@ fun DrawLayer(st: PlacedState, hs: Int, vs: Int, cw: Float, topInset: Float, mod
                 onDragEnd = {
                     val canvasPts = pts.map { androidx.compose.ui.geometry.Offset((it.x + hsNow) / cw, (it.y + vsNow - topInset) / cw) }
                     val col = st.nextColour()
-                    val shape = com.b72.keep_canvas.ui.Shapes.recognise(canvasPts, "p${System.nanoTime()}", col) ?: freehand(canvasPts, "p${System.nanoTime()}", col)
+                    val snapped = com.b72.keep_canvas.ui.Shapes.recognise(canvasPts, "p${System.nanoTime()}", col)
+                    if (snapped != null) ticks.confirm()   // a line, circle or box clicked into place
+                    val shape = snapped ?: freehand(canvasPts, "p${System.nanoTime()}", col)
                     shape?.let { s -> st.add(s); st.selected = null }
                     pts.clear()
                 },

@@ -40,8 +40,43 @@ enum class Accent { None, Flip, Axes }
  */
 class TitleLook(
     val wght: Int, val rond: Float, val slnt: Float, val upper: Boolean = false, val accent: Accent = Accent.None, val rf: Boolean = false,
-    val ax: Map<String, Float>? = null, val ax2: Map<String, Float>? = null,
+    val ax: Map<String, Float>? = null, val ax2: Map<String, Float>? = null, val serif: Boolean = false, val italic: Boolean = false,
 )
+
+/**
+ * Instrument Serif, a display serif with no axes of its own: only the size moves to fill the width. It is used when the project ships the font
+ * (res/font/instrument_serif.ttf and instrument_serif_italic.ttf, or assets/fonts/InstrumentSerif-Regular.ttf and -Italic.ttf).
+ */
+object TitleFaces {
+    var upright: androidx.compose.ui.text.font.FontFamily? = null
+        private set
+    var italic: androidx.compose.ui.text.font.FontFamily? = null
+        private set
+
+    fun init(ctx: android.content.Context) {
+        fun res(name: String) = ctx.resources.getIdentifier(name, "font", ctx.packageName)
+        fun asset(vararg words: String): android.graphics.Typeface? {
+            val names = runCatching { ctx.assets.list("fonts")?.toList() }.getOrNull().orEmpty()
+            val f = names.firstOrNull { n -> val l = n.lowercase().replace("_", "").replace("-", ""); "instrumentserif" in l && words.all { it in l } && (l.endsWith(".ttf") || l.endsWith(".otf")) } ?: return null
+            return runCatching { android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/$f") }.getOrNull()
+        }
+        val r = res("instrument_serif"); val ri = res("instrument_serif_italic")
+        upright = if (r != 0) runCatching { androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(r, androidx.compose.ui.text.font.FontWeight.Normal)) }.getOrNull()
+        else asset("regular")?.let { androidx.compose.ui.text.font.FontFamily(it) }
+        italic = if (ri != 0) runCatching { androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(ri, androidx.compose.ui.text.font.FontWeight.Normal, androidx.compose.ui.text.font.FontStyle.Italic)) }.getOrNull()
+        else asset("italic")?.let { androidx.compose.ui.text.font.FontFamily(it) }
+    }
+
+    val ready: Boolean get() = upright != null
+}
+
+private val SerifLooks = listOf(TitleLook(400, 0f, 0f, serif = true), TitleLook(400, 0f, 0f, serif = true, italic = true))
+
+/** A title that suits a serif: a few words, set in capitals and lower case, no numbers (a figure-led title reads better in the sans). */
+private fun fitsSerif(text: String): Boolean {
+    val w = text.trim().split(Regex("\\s+"))
+    return w.size in 1..6 && text.length in 3..42 && text.any { it.isLowerCase() } && text.none { it.isDigit() }
+}
 
 private val Looks = listOf(
     TitleLook(800, 100f, 0f),                                              // soft heavy
@@ -98,6 +133,14 @@ private val StyleLooks = mapOf(
 )
 
 fun lookFor(seed: String, style: String) = StyleLooks[style] ?: lookFor(seed)
+
+/** The look of a title: the one chosen by hand, else the serif for about one fitting title in four (when its font is there), else the one the id picks. */
+private fun lookOf(text: String, seed: String, style: String): TitleLook {
+    StyleLooks[style]?.let { return it }
+    if (style == "instrument" && TitleFaces.ready) return SerifLooks[seedOf(seed) % 2]
+    if (style.isEmpty() && TitleFaces.ready && fitsSerif(text) && (seedOf(seed) / 3) % 4 == 0) return SerifLooks[(seedOf(seed) / 12) % 2]
+    return lookFor(seed)
+}
 
 /** The brush script is used when it is asked for, and by Auto for a title that is one short word. */
 fun isScriptTitle(text: String, style: String): Boolean {
@@ -165,7 +208,7 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val t = if (k.upper) line.uppercase() else line
     val sz = with(d) { sPx.toSp() }
     val base = TextStyle(
-        fontFamily = if (k.rf) Rf.family(k.wght, wd, (sPx / d.density).coerceIn(8f, 144f), grade, axes = k.ax) else flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
+        fontFamily = if (k.serif) (if (k.italic) TitleFaces.italic ?: TitleFaces.upright else TitleFaces.upright) ?: flex(500, wd, 0f, 0f, grade, sPx / d.density) else if (k.rf) Rf.family(k.wght, wd, (sPx / d.density).coerceIn(8f, 144f), grade, axes = k.ax) else flex(k.wght, wd, k.rond, k.slnt, grade, sPx / d.density),
         fontSize = sz,
         // a lowercase line with tails (g, j, p, q, y) needs more room under it than a tight 0.88 leaves, or the tails are cut
         lineHeight = (sz.value * (if (t.any { it in "gjpqy,;" }) (if (t == t.lowercase()) 1.04f else .95f) else .88f)).sp,
@@ -238,7 +281,7 @@ private val layCache = HashMap<String, TitleLay>()
 fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, m: TextMeasurer, d: Density, style: String = ""): TitleLay {
     val key = "$text|${w.toInt()}|$seed|$maxLines|${grade.toInt()}|${d.density}|$style"
     layCache[key]?.let { return it }
-    val k = lookFor(seed.ifEmpty { text }, style)
+    val k = lookOf(text, seed.ifEmpty { text }, style)
     val lines = breakTitle(if (k.upper) text.uppercase() else text, maxLines)
     val size = w * (if (lines.size == 1) .26f else if (lines.size == 2) .19f else .15f)
     val sz = ArrayList<Float>()

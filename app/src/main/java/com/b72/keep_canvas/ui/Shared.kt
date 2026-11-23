@@ -163,3 +163,19 @@ fun Modifier.opener(key: String, shrink: Float = 0f): Modifier {
 
 /** Progress of a predictive-back gesture (0 to about .5), read where the card is drawn so the preview travels with the container. */
 val LocalBackProgress = compositionLocalOf<() -> Float> { { 0f } }
+
+/** Small physical confirmations: a tick when something switches, a firmer one when something is kept or let go. */
+class Ticks(private val h: androidx.compose.ui.hapticfeedback.HapticFeedback) {
+    private fun go(t: androidx.compose.ui.hapticfeedback.HapticFeedbackType) = runCatching { h.performHapticFeedback(t) }.let { }
+    fun toggle(on: Boolean) = go(if (on) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff)
+    fun tick() = go(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+    fun confirm() = go(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+    fun reject() = go(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Reject)
+    fun threshold() = go(androidx.compose.ui.hapticfeedback.HapticFeedbackType.GestureThresholdActivate)
+}
+
+@androidx.compose.runtime.Composable
+fun rememberTicks(): Ticks {
+    val h = androidx.compose.ui.platform.LocalHapticFeedback.current
+    return androidx.compose.runtime.remember(h) { Ticks(h) }
+}

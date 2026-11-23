@@ -143,7 +143,7 @@ private fun hangOf(line: String, base: Float): Float = when {
     else -> NUM.find(line)?.let { (it.groupValues[1].length * .56f + .55f) * base } ?: 0f
 }
 
-private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphStyle? {
+private fun paraStyle(codes: Set<String>, hang: Float, base: Float, blank: Boolean = false): ParagraphStyle? {
     val lvl = codes.firstNotNullOfOrNull { c -> if (c.startsWith("pi")) c.drop(2).toIntOrNull() else null } ?: 0
     var left = lvl * 26f
     if (hang > 0f) left += 14f   // a bullet or a number sits in from the margin, as in a printed list
@@ -161,7 +161,7 @@ private fun paraStyle(codes: Set<String>, hang: Float, base: Float): ParagraphSt
         else -> TextAlign.Unspecified
     }
     if (first == 0f && rest == 0f && align == TextAlign.Unspecified && !pull) return null
-    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else if ("pk" in codes) (base * 1.32f).sp else TextUnit.Unspecified)
+    return ParagraphStyle(textIndent = TextIndent(first.sp, rest.sp), textAlign = align, lineHeight = if (pull) (base * 1.22f * 1.28f).sp else if ("pk" in codes) (base * (if (blank) .5f else 1.32f)).sp else TextUnit.Unspecified)   // a blank line inside code is a thin gap, not a whole empty line
 }
 
 /** Letter formats first, then one paragraph style per line that has a code, a list marker or both. */
@@ -173,7 +173,7 @@ fun applyFormats(b: AnnotatedString.Builder, text: String, spans: List<Span>, ba
         val end = if (nl < 0) text.length else nl + 1
         val lineEnd = if (nl < 0) text.length else nl
         val codes = spans.filter { isPara(it.c) && it.s < end && it.e > pos }.map { it.c }.toSet()
-        paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base)?.let { b.addStyle(it, pos, end) }
+        paraStyle(codes, hangOf(text.substring(pos, lineEnd), base), base, blank = lineEnd == pos)?.let { b.addStyle(it, pos, end) }
         if (lineEnd > pos) {
             if ("pq" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.12f).sp), pos, lineEnd)
             if ("pp" in codes) b.addStyle(SpanStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (base * 1.22f).sp), pos, lineEnd)
