@@ -28,6 +28,7 @@ object Markdown {
         val tasks = ArrayList<String>()
         var title = ""
         var fenced = false
+        var fenceIn = 0
         var blank = true   // nothing yet, or the last line was blank
 
         fun span(s: Int, e: Int, c: String) { if (e > s) spans += "$s,$e,$c" }
@@ -63,9 +64,17 @@ object Markdown {
 
         for (raw in lines) {
             val line = raw.trimEnd()
-            if (line.trimStart().startsWith("```") || line.trimStart().startsWith("~~~")) { fenced = !fenced; continue }
+            if (line.trimStart().startsWith("```") || line.trimStart().startsWith("~~~")) {
+                fenced = !fenced
+                if (fenced) fenceIn = raw.length - raw.trimStart().length   // a block inside a list item is indented as far as its fence is
+                continue
+            }
             if (fenced) {
-                val s = out.length; out.append(raw); span(s, out.length, "pk"); endLine(); blank = false
+                // the fence's own indentation is not part of the code (CommonMark); a blank line stays a line of the block, so the panel has no gap
+                var cut = 0
+                while (cut < fenceIn && cut < raw.length && raw[cut] == ' ') cut++
+                val body = raw.substring(cut).ifEmpty { " " }
+                val s = out.length; out.append(body.trimEnd().ifEmpty { " " }); span(s, out.length, "pk"); endLine(); blank = false
                 continue
             }
             if (line.isBlank()) { if (!blank) { endLine(); blank = true }; continue }
