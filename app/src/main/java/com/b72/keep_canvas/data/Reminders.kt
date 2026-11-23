@@ -84,7 +84,7 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             runCatching {
                 val now = System.currentTimeMillis()
-                val notes = Store.load(ctx.applicationContext).library.notes
+                val notes = Profiles.all.also { Profiles.load(ctx.applicationContext) }.flatMap { Store.load(ctx.applicationContext, it.id).library.notes }
                 notes.filter { it.remind > now }.forEach { Reminders.schedule(ctx.applicationContext, it.id, it.title, it.remind) }
                 Trips.all(notes).forEach { (n, t) -> TripAlerts.schedule(ctx.applicationContext, n.id, n.title, t) }
             }

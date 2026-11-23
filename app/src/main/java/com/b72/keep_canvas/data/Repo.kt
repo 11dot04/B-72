@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -51,8 +52,57 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
             .filter { it.second >= 0.42f }.sortedByDescending { it.second }.take(k).map { it.first }
     }
 
+    /** Which profile's library is showing. Changes only through [switchProfile]. */
+    var profileId by mutableStateOf(Profiles.MAIN)
+        private set
+
+    /** Shows another profile's notes (loading its file), and forgets the undo steps of the one left. Anything the UI held open from the old one must be closed by the caller. */
+    suspend fun switchProfile(id: String) {
+        if (id == profileId) return
+        Profiles.setActive(ctx, id)
+        val next = Store.load(ctx, id)
+        hist.clear(); histTick++
+        profileId = id
+        loaded = next
+        prepTotal = 0; prepDone = 0
+        com.b72.keep_canvas.widget.TripWidget.refresh(ctx); com.b72.keep_canvas.widget.ArtifactWidget.refresh(ctx)
+    }
+
+    /** Waits until the first library has been read. */
+    suspend fun awaitLoaded() { androidx.compose.runtime.snapshotFlow { loaded }.first { it != null } }
+
+    /** Which profile holds a note, or null if none does (a reminder tapped for a note in another profile). */
+    suspend fun profileOf(noteId: String): String? = withContext(Dispatchers.IO) {
+        if (loaded?.library?.let { l -> l.notes.any { it.id == noteId } || l.archive.any { it.id == noteId } } == true) return@withContext profileId
+        Profiles.all.toList().firstOrNull { p -> p.id != profileId && runCatching { Profiles.file(ctx, p.id).readText().contains("\"id\":\"$noteId\"") }.getOrDefault(false) }?.id
+    }
+
+    /** Moves a note into another profile's library (it keeps its tags and pictures) and takes it out of this one. */
+    suspend fun moveToProfile(noteId: String, target: String): Boolean {
+        val l = loaded?.library ?: return false
+        val n = l.notes.firstOrNull { it.id == noteId } ?: return false
+        if (target == profileId || Profiles.all.none { it.id == target }) return false
+        val there = Store.load(ctx, target).library
+        if (there.notes.none { it.id == noteId }) Store.save(ctx, there.copy(notes = there.notes + n), target)
+        TripAlerts.cancel(ctx, noteId)
+        commit(l.copy(notes = l.notes.filter { it.id != noteId }))
+        return true
+    }
+
+    suspend fun addProfile(name: String, hue: Int): Profile { val p = Profiles.add(ctx, name, hue); switchProfile(p.id); return p }
+
+    /** Deletes a profile and everything in it. If it is the one showing, the main profile comes back. */
+    suspend fun removeProfile(id: String) {
+        if (id == Profiles.MAIN) return
+        if (id == profileId) switchProfile(Profiles.MAIN)
+        Profiles.remove(ctx, id)
+        cleanOrphans()
+    }
+
     suspend fun init() {
-        loaded = Store.load(ctx)
+        Profiles.load(ctx)
+        profileId = Profiles.activeId
+        loaded = Store.load(ctx, profileId)
         // the trash is emptied of anything older than 30 days
         loaded?.library?.let { l -> val cut = System.currentTimeMillis() - 30 * 86_400_000L; if (l.trash.any { it.trashedAt in 1 until cut }) commit(l.copy(trash = l.trash.filter { it.trashedAt == 0L || it.trashedAt >= cut })) }
         autoClean()
@@ -60,8 +110,9 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     /** Deletes picture files that no note, cut-out, sticker or placed item refers to any more (and are over a day old, so a note being written is safe). Returns the bytes freed. */
     suspend fun cleanOrphans(): Long = withContext(Dispatchers.IO) {
-        val lib = loaded?.library ?: return@withContext 0L
-        val text = AppJson.encodeToString(Library.serializer(), lib)
+        if (loaded?.library == null) return@withContext 0L
+        // a picture another profile uses stays: every profile's file is read, the open one from memory (it may not be saved yet)
+        val text = AppJson.encodeToString(Library.serializer(), loaded!!.library) + Profiles.files(ctx).filter { it != Profiles.file(ctx, profileId) }.joinToString("") { runCatching { it.readText() }.getOrDefault("") }
         val cutoff = System.currentTimeMillis() - 24 * 3_600_000L
         var freed = 0L
         imageDir(ctx).listFiles()?.forEach { f ->
@@ -130,12 +181,14 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     private suspend fun prepareNow() {
         val force = forceId
+        val pid = profileId
         val todo = loaded?.library?.notes.orEmpty().flatMap { n -> n.blocks.filter { needsWork(it) || (n.id == force && aiStale(it, true)) }.map { n.id to it.id } }
         prepTotal = todo.size
         prepDone = 0
         var session: Assistant.Session? = null
         var tried = false
         for ((nid, bid) in todo) {
+            if (profileId != pid) break   // another profile was opened: this work is for notes no longer showing
             prepDone++
             val b = note(nid)?.blocks?.firstOrNull { it.id == bid } ?: continue
             val path = b.path
@@ -186,6 +239,7 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                 tripChanged = true
             }
             if (d == b.data) continue
+            if (profileId != pid) break
             val n = note(nid) ?: continue
             upsert(n.copy(blocks = n.blocks.map { if (it.id == bid) it.copy(data = d) else it }))
             if (tripChanged) {
@@ -526,7 +580,8 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
 
     private fun commit(lib: Library) {
         loaded = Loaded(lib, Source.Own)
-        scope.launch { Store.save(ctx, lib); com.b72.keep_canvas.widget.TripWidget.refresh(ctx); com.b72.keep_canvas.widget.ArtifactWidget.refresh(ctx) }
+        val pid = profileId   // a save that is still running when the profile changes goes to the profile it was made in
+        scope.launch { Store.save(ctx, lib, pid); com.b72.keep_canvas.widget.TripWidget.refresh(ctx); com.b72.keep_canvas.widget.ArtifactWidget.refresh(ctx) }
     }
 
     /** Copies a picked photo into our own folder and measures it (height / width, clamped like the old cards). */

@@ -28,11 +28,12 @@ data class Loaded(val library: Library, val source: Source, val error: String? =
  * files are never modified or deleted, so they remain a backup and the Flutter build can still run.
  */
 object Store {
-    private fun own(ctx: Context) = File(ctx.filesDir, "b72/notes.json")
+    private fun own(ctx: Context, profile: String) = Profiles.file(ctx, profile)
     private fun flutter(ctx: Context) = File(ctx.filesDir.parentFile, "app_flutter/notes.json")
 
-    suspend fun load(ctx: Context): Loaded = withContext(Dispatchers.IO) {
-        val mine = own(ctx)
+    suspend fun load(ctx: Context, which: String? = null): Loaded = withContext(Dispatchers.IO) {
+        val profile = which ?: run { Profiles.load(ctx); Profiles.activeId }
+        val mine = own(ctx, profile)
         if (mine.exists()) {
             val text = mine.readText()
             return@withContext runCatching { Loaded(parse(text), Source.Own) }
@@ -43,17 +44,17 @@ object Store {
                     val lib = if (head != null && head.length < text.length) runCatching { parse(head) }.getOrNull() else null
                     if (lib != null) {
                         runCatching { File(mine.parentFile, "notes.damaged.json").writeText(text) }
-                        runCatching { save(ctx, lib) }
+                        runCatching { save(ctx, lib, profile) }
                         Loaded(lib, Source.Own)
                     } else Loaded(Library(), Source.Own, "Could not read notes: ${first.message}")
                 }
         }
         val old = flutter(ctx)
-        if (old.exists()) {
+        if (profile == Profiles.MAIN && old.exists()) {
             return@withContext runCatching {
                 val text = old.readText()
                 val lib = parse(text)
-                save(ctx, lib)
+                save(ctx, lib, profile)
                 Loaded(lib, Source.ImportedFromFlutter)
             }.getOrElse { Loaded(Library(), Source.Empty, "Could not import the old notes: ${it.message}") }
         }
@@ -63,11 +64,11 @@ object Store {
     /** One save at a time, each through its own temporary file, so two writers can never share a file and leave a torn one behind. */
     private val saving = kotlinx.coroutines.sync.Mutex()
 
-    suspend fun save(ctx: Context, lib: Library) = withContext(Dispatchers.IO) {
-        val f = own(ctx)
+    suspend fun save(ctx: Context, lib: Library, profile: String = Profiles.activeId) = withContext(Dispatchers.IO) {
+        val f = own(ctx, profile)
         f.parentFile?.mkdirs()
         saving.withLock {
-            val tmp = File(f.parentFile, "notes.json.tmp")
+            val tmp = File(f.parentFile, "notes.json.tmp")   // beside its own file, so each profile has its own
             tmp.writeText(AppJson.encodeToString(Library.serializer(), lib))
             if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
         }
