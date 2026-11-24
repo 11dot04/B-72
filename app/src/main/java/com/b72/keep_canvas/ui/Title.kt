@@ -90,7 +90,7 @@ private val Looks = listOf(
     TitleLook(560, 0f, 0f, rf = true, ax = mapOf("XOPQ" to 150f, "YOPQ" to 36f), accent = Accent.Axes,
         ax2 = mapOf("XOPQ" to 40f, "YOPQ" to 128f)),                       // thick stems and hairline bars; the last word reverses it
     TitleLook(700, 0f, 0f, rf = true, ax = mapOf("YTUC" to 756f, "YTFI" to 788f, "YTDE" to -120f, "XTRA" to 560f)), // tall capitals and figures, short tails
-    TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -270f), accent = Accent.Flip), // small x-height, long ascenders and tails
+    TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -240f), accent = Accent.Flip), // small x-height, long ascenders and tails
     // more of Google Sans Flex, the face the app leans on: plain weights across the range, none with an accent word
     TitleLook(500, 0f, 0f),                                                // even, medium
     TitleLook(240, 100f, 0f),                                              // light and round
@@ -128,7 +128,7 @@ private val StyleLooks = mapOf(
     "tall" to TitleLook(820, 0f, 0f, rf = true, ax = mapOf("YTLC" to 566f, "YTAS" to 800f, "XTRA" to 500f)),
     "contrast" to TitleLook(560, 0f, 0f, rf = true, ax = mapOf("XOPQ" to 150f, "YOPQ" to 36f), accent = Accent.Axes, ax2 = mapOf("XOPQ" to 40f, "YOPQ" to 128f)),
     "figure" to TitleLook(700, 0f, 0f, rf = true, ax = mapOf("YTUC" to 756f, "YTFI" to 788f, "YTDE" to -120f, "XTRA" to 560f)),
-    "long" to TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -270f), accent = Accent.Flip),
+    "long" to TitleLook(300, 0f, 0f, rf = true, ax = mapOf("YTLC" to 450f, "YTAS" to 850f, "YTDE" to -240f), accent = Accent.Flip),
     "slant" to TitleLook(720, 100f, -10f),
 )
 
@@ -226,7 +226,8 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
     val hit = when (k.accent) {
         Accent.Axes -> SpanStyle(fontFamily = Rf.family(k.wght, wd, od, grade, axes = k.ax2 ?: k.ax))
         else -> {
-            val w2 = if (k.wght < 500) 900 else 200
+            // Roboto Flex closes its counters (e, s, a) at 900 once the width axis narrows the line, so its heavy side stops at 660
+            val w2 = if (k.rf) (if (k.wght < 500) 660 else 260) else if (k.wght < 500) 900 else 200
             SpanStyle(fontFamily = if (k.rf) Rf.family(w2, wd, od, grade, axes = k.ax) else flex(w2, wd, k.rond, k.slnt, grade, sPx / d.density))
         }
     }
