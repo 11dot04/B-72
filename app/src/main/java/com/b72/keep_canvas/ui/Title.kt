@@ -203,6 +203,9 @@ fun breakTitle(raw: String, maxLines: Int = 3): List<String> {
 
 class Piece(val text: AnnotatedString, val style: TextStyle)
 
+/** The Google Sans Flex look that stands in for a Roboto Flex one that cannot fill the width: same weight and accent, no parametric axes. */
+private fun GsfStandIn(k: TitleLook) = TitleLook(k.wght.coerceIn(300, 900), 0f, 0f, upper = k.upper, accent = if (k.accent == Accent.Axes) Accent.Flip else k.accent)
+
 /** One title line in a given look. Measuring and drawing both go through here. */
 fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: Color, accent: IntRange?, d: Density): Piece {
     val t = if (k.upper) line.uppercase() else line
@@ -240,11 +243,11 @@ fun mk(line: String, sPx: Float, wd: Float, k: TitleLook, grade: Float, color: C
 }
 
 /** Picks the width axis (and, if needed, the size) so a line fills [w] exactly. */
-private fun fit(width: (Float, Float) -> Float, w: Float, size: Float, grow: Boolean): Pair<Float, Float> {
+private fun fit(width: (Float, Float) -> Float, w: Float, size: Float, cap: Float): Pair<Float, Float> {
     var lo = 25f
     var hi = 151f
     val widest = width(size, hi)
-    if (widest < w) return if (grow) minOf(size * w / max(widest, 1f), size * 2.4f) to hi else size to hi
+    if (widest < w) return if (cap > 1f) minOf(size * w / max(widest, 1f), size * cap) to hi else size to hi
     val narrowest = width(size, lo)
     if (narrowest > w) return size * w / narrowest to lo
     repeat(8) {
@@ -282,33 +285,61 @@ private val layCache = HashMap<String, TitleLay>()
 fun titleLay(text: String, w: Float, seed: String, maxLines: Int, grade: Float, m: TextMeasurer, d: Density, style: String = ""): TitleLay {
     val key = "$text|${w.toInt()}|$seed|$maxLines|${grade.toInt()}|${d.density}|$style"
     layCache[key]?.let { return it }
-    val k = lookOf(text, seed.ifEmpty { text }, style)
-    val lines = breakTitle(if (k.upper) text.uppercase() else text, maxLines)
-    val size = w * (if (lines.size == 1) .26f else if (lines.size == 2) .19f else .15f)
-    val sz = ArrayList<Float>()
-    val wd = ArrayList<Float>()
-    val hs = ArrayList<Float>()
-    val accents = if (accentOn(k, seed.ifEmpty { text }, style)) accentRanges(lines) else lines.map { null }
-    for ((li, line) in lines.withIndex()) {
-        val acc = accents[li]
-        fun piece(s: Float, x: Float) = mk(line, s, x, k, grade, Color.Unspecified, acc, d)
-        // a hair of margin: heavy and slanted letters can overhang their advance width
-        val width = { s: Float, x: Float -> val p = piece(s, x); m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat() }
-        val target = w * .975f
-        val f = fit(width, target, size, lines.size == 1)
-        // at either end of the width axis the size is what is left to change, and the optical-size axis moves with it, so the width does not
-        // scale in step with the size: measure again and correct until the line really fits (this is what left a line a few pixels too wide)
-        var fs = f.first
-        for (n in 0 until 6) {
-            val cur = width(fs, f.second)
-            val atLimit = f.second <= 25f || f.second >= 151f
-            if (cur > target) fs *= target / cur * .995f
-            else if (atLimit && f.second >= 151f && lines.size == 1 && cur < target * .96f && fs < size * 2.4f) fs = minOf(fs * target / cur, size * 2.4f)
-            else break
+    var k = lookOf(text, seed.ifEmpty { text }, style)
+    var lines = breakTitle(if (k.upper) text.uppercase() else text, maxLines)
+    var sz = ArrayList<Float>(); var wd = ArrayList<Float>(); var hs = ArrayList<Float>()
+    var accents: List<IntRange?> = lines.map { null }
+    // One size for the whole title: only weight, width, roundness, optical size and slant differ between its words. Every line moves its own width
+    // axis (25..151), so a size fills the title if the longest line still fits at width 25 and the shortest line reaches the width at 151.
+    // That gives a window of sizes; the title takes the size nearest its base size inside the window (so a title that already fits is not touched),
+    // never smaller than 0.8x or larger than 1.5x of the base. If Roboto Flex has no such size, the same weight in Google Sans Flex, whose width
+    // axis reaches further, is tried; a line that fits nowhere ends up a little short rather than too wide.
+    for (attempt in 0..1) {
+        lines = breakTitle(if (k.upper) text.uppercase() else text, maxLines)
+        accents = if (accentOn(k, seed.ifEmpty { text }, style)) accentRanges(lines) else lines.map { null }
+        val n = lines.size
+        val base = w * (if (n == 1) .26f else if (n == 2) .19f else .15f)
+        val target = w * .975f   // a hair of margin: heavy and slanted letters can overhang their advance width
+        val look = k
+        val acc = accents
+        val ls = lines
+        fun widthOf(i: Int, s: Float, x: Float): Float {
+            val p = mk(ls[i], s, x, look, grade, Color.Unspecified, acc[i], d)
+            return m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.width.toFloat()
         }
-        sz.add(fs); wd.add(f.second)
-        val p = piece(fs, f.second)
-        hs.add(m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.height.toFloat())
+        var lo = 0f
+        var hi = Float.MAX_VALUE
+        for (i in ls.indices) {
+            lo = max(lo, base * target / max(widthOf(i, base, 151f), 1f))
+            hi = minOf(hi, base * target / max(widthOf(i, base, 25f), 1f))
+        }
+        val maxS = base * (if (n == 1) 2.4f else 1.5f)
+        val minS = if (n == 1) 0f else base * .8f
+        var wl = max(lo, minS)
+        var wh = minOf(hi, maxS)
+        val feasible = wl <= wh
+        if (!feasible && attempt == 0 && n > 1 && k.rf && !k.serif) { k = GsfStandIn(k); continue }
+        var s = if (feasible) { if (wh > wl * 1.04f) { wl *= 1.01f; wh *= .99f }; base.coerceIn(wl, wh) } else minOf(base.coerceAtLeast(lo).coerceAtMost(maxS), hi)
+        // opsz moves with the size, so widths are not exactly proportional to it: settle the shared size with real measurements
+        var res = emptyList<Pair<Float, Float>>()
+        for (round in 0 until 5) {
+            res = ls.indices.map { i -> fit({ ss, x -> widthOf(i, ss, x) }, target, s, 1f) }
+            val smallest = res.minOf { it.first }
+            if (smallest < s * .999f) { s = smallest * .995f; continue }
+            val fill = res.indices.filter { res[it].second >= 151f }.minOfOrNull { widthOf(it, s, 151f) / target }
+            if (fill != null && fill < .97f && s < maxS && feasible) { s = minOf(maxS, s / fill * .995f); continue }
+            break
+        }
+        res = ls.indices.map { i -> fit({ ss, x -> widthOf(i, ss, x) }, target, s, 1f) }
+        val fin = res.minOf { it.first }.let { if (it < s) it else s }
+        if (fin < s) { s = fin; res = ls.indices.map { i -> fit({ ss, x -> widthOf(i, ss, x) }, target, s, 1f) } }
+        sz = ArrayList(); wd = ArrayList(); hs = ArrayList()
+        for (i in ls.indices) {
+            sz.add(s); wd.add(res[i].second)
+            val p = mk(ls[i], s, res[i].second, look, grade, Color.Unspecified, acc[i], d)
+            hs.add(m.measure(p.text, p.style, softWrap = false, maxLines = 1).size.height.toFloat())
+        }
+        break
     }
     return TitleLay(k, lines, sz, wd, hs, grade, d, accents).also {
         if (layCache.size > 400) layCache.clear()
