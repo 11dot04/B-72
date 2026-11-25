@@ -215,7 +215,8 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
                 if (!tried) { tried = true; session = withContext(Dispatchers.Default) { Assistant.open(ctx) } }
                 session?.let { s ->
                     val text = cur.tripText()
-                    ai = withContext(Dispatchers.Default) { Assistant.analyse(s, text) }
+                    val known = loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(40).map { it.key }
+                    ai = withContext(Dispatchers.Default) { Assistant.analyse(s, text, known) }
                 }
                 ai?.let { d = d + it.toData(cur); cur = cur.copy(data = d) }
             }

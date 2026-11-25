@@ -289,7 +289,11 @@ Never say anything about a person's body, face, health, age or identity.
         }.take(3)
     }
 
-    fun analyse(session: Session, text: String): Analysis? = session.ask(PROMPT + "\"\"\"\n" + text.take(3000) + "\n\"\"\"")?.let { parse(it) }
+    fun analyse(session: Session, text: String, known: List<String> = emptyList()): Analysis? {
+        // the tags this person already uses are offered first, so a new note joins an existing tag when one fits
+        val hint = if (known.isEmpty()) "" else "Tags this person already uses: " + known.joinToString(", ") + ". For \"tags\" choose from these first; make up a new tag only when none of them fits.\n"
+        return session.ask(PROMPT.removeSuffix("Note:\n") + hint + "Note:\n" + "\"\"\"\n" + text.take(3000) + "\n\"\"\"")?.let { parse(it) }
+    }
 }
 
 /** Kinds whose text is worth sending to the assistant. */
