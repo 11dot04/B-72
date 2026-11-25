@@ -157,7 +157,7 @@ fun StatsPage(notes: List<Note>) {
     }
 
     Box(Modifier.fillMaxSize().background(cs.surface)) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = margin).padding(top = 64.dp, bottom = 48.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = margin).padding(top = 64.dp, bottom = NavInset)) {
             Text("B-72", style = label, color = cs.onSurfaceVariant)
             Text("Statistics", style = flexStyle(56.sp, wght = 800, wdth = 85f, lh = .95f), color = ink, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(36.dp))

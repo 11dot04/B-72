@@ -114,6 +114,7 @@ import com.b72.keep_canvas.data.Images
 import com.b72.keep_canvas.data.Kind
 import com.b72.keep_canvas.data.ideas
 import com.b72.keep_canvas.data.Note
+import com.b72.keep_canvas.data.suggestedTags
 import com.b72.keep_canvas.data.dbl
 import com.b72.keep_canvas.data.seedOf
 import com.b72.keep_canvas.data.str
@@ -424,11 +425,15 @@ fun NotePage(
                 InlineChecklist(b.checkItems, pal, focus = isDraft && b.checkItems.all { it.isBlank() }, seed = note.id.hashCode()) { onItems(b.id, it) }
             }
             item(key = "tags") {
-                TagEditor(note.tags, allNotes, pal, onAddTag, onRemoveTag, onTag, onEditing = { tagging = it }, modifier = Modifier.padding(top = 10.dp))
+                TagEditor(
+                    note.tags, allNotes, pal, onAddTag, onRemoveTag, onTag, onEditing = { tagging = it }, modifier = Modifier.padding(top = 10.dp),
+                    suggest = note.suggestedTags(), text = remember(note.blocks, note.title) { note.title + " " + note.blocks.joinToString(" ") { it.body } },
+                )
             }
             val words = note.blocks.filter { it.kind == Kind.Text }.sumOf { it.body.trim().split(Regex("\\s+")).count { w -> w.isNotEmpty() } }
-            if (words >= 20) item(key = "count") {
-                Text("$words words · ${max(1, words / 200)} min read", style = MaterialTheme.typography.labelMedium, color = pal.fg.copy(alpha = .5f), modifier = Modifier.padding(top = 10.dp, start = 4.dp))
+            // the chosen tags sit at the bottom right of the page, beside the word count
+            if (words >= 20 || note.tags.isNotEmpty()) item(key = "count") {
+                ChosenTags(note.tags, if (words >= 20) "$words words · ${max(1, words / 200)} min read" else null, pal, onRemoveTag, onTag, Modifier.padding(top = 10.dp))
             }
             if (related.isNotEmpty()) item { RelatedMosaic(related, pal, onOpenNote, Modifier.padding(top = 28.dp)) }
             }

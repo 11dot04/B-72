@@ -50,6 +50,8 @@ fun TagEditor(
     tags: List<String>, allNotes: List<Note>, pal: NotePalette,
     onAdd: (String) -> Unit, onRemove: (String) -> Unit, onOpen: (String) -> Unit,
     onEditing: (Boolean) -> Unit, modifier: Modifier = Modifier,
+    /** What the assistant proposed for this note, and the note's words, to pick proposals from the tags already in use first. */
+    suggest: List<String> = emptyList(), text: String = "",
 ) {
     var open by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
@@ -72,14 +74,22 @@ fun TagEditor(
             .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.key.lowercase().startsWith(needle) }.thenByDescending { it.value })
             .take(6).map { it.key }
     }
+    // proposals come from the tags already in use first (the assistant's own pick that matches one, then any that the note's words mention); only when none fits does it offer its own
+    val proposals = remember(freq, tags, suggest, text) {
+        val low = text.lowercase()
+        val ai = suggest.mapNotNull { s -> freq.keys.firstOrNull { it.equals(s, true) } }
+        val inText = freq.entries.filter { (k, _) -> k.length >= 3 && Regex("\\b" + Regex.escape(k.lowercase()) + "\\b").containsMatchIn(low) }.sortedByDescending { it.value }.map { it.key }
+        val known = (ai + inText).distinct().filter { it !in tags }.take(4)
+        if (known.isNotEmpty()) known else suggest.filter { s -> tags.none { it.equals(s, true) } }.take(3)
+    }
     LaunchedEffect(open) { if (open) runCatching { fr.requestFocus() } }
     LaunchedEffect(suggestions, q) { if (open) runCatching { bring.bringIntoView() } }
     Column(modifier.fillMaxWidth().bringIntoViewRequester(bring)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (t in tags) InputChip(
-                selected = false, onClick = { onOpen(t) }, label = { Text(t) },
-                trailingIcon = { Icon(Icons.Rounded.Close, "Remove $t", Modifier.size(18.dp).clickable { onRemove(t) }) },
-                shape = RoundedCornerShape(50),
+            if (!open) for (t in proposals) AssistChip(
+                onClick = { commit(t) }, label = { Text("+ $t") }, shape = RoundedCornerShape(50),
+                border = androidx.compose.foundation.BorderStroke(1.dp, pal.fg.copy(alpha = .5f)),
+                colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = pal.fg),
             )
             if (!open) AssistChip(onClick = { open = true }, label = { Text("Add tag") }, leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) }, shape = RoundedCornerShape(50))
         }
@@ -103,6 +113,32 @@ fun TagEditor(
             if (suggestions.isNotEmpty()) FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (t in suggestions) SuggestionChip(onClick = { commit(t) }, label = { Text(t) }, shape = RoundedCornerShape(50), border = androidx.compose.foundation.BorderStroke(1.dp, pal.fg.copy(alpha = .5f)), colors = androidx.compose.material3.SuggestionChipDefaults.suggestionChipColors(labelColor = pal.fg))
             }
+        }
+    }
+}
+
+
+/** The tags a note has, tucked at the bottom right: the first one and "+N" for the rest; a tap on the count opens them all. [label] sits at the left of the same line. */
+@Composable
+fun ChosenTags(tags: List<String>, label: String?, pal: NotePalette, onRemove: (String) -> Unit, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
+    var all by remember { mutableStateOf(false) }
+    val showAll = all && tags.size > 1
+    @Composable fun chip(t: String) = InputChip(
+        selected = false, onClick = { onOpen(t) }, label = { Text(t) },
+        trailingIcon = { Icon(Icons.Rounded.Close, "Remove $t", Modifier.size(18.dp).clickable { onRemove(t) }) },
+        shape = RoundedCornerShape(50),
+    )
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label.orEmpty(), style = MaterialTheme.typography.labelMedium, color = pal.fg.copy(alpha = .5f), modifier = Modifier.weight(1f).padding(start = 4.dp))
+            if (tags.isNotEmpty() && !showAll) {
+                chip(tags.first())
+                if (tags.size > 1) AssistChip(onClick = { all = true }, label = { Text("+${tags.size - 1}") }, shape = RoundedCornerShape(50), modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+        if (showAll) FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (t in tags) chip(t)
+            AssistChip(onClick = { all = false }, label = { Text("Less") }, shape = RoundedCornerShape(50))
         }
     }
 }

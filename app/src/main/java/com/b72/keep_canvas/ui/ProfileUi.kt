@@ -1,6 +1,7 @@
 package com.b72.keep_canvas.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -60,14 +61,18 @@ fun profileColors(hue: Int): Pair<Color, Color> {
 }
 
 @Composable
-fun ProfileAvatar(p: Profile, size: androidx.compose.ui.unit.Dp = 40.dp) {
+fun ProfileAvatar(p: Profile, size: androidx.compose.ui.unit.Dp = 40.dp, letter: Boolean = true) {
     val (bg, fg) = profileColors(p.hue)
     Box(Modifier.size(size).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
-        Text(p.name.trim().take(1).uppercase().ifEmpty { "?" }, color = fg, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .42f).sp)
+        if (letter) Text(p.name.trim().take(1).uppercase().ifEmpty { "?" }, color = fg, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .42f).sp)
     }
 }
 
+/** The profile the home screen last showed, so a switch can be told from a fresh launch. */
+object ProfileSwap { var last: String? = null }
+
 /** Sits at the top of the navigation rail: the profile in use, and a tap opens the list to switch, add or edit. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ProfileSwitcher(repo: Repo, onSwitch: (String) -> Unit, onCreate: (String, Int) -> Unit, onDelete: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -89,15 +94,19 @@ fun ProfileSwitcher(repo: Repo, onSwitch: (String) -> Unit, onCreate: (String, I
             Column(Modifier.padding(bottom = 6.dp)) {
                 for (p in Profiles.all) {
                     val on = p.id == repo.profileId
+                    // the profile in use is the highlighted row, with its edit button; the others switch on a tap and open their editor on a long press
                     Row(
-                        Modifier.fillMaxWidth().clickable { open = false; if (!on) onSwitch(p.id) }.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 6.dp).clip(RoundedCornerShape(24.dp))
+                            .background(if (on) cs.secondaryContainer else Color.Transparent)
+                            .combinedClickable(onLongClickLabel = "Edit ${p.name}", onLongClick = { edit = p }) { open = false; if (!on) onSwitch(p.id) }
+                            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         ProfileAvatar(p, 32.dp)
                         Spacer(Modifier.width(12.dp))
-                        Text(p.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (on) Icon(Icons.Rounded.Check, "In use", tint = cs.primary)
-                        IconButton({ edit = p }) { Icon(Icons.Rounded.Edit, "Edit ${p.name}", tint = cs.onSurfaceVariant) }
+                        Text(p.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = if (on) cs.onSecondaryContainer else cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (on) IconButton({ edit = p }) { Icon(Icons.Rounded.Edit, "Edit ${p.name}", tint = cs.onSecondaryContainer) }
+                        else Spacer(Modifier.height(48.dp))
                     }
                 }
                 Row(Modifier.fillMaxWidth().clickable { adding = true }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

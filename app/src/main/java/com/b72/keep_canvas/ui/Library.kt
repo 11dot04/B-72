@@ -643,7 +643,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         text = { Text("Add " + listOf("song", "book", "film or show", "recipe", "link")[shelf]) },
         icon = { Icon(Icons.Rounded.Add, null) },
         onClick = { onAdd(SHELVES[shelf].kind) },
-        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(),
     )
     }
 }

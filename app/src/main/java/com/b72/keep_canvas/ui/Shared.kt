@@ -117,6 +117,20 @@ fun Modifier.container(ctx: SharedCtx, key: String, radius: Dp = 28.dp, full: Bo
     }
 }
 
+/** Room to leave at the foot of a screen that scrolls under the floating bar: the bar and its margin (the system navigation inset is added separately). */
+val NavInset = 96.dp
+
+/**
+ * A floating button stays above a page that is shrinking back into its tile, so the page never covers it for a moment before it lands.
+ * (Only while a page is closing: while one opens, the button is covered like the rest of the screen.)
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.floating(): Modifier {
+    val c = LocalShared.current ?: return this
+    return with(c.st) { this@floating.renderInSharedTransitionScopeOverlay(zIndexInOverlay = 10f, renderInOverlay = { isTransitionActive && !Opening.paging }) }
+}
+
 /** The transition scope of the screen showing right now, so any card that opens a note can be a container without it being passed down. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalShared = compositionLocalOf<SharedCtx?> { null }
@@ -142,6 +156,8 @@ fun Modifier.keyContainer(key: String, radius: Dp = 28.dp, reveal: Boolean = fal
  */
 object Opening {
     var id by androidx.compose.runtime.mutableStateOf<String?>(null)
+    /** True while a note or a canvas is showing over the tabs. */
+    var paging by androidx.compose.runtime.mutableStateOf(false)
     private val centres = HashMap<String, androidx.compose.ui.geometry.Offset>()
     /** Set by the app: lays the tapped note's words out in the background while the container is still travelling. */
     var warm: (String) -> Unit = {}

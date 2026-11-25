@@ -232,6 +232,13 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
       }
     }
   }
+  // a profile that has just been switched to starts from the top and fades in, instead of appearing at the other profile's scroll position
+  val switched = remember { ProfileSwap.last != null && ProfileSwap.last != repo.profileId }
+  val swap = remember { androidx.compose.animation.core.Animatable(if (switched) 0f else 1f) }
+  androidx.compose.runtime.LaunchedEffect(Unit) {
+    ProfileSwap.last = repo.profileId
+    if (switched) { grid.scrollToItem(0); swap.animateTo(1f, androidx.compose.animation.core.tween(320)) }
+  }
   var railOpen by remember { mutableStateOf(false) }
   var page by remember { mutableStateOf<String?>(null) }   // which of the rail's own pages is open: settings, stats, ai, backup, trash
   val settings = page != null
@@ -247,7 +254,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
         LazyVerticalStaggeredGrid(
             state = grid,
             columns = StaggeredGridCells.Fixed(cols),
-            modifier = Modifier.fillMaxSize().bottomBlur(5.dp, .78f),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = swap.value }.bottomBlur(5.dp, .78f),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = inner.calculateTopPadding() + 80.dp,
@@ -383,7 +390,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             count = loaded?.library?.notes?.size ?: 0, loading = loaded == null,
             menu = {
                 androidx.compose.material3.IconButton({ railOpen = !railOpen }) {
-                    Box { Icon(Icons.Rounded.Menu, "Menu"); if (com.b72.keep_canvas.data.Profiles.all.size > 1) Box(Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp)) { ProfileAvatar(com.b72.keep_canvas.data.Profiles.all.firstOrNull { it.id == repo.profileId } ?: com.b72.keep_canvas.data.Profiles.active, 14.dp) } }
+                    Box { Icon(Icons.Rounded.Menu, "Menu"); if (com.b72.keep_canvas.data.Profiles.all.size > 1) Box(Modifier.align(Alignment.BottomEnd).offset(x = 7.dp, y = 7.dp).size(18.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(3.dp)) { ProfileAvatar(com.b72.keep_canvas.data.Profiles.all.firstOrNull { it.id == repo.profileId } ?: com.b72.keep_canvas.data.Profiles.active, 12.dp, letter = false) } }
                 }
             },
             onSearch = { searching = true }, container = Modifier.container(SharedCtx(shared.st, this), "search", 28.dp),
@@ -402,7 +409,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = false },
     )
     FloatingActionButtonMenu(
-        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp).floating(),
         expanded = menu,
         button = {
             ToggleFloatingActionButton(checked = menu, onCheckedChange = { menu = it }) {
@@ -603,17 +610,20 @@ private fun Preview(n: Note, fg: Color) {
         }
         return
     }
-    val sum = remember(n) {
-        n.blocks.firstOrNull { it.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Link) }
-            ?.let { com.b72.keep_canvas.data.tplSummary(it.kind, it.title, it.body) }
-            ?: n.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body
-            ?: ""
-    }
+    val sum = remember(n) { notePreview(n) }
     if (sum.isNotEmpty()) Text(
         sum, maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-        style = TextStyle(fontFamily = Serif, fontSize = 15.sp, lineHeight = 20.sp, fontStyle = FontStyle.Italic), color = fg.copy(alpha = .85f),
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp), color = fg.copy(alpha = .85f),
     )
 }
+
+/** The words a tile shows under its title: a quote, fact or link's own summary, else the first paragraph. */
+internal fun notePreview(n: Note): String =
+    n.blocks.firstOrNull { it.kind in setOf(Kind.Quote, Kind.Stat, Kind.Info, Kind.Poster, Kind.Link) }
+        ?.let { com.b72.keep_canvas.data.tplSummary(it.kind, it.title, it.body) }
+        ?: n.blocks.firstOrNull { it.kind == Kind.Text && it.body.isNotBlank() }?.body
+        ?: ""
+
 
 /** A line of small monospaced capitals over a tile's title: its first tag and the day it was made. */
 @Composable
@@ -719,7 +729,7 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
         }
     }
     androidx.compose.material3.Surface(color = cs.surface, modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = NavInset)) {
             Column(Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(cs.primaryContainer).statusBarsPadding().padding(horizontal = 20.dp, vertical = 20.dp)) {
                 Text("B-72", style = flexStyle(40.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onPrimaryContainer)
                 Text("Settings and your data. All of it stays on this phone unless you back it up.", style = MaterialTheme.typography.bodyMedium, color = cs.onPrimaryContainer.copy(alpha = .8f), modifier = Modifier.padding(top = 6.dp))
@@ -900,8 +910,10 @@ private fun RailLayout(
         androidx.compose.animation.core.tween(380, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f)), label = "rail",
     )
     Box(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxSize()) {
-            Box(Modifier.width(w).fillMaxHeight().clipToBounds()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+            val full = maxWidth
+            // the rail slides in from the left edge; the page keeps its full width and is pushed aside, so nothing in it is laid out again
+            Box(Modifier.requiredWidth(272.dp).fillMaxHeight().offset(x = w - 272.dp)) {
                 Column(Modifier.requiredWidth(272.dp).fillMaxHeight().background(cs.surface).statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp).padding(bottom = 84.dp)) {
                     Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 16.dp))
                     ProfileSwitcher(repo, onSwitchProfile, onNewProfile, onDeleteProfile)
@@ -931,7 +943,7 @@ private fun RailLayout(
                     }
                 }
             }
-            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            Box(Modifier.requiredWidth(full).fillMaxHeight().offset(x = w)) { content() }
         }
         AnimatedVisibility(settings, enter = fadeIn(tween(220)) + slideInHorizontally(tween(380, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))) { it / 6 }, exit = fadeOut(tween(160))) {
             Box(Modifier.fillMaxSize()) {

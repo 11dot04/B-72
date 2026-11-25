@@ -1,6 +1,9 @@
 @file:OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 
 package com.b72.keep_canvas.ui
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.PointerEventPass
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -67,6 +70,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     // 0 notes, 1 canvas, 2 library, 3 artifacts: the top-level places in the floating bar
     var tab by UiPrefs.tab
     androidx.compose.runtime.LaunchedEffect(tab) { if (tab != 2) LibraryPos.reset() }
+    // when the screen was last touched: a page that is still shrinking back into its tile when this changes has been interrupted (a swipe, say)
+    var lastTouch by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
     fun leave() {
@@ -124,8 +129,12 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     Redraws("app")
     InsightsOverlay()
     androidx.compose.runtime.LaunchedEffect(Unit) { Opening.warm = { wid -> notesNow.firstOrNull { it.id == wid }?.let { Warm.note(it) } } }
+    androidx.compose.runtime.SideEffect { Opening.paging = open != null || board != null }
     Surface(color = MaterialTheme.colorScheme.surface) {
-      Box(Modifier.fillMaxSize()) {
+      Box(Modifier.fillMaxSize().pointerInput(Unit) {
+          // every new touch is noted and never consumed
+          awaitPointerEventScope { while (true) { val e = awaitPointerEvent(PointerEventPass.Initial); if (e.changes.any { it.changedToDown() }) lastTouch = System.nanoTime() } }
+      }) {
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = open to board,
@@ -137,7 +146,14 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 androidx.compose.runtime.CompositionLocalProvider(LocalShared provides shared) {
                 // a page leaving with no tile to shrink into (the list was scrolled, or another tab is showing) just fades, quickly, instead of lingering
                 val goneKey = id?.let { "card-$it" }
-                val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s -> if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null || (Opening.live[goneKey] ?: 0) > 1) 1f else 0f }
+                // touching the screen while the page is still on its way back (to swipe to the next item, say) lets it go at once, instead of riding along with the swipe
+                var exitedAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+                val leaving = transition.targetState == androidx.compose.animation.EnterExitState.PostExit
+                androidx.compose.runtime.LaunchedEffect(leaving) { if (leaving && exitedAt == 0L) exitedAt = System.nanoTime() }
+                val touched = exitedAt != 0L && lastTouch > exitedAt
+                val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s ->
+                    if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null) 1f else if (touched) 0f else if ((Opening.live[goneKey] ?: 0) > 1) 1f else 0f
+                }
                 androidx.compose.runtime.CompositionLocalProvider(LocalBackProgress provides { backA.value }) {
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = ghost }) {
                 val note = id?.let { wanted -> loaded?.library?.notes?.firstOrNull { it.id == wanted } }
@@ -184,9 +200,11 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 )
                 else AnimatedContent(
                     targetState = tab,
+                    // Material's fade through: what leaves is gone first, then what arrives fades in and settles up from a touch smaller, so two tabs are never on screen together
                     transitionSpec = {
-                        val dir = if (targetState > initialState) 1 else -1
-                        (slideInHorizontally(spatial) { dir * it / 5 } + fadeIn(fx)) togetherWith (slideOutHorizontally(spatial) { -dir * it / 5 } + fadeOut(fx))
+                        (fadeIn(tween(210, delayMillis = 90, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) +
+                            androidx.compose.animation.scaleIn(tween(300, delayMillis = 90, easing = androidx.compose.animation.core.LinearOutSlowInEasing), initialScale = .94f)) togetherWith
+                            fadeOut(tween(90, easing = androidx.compose.animation.core.FastOutLinearInEasing))
                     },
                     label = "tabs",
                 ) { t -> when (t) {

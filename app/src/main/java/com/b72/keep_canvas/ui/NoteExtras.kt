@@ -241,11 +241,10 @@ fun TripCard(t: Trip, bg: Color, ink: Color, accent: Color, modifier: Modifier =
 @Composable
 fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, modifier: Modifier = Modifier, onTitle: ((String) -> Unit)? = null) {
     val sum = note.summary()
-    val tags = note.suggestedTags()
     val name = if (note.title.isBlank() && onTitle != null) note.blocks.firstNotNullOfOrNull { b -> (b.data["aiTitle"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.length >= 3 } }.orEmpty() else ""
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val events = androidx.compose.runtime.remember(note.blocks) { com.b72.keep_canvas.data.findEvents(note.blocks.joinToString("\n") { it.tripText() }, note.title) }
-    if (sum.isEmpty() && tags.isEmpty() && name.isEmpty() && events.isEmpty()) return
+    if (sum.isEmpty() && name.isEmpty() && events.isEmpty()) return
     Column(modifier.fillMaxWidth()) {
         if (events.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
             for (e in events) AssistChip(
@@ -264,9 +263,6 @@ fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, mo
         }
         if (name.isNotEmpty()) AssistChip(onClick = { onTitle?.invoke(name) }, label = { Text("Title it: $name") }, modifier = Modifier.padding(bottom = 10.dp), border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)), colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg, leadingIconContentColor = fg))
         if (sum.isNotEmpty()) Text(sum, style = TextStyle(fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontStyle = FontStyle.Italic, color = fg.copy(alpha = .85f)), modifier = Modifier.padding(bottom = 10.dp))
-        if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in tags) AssistChip(onClick = { onAddTag(t) }, label = { Text("+ $t") }, border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = .5f)), colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(labelColor = fg, leadingIconContentColor = fg))
-        }
     }
 }
 
@@ -332,12 +328,16 @@ private fun RelatedTile(r: Note, ink: Color, onOpen: (String) -> Unit, modifier:
     ) {
         path?.let { PhotoImage(it, 500, false, cs.tertiary, Modifier.fillMaxSize()) }
         if (path != null) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(.45f to Color.Transparent, 1f to Color.Black.copy(alpha = .7f))))
-        Text(
-            r.title.ifBlank { r.snippet(50) }, maxLines = 3, overflow = TextOverflow.Ellipsis,
-            style = if (r.title.isBlank()) androidx.compose.ui.text.TextStyle(fontFamily = Serif, fontSize = 14.sp, lineHeight = 18.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) else flexStyle(17.sp, wght = 700, rond = 40f, lh = 1.05f),
-            color = if (path != null) Color.White else ink,
-            modifier = Modifier.align(if (path != null) Alignment.BottomStart else Alignment.TopStart).padding(12.dp),
-        )
+        val preview = remember(r) { notePreview(r).ifBlank { r.snippet(80) } }
+        val tint = if (path != null) Color.White else ink
+        Column(Modifier.align(if (path != null) Alignment.BottomStart else Alignment.TopStart).padding(12.dp)) {
+            if (r.title.isNotBlank()) Text(r.title, maxLines = if (path != null) 2 else 3, overflow = TextOverflow.Ellipsis, style = flexStyle(17.sp, wght = 700, rond = 40f, lh = 1.05f), color = tint)
+            if (preview.isNotBlank() && preview != r.title) Text(
+                preview, maxLines = if (path != null) 2 else 6, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp), color = tint.copy(alpha = .82f),
+                modifier = Modifier.padding(top = if (r.title.isNotBlank()) 6.dp else 0.dp),
+            )
+        }
     }
 }
 

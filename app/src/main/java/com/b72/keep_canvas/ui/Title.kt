@@ -60,7 +60,8 @@ object TitleFaces {
             val f = names.firstOrNull { n -> val l = n.lowercase().replace("_", "").replace("-", ""); "instrumentserif" in l && words.all { it in l } && (l.endsWith(".ttf") || l.endsWith(".otf")) } ?: return null
             return runCatching { android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/$f") }.getOrNull()
         }
-        val r = res("instrument_serif"); val ri = res("instrument_serif_italic")
+        // the build fetches them as instrumentserif_regular / _italic (Type.kt's Serif uses the same files); the old names stay as a fallback
+        val r = res("instrumentserif_regular").takeIf { it != 0 } ?: res("instrument_serif"); val ri = res("instrumentserif_italic").takeIf { it != 0 } ?: res("instrument_serif_italic")
         upright = if (r != 0) runCatching { androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(r, androidx.compose.ui.text.font.FontWeight.Normal)) }.getOrNull()
         else asset("regular")?.let { androidx.compose.ui.text.font.FontFamily(it) }
         italic = if (ri != 0) runCatching { androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(ri, androidx.compose.ui.text.font.FontWeight.Normal, androidx.compose.ui.text.font.FontStyle.Italic)) }.getOrNull()
@@ -150,10 +151,23 @@ fun isScriptTitle(text: String, style: String): Boolean {
 }
 
 /** The brush-script face, when the build fetched it; the italic serif otherwise. */
-fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily = assetFamily(ctx, "script", "ornament") ?: assetFamily(ctx, "playlist", "ornament") ?: Script
+fun scriptFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily = resFamily(ctx, "playlist_script") ?: assetFamily(ctx, "script", "ornament") ?: assetFamily(ctx, "playlist", "ornament") ?: Script
 
 /** Playlist Ornament: a font of little pictures on the letter keys (A is a cup, B a smiley), or null if its file is not in assets/fonts. */
-fun ornamentFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily? = assetFamily(ctx, "ornament")
+fun ornamentFamily(ctx: android.content.Context): androidx.compose.ui.text.font.FontFamily? = resFamily(ctx, "playlist_ornament") ?: assetFamily(ctx, "ornament")
+
+private val resFonts = HashMap<String, androidx.compose.ui.text.font.FontFamily>()
+private val resMissed = HashSet<String>()
+
+/** A font the app ships in res/font, by file name (playlist_script, playlist_ornament), or null if the build does not have it. */
+private fun resFamily(ctx: android.content.Context, name: String): androidx.compose.ui.text.font.FontFamily? {
+    resFonts[name]?.let { return it }
+    if (name in resMissed) return null
+    val id = ctx.resources.getIdentifier(name, "font", ctx.packageName)
+    val fam = if (id == 0) null else runCatching { androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(id)) }.getOrNull()
+    if (fam == null) resMissed.add(name) else resFonts[name] = fam
+    return fam
+}
 
 private val assetFonts = HashMap<String, androidx.compose.ui.text.font.FontFamily?>()
 private val assetMissed = HashSet<String>()

@@ -81,6 +81,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Loaded
 import com.b72.keep_canvas.data.Note
@@ -108,20 +109,24 @@ fun FloatingNav(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
             val on = tab == i
             val bg by animateColorAsState(if (on) cs.tertiary else Color.Transparent, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "navbg")
             val fg = if (on) cs.onTertiary else cs.onTertiaryContainer
+            // one spring opens the label, fades it and widens the padding together, so the pill grows in a single motion instead of jumping and then settling
+            val t by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec<Float>(), label = "navsel")
+            val k = t.coerceAtLeast(0f)
             Row(
                 Modifier.clip(CircleShape).background(bg)
                     .clickable(role = Role.Tab, onClickLabel = d.label) { onTab(i) }
-                    .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
-                    .padding(horizontal = if (on) 16.dp else 11.dp, vertical = 12.dp),
+                    .padding(horizontal = (11f + 5f * k).dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(if (on) d.selected else d.icon, if (on) null else d.label, Modifier.size(24.dp), tint = fg)
-                AnimatedVisibility(on) {
-                    Row {
-                        Spacer(Modifier.width(8.dp))
-                        Text(d.label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
-                    }
-                }
+                Text(
+                    d.label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1, softWrap = false,
+                    modifier = Modifier.layout { m, c ->
+                        val p = m.measure(c.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
+                        val gap = (8.dp.roundToPx() * k).toInt()
+                        layout(((p.width * k).toInt() + gap).coerceAtLeast(0), p.height) { p.placeRelative(gap, 0) }
+                    }.graphicsLayer { alpha = k.coerceIn(0f, 1f); clip = true },
+                )
             }
         }
     }
