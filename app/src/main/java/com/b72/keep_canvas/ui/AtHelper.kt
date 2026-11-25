@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -134,8 +136,11 @@ fun AtBar(h: AtHelper) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.widthIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         h.hint?.let { (_, prefix) ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((cmd, what) in AtHelper.COMMANDS.filter { it.first.startsWith(prefix.lowercase()) }) AssistChip(onClick = { h.complete(cmd) }, label = { Text("@$cmd") })
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((cmd, _) in AtHelper.COMMANDS.filter { it.first.startsWith(prefix.lowercase()) }) AssistChip(
+                    onClick = { h.complete(cmd) }, label = { Text("@$cmd", maxLines = 1, softWrap = false) }, border = null,
+                    colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(containerColor = cs.surfaceContainerHigh),
+                )
             }
         }
         for (s in h.sugs.toList().take(2)) {

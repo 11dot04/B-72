@@ -58,7 +58,7 @@ fun GroupedMenu(expanded: Boolean, onDismiss: () -> Unit, groups: List<MenuGroup
                             }
                         },
                         onClick = e.onClick,
-                        leadingIcon = e.icon?.let { ic -> { Icon(ic, null, tint = e.tint) } },
+                        leadingIcon = e.icon?.let { ic -> { Icon(ic, null, tint = if (e.tint == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else e.tint) } },
                         trailingIcon = e.trailing?.let { ic -> { Icon(ic, null) } },
                     )
                 }

@@ -517,7 +517,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     val notes = loaded?.library?.notes.orEmpty()
     var shelf by UiPrefs.shelf
     val counts = remember(notes) { SHELVES.map { s -> notes.count { n -> n.blocks.any { it.kind == s.kind } } } }
-    var stage by rememberSaveable { mutableIntStateOf(-1) }
+    var stage by LibraryPos.stage
     val all = remember(notes, shelf) {
         // a note can hold several links, and each is a bookmark of its own; every other shelf shows a note's first
         if (SHELVES[shelf].kind == Kind.Link) notes.asReversed().flatMap { n -> n.blocks.filter { it.kind == Kind.Link }.map { n to it } }
@@ -529,11 +529,11 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         val rated = all.mapNotNull { it.second.dbl("rating") }.filter { it > 0 }
         listOfNotNull("${all.size} in all", if (done > 0) "$done ${statusLabels(SHELVES[shelf].kind).getOrNull(2)?.lowercase() ?: "done"}" else null, if (rated.isNotEmpty()) "avg %.1f★".format(rated.average()) else null).joinToString("  ·  ")
     }
-    val ls = rememberLazyListState()
+    val ls = rememberLazyListState(initialFirstVisibleItemIndex = LibraryPos.row[shelf] ?: 0)
     val isFilm = SHELVES[shelf].kind == Kind.Film
     val isBook = SHELVES[shelf].kind == Kind.Book
-    var filmIdx by UiPrefs.filmIdx
-    var bookIdx by UiPrefs.bookIdx
+    var filmIdx by LibraryPos.film
+    var bookIdx by LibraryPos.book
     val page = rememberScrollState()
     val focus by remember {
         derivedStateOf {
@@ -542,6 +542,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
             info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset - info.beforeContentPadding) }?.index ?: 0
         }
     }
+    androidx.compose.runtime.LaunchedEffect(focus, shelf) { LibraryPos.row[shelf] = focus }
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().verticalScroll(page).padding(top = 16.dp)) {
         TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))

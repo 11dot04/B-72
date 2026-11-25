@@ -66,6 +66,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
     var board by rememberSaveable { mutableStateOf<String?>(null) }
     // 0 notes, 1 canvas, 2 library, 3 artifacts: the top-level places in the floating bar
     var tab by UiPrefs.tab
+    androidx.compose.runtime.LaunchedEffect(tab) { if (tab != 2) LibraryPos.reset() }
     // a note just started from the + menu opens on its page with the cursor in it
     var draft by remember { mutableStateOf<String?>(null) }
     fun leave() {

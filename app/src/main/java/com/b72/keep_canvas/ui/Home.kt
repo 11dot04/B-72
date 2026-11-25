@@ -139,6 +139,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.b72.keep_canvas.data.Images
 import com.b72.keep_canvas.data.Kind
+import com.b72.keep_canvas.data.str
 import com.b72.keep_canvas.data.Loaded
 import com.b72.keep_canvas.data.Note
 import com.b72.keep_canvas.data.Source
@@ -168,11 +169,11 @@ private class Filt(val name: String, val icon: ImageVector, val test: (Note) -> 
 
 private val FILTERS = listOf(
     Filt("All", Icons.Rounded.Apps) { true },
-    Filt("Starred", Icons.Rounded.Star) { it.starred },
     Filt("Photos", Icons.Rounded.Image) { it.photos.isNotEmpty() },
     Filt("Lists", Icons.Rounded.Checklist) { n -> n.blocks.any { it.kind == Kind.Checklist } },
     Filt("Quotes", Icons.Rounded.FormatQuote) { n -> n.blocks.any { it.kind == Kind.Quote } },
     Filt("Links", Icons.Rounded.Link) { n -> n.blocks.any { it.kind == Kind.Link } },
+    Filt("Drawings", Icons.Rounded.Draw) { n -> n.blocks.any { it.kind == Kind.Drawing || (it.kind == Kind.Photo && it.str("lbl") == "drawing") } },
     Filt("Trips", Icons.Rounded.Train) { n -> n.blocks.any { it.trip() != null } },
 )
 
@@ -271,12 +272,9 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
-                    // one quiet row: the kinds of note first (icon only until chosen), then the busiest tags, scrolling sideways
+                    // one quiet row: the kinds of note, icon only until chosen
                     val have = remember(loaded?.library) { FILTERS.filter { f -> f.name == "All" || loaded?.library?.notes.orEmpty().any(f.test) } }
-                    val topTags = remember(loaded?.library) {
-                        loaded?.library?.notes.orEmpty().flatMap { it.tags }.groupingBy { it }.eachCount().filter { it.value >= 2 }.entries.sortedByDescending { it.value }.take(5).map { it.key }
-                    }
-                    if (have.size > 1 || topTags.isNotEmpty()) Row(
+                    if (have.size > 1) Row(
                         Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -291,11 +289,6 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                                 colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                             )
                         }
-                        for (t in topTags) FilterChip(
-                            selected = filter == "#$t", onClick = { filter = if (filter == "#$t") "All" else "#$t" }, label = { Text("#$t") },
-                            shape = RoundedCornerShape(50), border = null,
-                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                        )
                     }
                 }
             }
@@ -909,25 +902,10 @@ private fun RailLayout(
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.width(w).fillMaxHeight().clipToBounds()) {
-                Column(Modifier.requiredWidth(272.dp).fillMaxHeight().background(cs.surface).statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp)) {
-                    Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 56.dp, bottom = 16.dp))
+                Column(Modifier.requiredWidth(272.dp).fillMaxHeight().background(cs.surface).statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp).padding(bottom = 84.dp)) {
+                    Text("B-72", style = flexStyle(32.sp, wght = 760, rond = 40f, lh = 1f), color = cs.onSurface, modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 16.dp))
                     ProfileSwitcher(repo, onSwitchProfile, onNewProfile, onDeleteProfile)
                     Spacer(Modifier.height(12.dp))
-                    for ((i, d) in DESTS.withIndex()) {
-                        val on = i == tab
-                        Row(
-                            Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp))
-                                .background(if (on) cs.secondaryContainer else Color.Transparent)
-                                .clickable { onTab(i) }.padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(if (on) d.selected else d.icon, null, tint = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant)
-                            Spacer(Modifier.width(12.dp))
-                            Text(d.label, style = MaterialTheme.typography.labelLarge, color = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant, maxLines = 1)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().height(1.dp).background(cs.outlineVariant))
                     // what the old side menu held, one tap away: each opens straight onto its own sheet
                     for ((key, name, icon) in listOf(
                         Triple("stats", "Statistics", Icons.Rounded.Insights),

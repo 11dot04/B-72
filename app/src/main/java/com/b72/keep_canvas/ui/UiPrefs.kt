@@ -17,6 +17,30 @@ class IntPref(private val key: String, def: Int) {
     fun set(v: Int) { st = v; UiPrefs.save(key, v) }
 }
 
+/** Like [IntPref] but only for as long as the app runs: nothing is written to the phone. */
+class MemInt(def: Int) {
+    private var st by mutableIntStateOf(def)
+    operator fun getValue(t: Any?, p: KProperty<*>): Int = st
+    operator fun setValue(t: Any?, p: KProperty<*>, v: Int) { st = v }
+    fun set(v: Int) { st = v }
+}
+
+/**
+ * Where the Library was left, so that opening an item and coming back lands on the same one. Kept in memory only, and cleared when the
+ * Library tab is left, so it starts again from the first item after another screen or a new launch.
+ */
+object LibraryPos {
+    val film = MemInt(0)
+    val book = MemInt(0)
+    /** The status filter (to read, reading...) on the shelf. */
+    val stage = MemInt(-1)
+    /** The focused item of each shelf that scrolls sideways, by shelf. */
+    val row = androidx.compose.runtime.mutableStateMapOf<Int, Int>()
+    fun reset() {
+        film.set(0); book.set(0); stage.set(-1); row.clear()
+    }
+}
+
 /**
  * What the app remembers about where you were: the tab, the shelf and the place on it, how the notes are laid out. These live here, not
  * in a screen, because a screen that is left (to open a note, say) forgets everything it held, and back must return to the same place.
@@ -25,8 +49,6 @@ object UiPrefs {
     private var sp: SharedPreferences? = null
     val tab = IntPref("tab", 0)
     val shelf = IntPref("shelf", 0)
-    val filmIdx = IntPref("filmIdx", 0)
-    val bookIdx = IntPref("bookIdx", 0)
     val cube = IntPref("cube", 0)
     val hub = IntPref("hub", 0)
     val cols = IntPref("cols", 2)
@@ -59,7 +81,7 @@ object UiPrefs {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
-        listOf(tab, shelf, filmIdx, bookIdx, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone, insights, tipsSeen).forEach { it.load(p) }
+        listOf(tab, shelf, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone, insights, tipsSeen).forEach { it.load(p) }
         Insights.shown = insights.value == 1
         recents = p.getString("recents", "").orEmpty().split('\u001f').filter { it.isNotBlank() }
     }
