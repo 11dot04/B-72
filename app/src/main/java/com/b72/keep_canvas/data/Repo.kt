@@ -364,7 +364,15 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
      * A film, book or song named inline in a note: it is kept in the Library as an item of its own (or the one already there is used), and the
      * note links to it. Returns the title that the link points at.
      */
+    private val entityLock = kotlinx.coroutines.sync.Mutex()
+
     suspend fun addEntity(kind: Kind, c: Cand): String {
+        // one at a time: a second tap on the same result waits for the first to be saved, then finds it already there
+        entityLock.lock()
+        try { return addEntityLocked(kind, c) } finally { entityLock.unlock() }
+    }
+
+    private suspend fun addEntityLocked(kind: Kind, c: Cand): String {
         val title = c.title.trim()
         val have = loaded?.library?.notes.orEmpty().firstOrNull { n -> n.isLibrary && n.blocks.any { it.kind == kind && it.title.equals(title, true) } }
         if (have != null) return have.title.ifBlank { title }   // already in the Library: link to that one
