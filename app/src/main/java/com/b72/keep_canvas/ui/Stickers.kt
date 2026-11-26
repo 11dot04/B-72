@@ -206,6 +206,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
         if (com.b72.keep_canvas.data.Assistant.installed) com.b72.keep_canvas.data.ArtifactAi.run(ctx.applicationContext, stickers) { aiTick.intValue++ }
     }
 
+    androidx.compose.runtime.DisposableEffect(view != null) { Opening.sub = view != null; onDispose { Opening.sub = false } }
     Box(Modifier.fillMaxSize()) {
         // the grid is the container an artifact's page grows out of; it steps aside while a page is open
         androidx.compose.animation.AnimatedVisibility(visible = view == null, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
@@ -233,7 +234,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
             }
         }
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(view == null), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SmallFloatingActionButton(onClick = { if (!busy) takePhoto() }, containerColor = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) { Icon(Icons.Rounded.PhotoCamera, "Take a photo") }
             ExtendedFloatingActionButton(
                 onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },

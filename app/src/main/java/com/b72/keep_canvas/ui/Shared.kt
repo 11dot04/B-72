@@ -126,7 +126,9 @@ val NavInset = 96.dp
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun Modifier.floating(): Modifier {
+fun Modifier.floating(on: Boolean = true): Modifier {
+    // [on] is false while a page that belongs to this screen is open (an artifact's page, say): the button then stays under it like the rest of the screen
+    if (!on) return this
     val c = LocalShared.current ?: return this
     return with(c.st) { this@floating.renderInSharedTransitionScopeOverlay(zIndexInOverlay = 10f, renderInOverlay = { isTransitionActive && !Opening.paging }) }
 }
@@ -158,6 +160,8 @@ object Opening {
     var id by androidx.compose.runtime.mutableStateOf<String?>(null)
     /** True while a note or a canvas is showing over the tabs. */
     var paging by androidx.compose.runtime.mutableStateOf(false)
+    /** True while a screen shows a page of its own (an artifact's page): the floating bar steps away for it. */
+    var sub by androidx.compose.runtime.mutableStateOf(false)
     private val centres = HashMap<String, androidx.compose.ui.geometry.Offset>()
     /** Set by the app: lays the tapped note's words out in the background while the container is still travelling. */
     var warm: (String) -> Unit = {}

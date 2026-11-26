@@ -167,7 +167,7 @@ fun NotePage(
     val allNow by androidx.compose.runtime.rememberUpdatedState(allNotes)
     val atScope = androidx.compose.runtime.rememberCoroutineScope()
     val atCtx = androidx.compose.ui.platform.LocalContext.current
-    val at = remember(note.id) { AtHelper(atCtx, atScope, { allNow }, note.id) }
+    val at = remember(note.id) { AtHelper(atCtx, atScope, { allNow }, note.id, entity = if (repo != null) ({ k, c -> repo.addEntity(k, c) }) else null) }
     val density = LocalDensity.current
     // duotone is a setting of the app (in the side menu), not something each page carries
     val tint = UiPrefs.duotone.value == 1

@@ -226,7 +226,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         cardFor?.let { (cid, ckind) -> AddSheet(repo, cid, hasList = false, initial = ckind) { cardFor = null; repo.discardIfEmpty(cid) } }
         // the nav floats over a soft darkening so it reads against anything scrolling under it
         AnimatedVisibility(
-            visible = open == null && board == null,
+            visible = open == null && board == null && !Opening.sub,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(fx), exit = fadeOut(fx),
         ) {
@@ -250,7 +250,7 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
         }
         // the floating bar belongs to the three top-level places only
         AnimatedVisibility(
-            visible = open == null && board == null,
+            visible = open == null && board == null && !Opening.sub,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeIn(fx),
             exit = slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it } + fadeOut(fx),

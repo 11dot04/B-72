@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** One thing a request found: what to show, a line of detail, and the words that replace the request in the note. */
-class AtOption(val label: String, val sub: String, val insert: String)
+class AtOption(val label: String, val sub: String, val insert: String, val cand: com.b72.keep_canvas.data.Cand? = null, val kind: com.b72.keep_canvas.data.Kind? = null)
 
 /** One request typed into a note, and its answer as it arrives. [state]: 0 looking, 1 found, 2 nothing, 3 could not. */
 class AtSug(val id: Long, val cmd: String, val query: String, val token: String, val st: RichState) {
@@ -60,7 +60,11 @@ class AtSug(val id: Long, val cmd: String, val query: String, val token: String,
  * words exactly as they were. One word per place to look, so the app knows where:
  * `@look` a fact, date or source (the assistant), `@mine` your own notes, `@read` a book, `@watch` a film or show, `@listen` a song.
  */
-class AtHelper(private val ctx: Context, private val scope: CoroutineScope, private val notes: () -> List<Note>, private val selfId: String) {
+class AtHelper(
+    private val ctx: Context, private val scope: CoroutineScope, private val notes: () -> List<Note>, private val selfId: String,
+    /** Keeps a film, book or song in the Library as an item of its own and returns the title to link to; null where a note cannot do that. */
+    private val entity: (suspend (com.b72.keep_canvas.data.Kind, com.b72.keep_canvas.data.Cand) -> String)? = null,
+) {
     val sugs = mutableStateListOf<AtSug>()
     var hint by mutableStateOf<Pair<RichState, String>?>(null)
     private var next = 0L
@@ -92,6 +96,16 @@ class AtHelper(private val ctx: Context, private val scope: CoroutineScope, priv
     }
 
     fun accept(s: AtSug, o: AtOption) {
+        // a film, book or song becomes a Library item and the note gets a link to it, so tapping the name opens something instead of staying plain text
+        val c = o.cand; val k = o.kind
+        if (c != null && k != null && entity != null) {
+            scope.launch {
+                val t = runCatching { entity.invoke(k, c) }.getOrNull()
+                val text = if (t.isNullOrBlank()) o.insert else "[[$t]]"
+                if (s.st.replaceToken(s.token, text)) sugs.remove(s) else { s.state = 2; s.message = "That line has changed since, so nothing was swapped." }
+            }
+            return
+        }
         if (s.st.replaceToken(s.token, o.insert)) sugs.remove(s) else { s.state = 2; s.message = "That line has changed since, so nothing was swapped." }
     }
 
@@ -115,15 +129,15 @@ class AtHelper(private val ctx: Context, private val scope: CoroutineScope, priv
                     }
                     s.options = hits.map { AtOption(it.title, it.blocks.firstNotNullOfOrNull { b -> b.body.takeIf { x -> x.isNotBlank() } }.orEmpty().replace('\n', ' ').take(70), "[[${it.title}]]") }
                 }
-                "read" -> s.options = searchBooks(s.query).take(3).map(::fromCand)
-                "watch" -> s.options = searchFilmsAndShows(s.query).take(4).map(::fromCand)
-                "listen" -> s.options = searchTracks(s.query).take(3).map(::fromCand)
+                "read" -> s.options = searchBooks(s.query).take(3).map { fromCand(it, com.b72.keep_canvas.data.Kind.Book) }
+                "watch" -> s.options = searchFilmsAndShows(s.query).take(4).map { fromCand(it, com.b72.keep_canvas.data.Kind.Film) }
+                "listen" -> s.options = searchTracks(s.query).take(3).map { fromCand(it, com.b72.keep_canvas.data.Kind.Track) }
             }
             if (s.state == 0) { s.state = if (s.options.isEmpty()) 2 else 1; if (s.options.isEmpty()) s.message = "Nothing found for that." }
         } catch (e: Throwable) { s.state = 3; s.message = "Could not look that up just now." }
     }
 
-    private fun fromCand(c: com.b72.keep_canvas.data.Cand) = AtOption(c.title, c.sub, c.title + (if (c.sub.isNotBlank()) " — " + c.sub.replace(" · ", ", ") else ""))
+    private fun fromCand(c: com.b72.keep_canvas.data.Cand, k: com.b72.keep_canvas.data.Kind) = AtOption(c.title, c.sub, c.title + (if (c.sub.isNotBlank()) " — " + c.sub.replace(" · ", ", ") else ""), c, k)
 
     companion object {
         val COMMANDS = listOf("look" to "a fact, date or source", "mine" to "one of your notes", "read" to "a book", "watch" to "a film or show", "listen" to "a song")

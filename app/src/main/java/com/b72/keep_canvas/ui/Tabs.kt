@@ -48,7 +48,7 @@ fun FitTabs(labels: List<String>, counts: List<String?>, selected: Int, onSelect
                     t += m.measure(l, st, softWrap = false, maxLines = 1).size.width
                     counts.getOrNull(i)?.let { c -> t += m.measure(c, mono, softWrap = false, maxLines = 1).size.width + with(d) { 2.dp.toPx() } }
                 }
-                return t
+                return t * 1.06f + with(d) { 16.dp.toPx() }   // a margin, so a font that measures a little wider than expected never pushes the last tab off the row
             }
             var size = 22f
             var other = 52f
@@ -73,7 +73,7 @@ fun FitTabs(labels: List<String>, counts: List<String?>, selected: Int, onSelect
                     val wd by animateFloatAsState(if (i == selected) 100f else plan.second, spring(.9f, 300f), label = "wdth")
                     Text(l, maxLines = 1, softWrap = false, style = rflexStyle(plan.first.sp, wght = if (i == selected) 650 else 450, wdth = wd, lh = 1f), color = if (i == selected) cs.onSecondaryContainer else cs.onSurfaceVariant)
                     counts.getOrNull(i)?.let { c ->
-                        Text(c, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp), color = if (i == selected) cs.onSecondaryContainer else cs.onSurfaceVariant.copy(alpha = .8f), modifier = Modifier.padding(start = 2.dp))
+                        Text(c, maxLines = 1, softWrap = false, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp), color = if (i == selected) cs.onSecondaryContainer else cs.onSurfaceVariant.copy(alpha = .8f), modifier = Modifier.padding(start = 2.dp))
                     }
                 }
             }
