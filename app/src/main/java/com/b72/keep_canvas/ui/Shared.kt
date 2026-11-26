@@ -162,6 +162,8 @@ object Opening {
     var paging by androidx.compose.runtime.mutableStateOf(false)
     /** True while a screen shows a page of its own (an artifact's page): the floating bar steps away for it. */
     var sub by androidx.compose.runtime.mutableStateOf(false)
+    /** The note the home screen's lookback card shows: the card carries its container, and the same note's tile in the grid does not, so one page never has two places to grow from. */
+    var revisit by androidx.compose.runtime.mutableStateOf<String?>(null)
     private val centres = HashMap<String, androidx.compose.ui.geometry.Offset>()
     /** Set by the app: lays the tapped note's words out in the background while the container is still travelling. */
     var warm: (String) -> Unit = {}

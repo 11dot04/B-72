@@ -344,7 +344,7 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
                         val cover = n.cover?.path
                         val bg = if (i % 2 == 0) cs.tertiaryContainer else cs.secondaryContainer
                         val fg = if (i % 2 == 0) cs.onTertiaryContainer else cs.onSecondaryContainer
-                        Box(Modifier.fillMaxSize().opener(n.id, shrink = .1f).maskClip(RoundedCornerShape(28.dp)).noteContainer(n.id, 28.dp).background(bg).clickable(onClickLabel = "Open") { Opening.press(n.id); onOpen(n.id) }) {
+                        Box(Modifier.fillMaxSize().opener(n.id, shrink = .1f).maskClip(RoundedCornerShape(28.dp)).then(if (Opening.revisit != n.id) Modifier.noteContainer(n.id, 28.dp) else Modifier).background(bg).clickable(onClickLabel = "Open") { Opening.press(n.id); onOpen(n.id) }) {
                             if (cover != null) {
                                 PhotoImage(cover, 400, false, cs.primary, Modifier.fillMaxSize())
                                 Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .62f)))))
@@ -454,9 +454,11 @@ private fun Revisit(n: Note, days: Int, onClick: () -> Unit) {
     val path = n.cover?.path
     val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 600) }, n.id) { value = path?.let { Images.load(it, 600) } }
     val ago = when { days >= 365 -> "${days / 365} year${if (days >= 730) "s" else ""} ago"; days >= 60 -> "${days / 30} months ago"; else -> "$days days ago" }
+    androidx.compose.runtime.DisposableEffect(n.id) { Opening.revisit = n.id; onDispose { if (Opening.revisit == n.id) Opening.revisit = null } }
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiaryContainer)
-            .clickable(onClickLabel = "Open this older note", onClick = onClick).padding(12.dp),
+        // the card is a container like any tile: the note grows out of it, and shrinks back into it
+        Modifier.fillMaxWidth().padding(bottom = 4.dp).noteContainer(n.id, 28.dp).clip(RoundedCornerShape(28.dp)).background(cs.tertiaryContainer)
+            .clickable(onClickLabel = "Open this older note", onClick = { Opening.press(n.id); onClick() }).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         img?.let { Image(it, null, Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)), contentScale = ContentScale.Crop); Spacer(Modifier.width(14.dp)) }
@@ -484,7 +486,7 @@ private fun FeatureTile(n: Note, shared: SharedCtx, grow: Boolean = true, onClic
     val img by produceState<ImageBitmap?>(path?.let { Images.peek(it, 900) }, n.id) { value = path?.let { Images.load(it, 900) } }
     val shape = RoundedCornerShape(36.dp)
     val t = n.title
-    Box(Modifier.fillMaxWidth().then(if (grow) Modifier.container(shared, "card-${n.id}", 36.dp) else Modifier).clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = { ticks.tick(); onClick() })) {
+    Box(Modifier.fillMaxWidth().then(if (grow && Opening.revisit != n.id) Modifier.container(shared, "card-${n.id}", 36.dp) else Modifier).clip(shape).background(bg).clickable(onClickLabel = "Open note", onClick = { ticks.tick(); onClick() })) {
         if (img != null) {
             Box(Modifier.fillMaxWidth().aspectRatio(.92f)) {
                 Image(
@@ -546,7 +548,7 @@ private fun Tile(n: Note, shared: SharedCtx, grow: Boolean = true, onClick: () -
             .scale(press)
             .graphicsLayer { rotationZ = if (n.starred) (seedMod(n.id, 5) - 2) * 1.1f + 1.4f else 0f }
             .aspectRatio((1 / ratio).toFloat())
-            .then(if (grow) Modifier.container(shared, "card-${n.id}", 18.dp) else Modifier)
+            .then(if (grow && Opening.revisit != n.id) Modifier.container(shared, "card-${n.id}", 18.dp) else Modifier)
             .clip(TileShape)
             .background(bg)
             .clickable(interactionSource = src, indication = null, onClickLabel = "Open note", onClick = { ticks.tick(); onClick() }),

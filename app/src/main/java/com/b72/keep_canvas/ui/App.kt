@@ -153,7 +153,8 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
                 val leaving = transition.targetState == androidx.compose.animation.EnterExitState.PostExit
                 androidx.compose.runtime.LaunchedEffect(leaving) { if (leaving && exitedAt == 0L) exitedAt = System.nanoTime() }
                 val touched = exitedAt != 0L && lastTouch > exitedAt
-                val ghost by transition.animateFloat(transitionSpec = { tween(150, delayMillis = 30) }, label = "ghost") { s ->
+                // once the screen is touched the page goes within a few frames; otherwise it fades out a little after it has landed
+                val ghost by transition.animateFloat(transitionSpec = { if (touched) tween(60) else tween(150, delayMillis = 30) }, label = "ghost") { s ->
                     if (s == androidx.compose.animation.EnterExitState.Visible || goneKey == null) 1f else if (touched) 0f else if ((Opening.live[goneKey] ?: 0) > 1) 1f else 0f
                 }
                 androidx.compose.runtime.CompositionLocalProvider(LocalBackProgress provides { backA.value }) {
