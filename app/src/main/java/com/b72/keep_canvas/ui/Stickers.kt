@@ -215,7 +215,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
             TabTitle("Artifacts", paths.size, Modifier.padding(top = 16.dp))
             Text(
                 if (paths.isEmpty()) "THE COLLECTION IS EMPTY" else "${paths.size} OBJECT${if (paths.size == 1) "" else "S"}  \u00b7  ${placed.size} ON DISPLAY  \u00b7  KEPT ON THIS DEVICE",
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .5.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
             )
             FitTabs(listOf("Stickers", "Stamps", "On display"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
             if (shown.isEmpty() && !busy) {
@@ -256,6 +256,12 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
     }
 }
 
+/** "Flower Sticker" and "Flower sticker" read as one style: the first word keeps its capital, the others are lower case unless they are acronyms or already in capitals. */
+internal fun sentenceCase(t: String): String =
+    t.trim().split(" ").mapIndexed { i, w ->
+        if (i == 0 || w.length < 2 || w.all { !it.isLowerCase() } || w.drop(1).any { it.isUpperCase() }) w else w.replaceFirstChar { it.lowercase() }
+    }.joinToString(" ")
+
 /** The accession number: the year it entered the collection, then four digits that belong to it alone. */
 private fun accession(path: String, made: Long?): String {
     val y = made?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).year } ?: java.time.Year.now().value
@@ -288,7 +294,7 @@ private fun Vitrine(path: String, tags: List<String>, grow: SharedCtx?, onClick:
             }
         }
         Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp)) {
-            Text(name ?: " ", style = flexStyle(18.sp, wght = 520, lh = 1.08f), color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(name?.let { sentenceCase(it) } ?: " ", style = flexStyle(18.sp, wght = 520, lh = 1.08f), color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${kind.uppercase()}  \u00b7  ${accession(path, facts?.made)}", style = Mono10, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         }
     }

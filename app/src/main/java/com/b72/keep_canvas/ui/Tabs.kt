@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,12 +36,13 @@ fun FitTabs(labels: List<String>, counts: List<String?>, selected: Int, onSelect
     val d = LocalDensity.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val avail = constraints.maxWidth.toFloat()
-        val gap = with(d) { 14.dp.toPx() }
+        val gap = with(d) { 4.dp.toPx() }
+        val pad = with(d) { 24.dp.toPx() }   // the room a tab's own pill adds around its label
         // (type size, width of the tabs that are not chosen) that makes the row fit
         val plan = remember(labels, counts, selected, avail, d.density) {
-            val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+            val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             fun total(size: Float, other: Float): Float {
-                var t = gap * (labels.size - 1)
+                var t = gap * (labels.size - 1) + pad * labels.size
                 labels.forEachIndexed { i, l ->
                     val st = if (i == selected) rflexStyle(size.sp, wght = 650, wdth = 100f, lh = 1f) else rflexStyle(size.sp, wght = 450, wdth = other, lh = 1f)
                     t += m.measure(l, st, softWrap = false, maxLines = 1).size.width
@@ -57,13 +61,19 @@ fun FitTabs(labels: List<String>, counts: List<String?>, selected: Int, onSelect
             if (!found) { size = 13f; other = 25f }
             size to other
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        // the first label stays on the screen margin; its pill reaches out past it
+        Row(Modifier.fillMaxWidth().offset(x = (-12).dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             labels.forEachIndexed { i, l ->
-                Row(Modifier.clickable(onClickLabel = l) { onSelect(i) }, verticalAlignment = Alignment.Top) {
+                // the chosen tab sits in a tonal pill, so it reads as chosen without relying on weight alone
+                val pill by androidx.compose.animation.animateColorAsState(if (i == selected) cs.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent, label = "pill")
+                Row(
+                    Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(50)).background(pill).clickable(onClickLabel = l) { onSelect(i) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
                     val wd by animateFloatAsState(if (i == selected) 100f else plan.second, spring(.9f, 300f), label = "wdth")
-                    Text(l, maxLines = 1, softWrap = false, style = rflexStyle(plan.first.sp, wght = if (i == selected) 650 else 450, wdth = wd, lh = 1f), color = if (i == selected) cs.onSurface else cs.onSurface.copy(alpha = .4f))
+                    Text(l, maxLines = 1, softWrap = false, style = rflexStyle(plan.first.sp, wght = if (i == selected) 650 else 450, wdth = wd, lh = 1f), color = if (i == selected) cs.onSecondaryContainer else cs.onSurfaceVariant)
                     counts.getOrNull(i)?.let { c ->
-                        Text(c, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp), color = if (i == selected) cs.primary else cs.onSurface.copy(alpha = .35f), modifier = Modifier.padding(start = 2.dp))
+                        Text(c, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp), color = if (i == selected) cs.onSecondaryContainer else cs.onSurfaceVariant.copy(alpha = .8f), modifier = Modifier.padding(start = 2.dp))
                     }
                 }
             }

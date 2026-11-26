@@ -639,9 +639,12 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
         // room below the last thing, so it can be scrolled clear of the floating bar
         Spacer(Modifier.height(150.dp))
     }
+    // at rest the button is a compact icon at the corner, clear of the words on the featured panel; it opens into its label once the page has been scrolled to the end, where there is room
+    val atEnd by remember { androidx.compose.runtime.derivedStateOf { page.maxValue > 0 && page.value >= page.maxValue - 24 } }
     androidx.compose.material3.ExtendedFloatingActionButton(
+        expanded = atEnd,
         text = { Text("Add " + listOf("song", "book", "film or show", "recipe", "link")[shelf]) },
-        icon = { Icon(Icons.Rounded.Add, null) },
+        icon = { Icon(Icons.Rounded.Add, "Add " + listOf("song", "book", "film or show", "recipe", "link")[shelf]) },
         onClick = { onAdd(SHELVES[shelf].kind) },
         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(),
     )

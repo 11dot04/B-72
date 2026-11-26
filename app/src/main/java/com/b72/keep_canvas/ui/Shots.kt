@@ -385,14 +385,24 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, onDelete: (Sh
     }
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            q, { q = it; answer = null }, singleLine = true, placeholder = { Text("Search, or ask in your own words") },
-            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            trailingIcon = { IconButton(onClick = { ask() }, enabled = q.isNotBlank() && !asking) { Icon(Icons.Rounded.AutoAwesome, "Ask") } },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (q.trim().endsWith("?")) ask() }),
-            shape = CircleShape, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        )
+        // the same filled pill as Home's search bar
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
+            Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                if (q.isEmpty()) Text("Search, or ask in your own words", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                androidx.compose.foundation.text.BasicTextField(
+                    q, { q = it; answer = null }, Modifier.fillMaxWidth(), singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(cs.primary),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (q.trim().endsWith("?")) ask() }),
+                )
+            }
+            IconButton(onClick = { ask() }, enabled = q.isNotBlank() && !asking) { Icon(Icons.Rounded.AutoAwesome, "Ask") }
+        }
         if (cats.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (c in cats) FilterChip(cat == c, { cat = if (cat == c) null else c }, label = { Text(categoryLabel(c)) })
         }
