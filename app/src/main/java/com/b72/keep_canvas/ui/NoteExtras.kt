@@ -269,10 +269,10 @@ fun AiStrip(note: Note, fg: Color, accent: Color, onAddTag: (String) -> Unit, mo
 // ---------------------------------------------------------------- related, laid out like a "Top albums" panel
 
 /**
- * A tertiary panel with a tall, narrow title spread across its width and a row of rounded tiles that scrolls sideways.
- * The tiles alternate in height and sit staggered, the last one peeking in from the edge. (A plain LazyRow, not the carousel
- * the photos above already use.)
+ * A tertiary panel with a tall, narrow title spread across its width and the Material uncontained carousel of the related notes:
+ * cards keep their size and the one at the edge is cut by the mask as it scrolls off.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
     if (related.isEmpty()) return
@@ -288,32 +288,14 @@ fun RelatedMosaic(related: List<Note>, pal: NotePalette, onOpen: (String) -> Uni
             Text("RELATED", style = head, color = ink)
             Text("NOTES", style = head, color = ink)
         }
-        //         // an uncontained strip, done by hand so it always scrolls to its very end: a plain snapping row whose cards keep their size and
-        // shrink and soften as they run off either edge (the carousel component cut the last card short)
-        val rs = androidx.compose.foundation.lazy.rememberLazyListState()
-        androidx.compose.foundation.lazy.LazyRow(
-            state = rs,
-            flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(rs),
+        androidx.compose.material3.carousel.HorizontalUncontainedCarousel(
+            state = androidx.compose.material3.carousel.rememberCarouselState { related.size },
+            itemWidth = 160.dp,
+            itemSpacing = 10.dp,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(196.dp),
-        ) {
-            items(related.size, key = { related[it].id }) { i ->
-                RelatedTile(related[i], ink, onOpen, Modifier.width(150.dp).fillMaxHeight().graphicsLayer {
-                    val info = rs.layoutInfo
-                    val me = info.visibleItemsInfo.firstOrNull { it.index == i } ?: return@graphicsLayer
-                    val start = info.viewportStartOffset + 16.dp.toPx()
-                    val end = info.viewportEndOffset - 16.dp.toPx()
-                    val left = me.offset.toFloat(); val right = left + me.size
-                    val shown = ((minOf(right, info.viewportEndOffset.toFloat()) - maxOf(left, info.viewportStartOffset.toFloat())) / me.size).coerceIn(0f, 1f)
-                    // only the part beyond the padded edge counts, so a card resting inside the padding is untouched
-                    val inside = ((minOf(right, end) - maxOf(left, start)) / me.size).coerceIn(0f, 1f)
-                    val f = if (shown >= 1f && inside >= 1f) 1f else (.5f * shown + .5f * inside)
-                    val k = .86f + .14f * f
-                    scaleX = k; scaleY = k; alpha = .55f + .45f * f
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (left + me.size / 2f < (info.viewportStartOffset + info.viewportEndOffset) / 2f) 1f else 0f, .5f)
-                }.clip(RoundedCornerShape(26.dp)))
-            }
+        ) { i ->
+            RelatedTile(related[i], ink, onOpen, Modifier.fillMaxSize().maskClip(RoundedCornerShape(26.dp)))
         }
     }
 }

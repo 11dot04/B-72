@@ -52,6 +52,8 @@ class AtSug(val id: Long, val cmd: String, val query: String, val token: String,
     var state by mutableStateOf(0)
     var options by mutableStateOf(emptyList<AtOption>())
     var message by mutableStateOf("")
+    /** True from the first tap on an answer until it has been put into the note, so a second tap does nothing. */
+    var taken = false
 }
 
 /**
@@ -98,7 +100,9 @@ class AtHelper(
     fun accept(s: AtSug, o: AtOption) {
         // a film, book or song becomes a Library item and the note gets a link to it, so tapping the name opens something instead of staying plain text
         val c = o.cand; val k = o.kind
+        if (s.taken) return
         if (c != null && k != null && entity != null) {
+            s.taken = true
             scope.launch {
                 val t = runCatching { entity.invoke(k, c) }.getOrNull()
                 val text = if (t.isNullOrBlank()) o.insert else "[[$t]]"

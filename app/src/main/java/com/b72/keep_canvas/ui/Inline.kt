@@ -108,6 +108,7 @@ fun InlineBody(
     val fr = remember { FocusRequester() }
     val links = remember(linked) { linked.getLinkAnnotations(0, linked.length).isNotEmpty() }
     var editing by remember { mutableStateOf(!links) }
+    var hadFocus by remember { mutableStateOf(false) }
     val sig = st.tv.text + "\u0001" + spansToString(st.spans) + "\u0001" + st.indentOn
     val saved = body + "\u0001" + spans + "\u0001" + indent
     val latest by rememberUpdatedState(st)
@@ -230,7 +231,8 @@ fun InlineBody(
                     } else if (e.key == Key.Tab) { st.indentBy(if (e.isShiftPressed) -1 else 1); true } else false
                 }.onFocusChanged {
                     focused = it.isFocused
-                    if (it.isFocused) onRich(st) else { onRich(null); if (links) editing = false }
+                    // the first report is "not focused yet", before the field has asked for focus: only a focus that is lost afterwards ends editing
+                    if (it.isFocused) { hadFocus = true; onRich(st) } else { onRich(null); if (links && hadFocus) { editing = false; hadFocus = false } }
                 },
                 textStyle = style, cursorBrush = SolidColor(pal.primary), visualTransformation = vt, onTextLayout = { lay = it },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
