@@ -546,7 +546,7 @@ fun LibraryScreen(loaded: Loaded?, onOpen: (String) -> Unit, onAdd: (Kind) -> Un
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().bottomBlur(4.dp, .8f).statusBarsPadding().verticalScroll(page).padding(top = 16.dp)) {
         TabTitle("Library", counts.sum(), Modifier.padding(horizontal = 20.dp))
-        Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
+        Text("Everything you saved that has a shape of its own.", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
         FitTabs(SHELVES.map { it.name }, counts.map { it.toString() }, shelf, { shelf = it; stage = -1 }, Modifier.padding(horizontal = 20.dp, vertical = 18.dp))
         if (all.isNotEmpty()) {
             Text(stats.uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))

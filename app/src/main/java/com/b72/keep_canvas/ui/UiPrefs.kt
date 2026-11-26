@@ -59,6 +59,10 @@ object UiPrefs {
     /** 1: a title reshapes (size and width axis) between its tile and its page; 0: it is only scaled. */
     val titleMorph = IntPref("titleMorph", 1)
     val saveShots = IntPref("saveShots", 1)
+    /** Which typefaces a title may be set in when the app picks (1 = allowed): Google Sans Flex, Roboto Flex, Instrument Serif. */
+    val faceSans = IntPref("faceSans", 1)
+    val faceRf = IntPref("faceRf", 1)
+    val faceSerif = IntPref("faceSerif", 0)
     /** 1: photos on a note page are tinted in the page's colour (duotone); 0: shown as taken. */
     val duotone = IntPref("duotone", 1)
     /** Debug builds only: the insights strip. */
@@ -81,7 +85,7 @@ object UiPrefs {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("b72_ui", Context.MODE_PRIVATE)
         sp = p
-        listOf(tab, shelf, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, duotone, insights, tipsSeen).forEach { it.load(p) }
+        listOf(tab, shelf, cube, hub, cols, sort, boardGrid, artifactTab, shotTab, titleMorph, saveShots, faceSans, faceRf, faceSerif, duotone, insights, tipsSeen).forEach { it.load(p) }
         Insights.shown = insights.value == 1
         recents = p.getString("recents", "").orEmpty().split('\u001f').filter { it.isNotBlank() }
     }

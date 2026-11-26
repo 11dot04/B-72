@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.background
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -231,6 +232,18 @@ fun App(share: com.b72.keep_canvas.data.Share? = null, onShareHandled: () -> Uni
             Box(
                 Modifier.fillMaxWidth().height(150.dp).background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.colorScheme.scrim.copy(alpha = .34f))),
+                ),
+            )
+        }
+        // a soft surface-coloured veil under the status bar, so the clock and battery stay readable over whatever scrolls beneath
+        AnimatedVisibility(
+            visible = open == null && board == null,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(fx), exit = fadeOut(fx),
+        ) {
+            Box(
+                Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 14.dp).background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(0f to MaterialTheme.colorScheme.surface.copy(alpha = .88f), .6f to MaterialTheme.colorScheme.surface.copy(alpha = .5f), 1f to androidx.compose.ui.graphics.Color.Transparent),
                 ),
             )
         }

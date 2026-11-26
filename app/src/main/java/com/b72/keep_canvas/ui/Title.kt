@@ -101,7 +101,12 @@ private val Looks = listOf(
     TitleLook(860, 0f, 0f),                                                // heavy and sharp
 )
 
-fun lookFor(seed: String) = Looks[seedOf(seed) % Looks.size]
+fun lookFor(seed: String): TitleLook {
+    // only the typefaces switched on in Settings are drawn from; if none is, Google Sans Flex is used
+    val sans = UiPrefs.faceSans.value == 1; val rf = UiPrefs.faceRf.value == 1
+    val pool = Looks.filter { if (it.rf) rf else sans }.ifEmpty { Looks.filter { !it.rf } }
+    return pool[seedOf(seed) % pool.size]
+}
 
 /** Only about half of the titles whose look has an accent word actually show it, so the grid is not a row of the same trick. A style picked by hand always does. */
 private fun accentOn(k: TitleLook, seed: String, style: String) = k.accent != Accent.None && (StyleLooks.containsKey(style) || (seedOf(seed) / Looks.size) % 2 == 0)
@@ -139,7 +144,7 @@ fun lookFor(seed: String, style: String) = StyleLooks[style] ?: lookFor(seed)
 private fun lookOf(text: String, seed: String, style: String): TitleLook {
     StyleLooks[style]?.let { return it }
     if (style == "instrument" && TitleFaces.ready) return SerifLooks[seedOf(seed) % 2]
-    if (style.isEmpty() && TitleFaces.ready && fitsSerif(text) && (seedOf(seed) / 3) % 4 == 0) return SerifLooks[(seedOf(seed) / 12) % 2]
+    if (style.isEmpty() && TitleFaces.ready && UiPrefs.faceSerif.value == 1 && fitsSerif(text) && (seedOf(seed) / 3) % 4 == 0) return SerifLooks[(seedOf(seed) / 12) % 2]
     return lookFor(seed)
 }
 

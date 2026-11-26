@@ -382,7 +382,8 @@ fun HomeScreen(repo: Repo, loaded: Loaded?, grid: LazyStaggeredGridState, shared
 
     // the pill is the container the search page grows out of; while the page is open the pill steps aside
     androidx.compose.animation.AnimatedVisibility(
-        visible = !searching, modifier = Modifier.align(Alignment.TopCenter),
+        // the bar stays above a page that is closing, so it is never covered for a moment as the page settles
+        visible = !searching, modifier = Modifier.align(Alignment.TopCenter).then(if (searching) Modifier else Modifier.floating()),
         enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None,
     ) {
         KeepBar(
@@ -741,6 +742,12 @@ private fun AppDrawer(repo: Repo, jump: String? = null, onClose: () -> Unit) {
                 Entry("Clear unused photos", Icons.Rounded.CleaningServices) { scope.launch { val b = repo.cleanOrphans(); say(if (b > 0) "Freed ${"%.1f".format(b / 1_048_576.0)} MB" else "Nothing to clear") } },
             ))
             var saveShots by UiPrefs.saveShots
+            var fSans by UiPrefs.faceSans; var fRf by UiPrefs.faceRf; var fSerif by UiPrefs.faceSerif
+            Group("Title typefaces (new layouts)", listOf(
+                Entry("Google Sans Flex", Icons.Rounded.Notes, fSans == 1, keepOpen = true) { fSans = 1 - fSans },
+                Entry("Roboto Flex", Icons.Rounded.Notes, fRf == 1, keepOpen = true) { fRf = 1 - fRf },
+                Entry("Instrument Serif", Icons.Rounded.Notes, fSerif == 1, keepOpen = true) { fSerif = 1 - fSerif },
+            ))
             Group("Look and feel", listOf(
                 Entry("Keep artifact photos in the gallery", Icons.Rounded.PhotoLibrary, saveShots == 1, keepOpen = true) { saveShots = 1 - saveShots },
             ))

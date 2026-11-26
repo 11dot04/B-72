@@ -533,7 +533,7 @@ private fun CleanPane(queued: List<Shot>, suggested: List<Shot>, infos: Map<Long
         if (picked.isNotEmpty()) ExtendedFloatingActionButton(
             text = { Text("Delete ${picked.size}") }, icon = { Icon(Icons.Rounded.Delete, null) }, onClick = { onDelete(picked) },
             containerColor = cs.errorContainer, contentColor = cs.onErrorContainer,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 110.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 110.dp).floating(),
         )
     }
 }
