@@ -360,6 +360,21 @@ class Repo(private val ctx: Context, private val scope: CoroutineScope) {
         appendBlock(noteId, newBlock(kind, "r${System.nanoTime()}", title = c.title, path = path).copy(data = data))
     }
 
+    /**
+     * A film, book or song named inline in a note: it is kept in the Library as an item of its own (or the one already there is used), and the
+     * note links to it. Returns the title that the link points at.
+     */
+    suspend fun addEntity(kind: Kind, c: Cand): String {
+        val title = c.title.trim()
+        val have = loaded?.library?.notes.orEmpty().firstOrNull { n -> n.isLibrary && n.blocks.any { it.kind == kind && it.title.equals(title, true) } }
+        if (have != null) return have.title.ifBlank { title }   // already in the Library: link to that one
+        val id = (System.currentTimeMillis() * 1000).toString()
+        val path = saveImage(c.image, imageDir(ctx))
+        val data = c.data.filterValues { it.isNotEmpty() }.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) as kotlinx.serialization.json.JsonElement }
+        upsert(Note(id = id, blocks = listOf(newBlock(kind, "r$id", title = title, path = path).copy(data = data))))
+        return title
+    }
+
     /** A link card; the preview (title, picture, numbers for an activity) is filled in as soon as it arrives. */
     fun appendLink(noteId: String, url: String) {
         val id = "l${System.nanoTime()}"
