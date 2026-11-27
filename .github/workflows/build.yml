@@ -35,6 +35,8 @@ jobs:
           B=https://raw.githubusercontent.com/google/fonts/main/ofl
           curl -fsSL "$B/instrumentserif/InstrumentSerif-Regular.ttf" -o $d/instrumentserif_regular.ttf
           curl -fsSL "$B/instrumentserif/InstrumentSerif-Italic.ttf" -o $d/instrumentserif_italic.ttf
+          # Noto Emoji, the one-colour variable font (weight axis), for the swipe stickers; the app falls back to the system emoji without it
+          curl -fsSL "$B/notoemoji/NotoEmoji%5Bwght%5D.ttf" -o $d/notoemoji.ttf || echo "Noto Emoji not fetched"
           curl -fsSL "$B/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf" -o $d/googlesansflex.ttf
           ls -l $d
 
