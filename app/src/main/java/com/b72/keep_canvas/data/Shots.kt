@@ -17,6 +17,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
 
@@ -27,6 +28,8 @@ class Shot(val id: Long, val uri: Uri, val taken: Long, val w: Int, val h: Int)
 data class ShotInfo(
     val title: String, val summary: String, val category: String, val oneTime: Boolean, val tags: List<String>, val text: String,
     val state: String = "new", val ai: Boolean = false, val col: String = "",
+    /** When a snoozed screenshot comes back to Review (state "snoozed"). */
+    val until: Long = 0L,
 )
 
 /**
@@ -51,6 +54,7 @@ object Shots {
             infos[id] = ShotInfo(
                 s("t"), s("s"), s("c"), (i["o"] as? JsonPrimitive)?.booleanOrNull == true,
                 (i["g"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }, s("x"), s("st").ifEmpty { "new" }, (i["a"] as? JsonPrimitive)?.booleanOrNull == true, s("col"),
+                (i["u"] as? JsonPrimitive)?.longOrNull ?: 0L,
             )
         }
     }
@@ -58,7 +62,7 @@ object Shots {
     fun save(ctx: Context) {
         val o = buildJsonObject {
             for ((id, i) in infos.toMap()) put(id.toString(), buildJsonObject {
-                put("t", i.title); put("s", i.summary); put("c", i.category); put("o", i.oneTime); put("x", i.text.take(1500)); put("st", i.state); put("a", i.ai); put("col", i.col)
+                put("t", i.title); put("s", i.summary); put("c", i.category); put("o", i.oneTime); put("x", i.text.take(1500)); put("st", i.state); put("a", i.ai); put("col", i.col); put("u", i.until)
                 put("g", buildJsonArray { i.tags.forEach { add(JsonPrimitive(it)) } })
             })
         }
@@ -67,8 +71,16 @@ object Shots {
 
     fun setState(ctx: Context, id: Long, state: String) {
         val i = infos[id] ?: ShotInfo("Screenshot", "", "other", false, emptyList(), "")
-        infos[id] = i.copy(state = state)
+        infos[id] = i.copy(state = state, until = if (state == "snoozed") i.until else 0L)
         save(ctx)
+    }
+
+    /** Puts a screenshot aside until [until]; it comes back to Review then, and a notification says so. */
+    fun snooze(ctx: Context, id: Long, until: Long) {
+        val i = infos[id] ?: ShotInfo("Screenshot", "", "other", false, emptyList(), "")
+        infos[id] = i.copy(state = "snoozed", until = until)
+        save(ctx)
+        ShotSnooze.schedule(ctx.applicationContext, until)
     }
 
     /** Puts a screenshot in a collection (an empty name takes it out). */

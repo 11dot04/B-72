@@ -65,11 +65,46 @@ object Reminders {
     private val Build_SDK_33 get() = android.os.Build.VERSION.SDK_INT >= 33
 }
 
+/** Snoozed screenshots: one alarm per due time, and a notification that opens the Screens tab when some are back. */
+object ShotSnooze {
+    private const val CHANNEL = "snoozed"
+
+    fun schedule(ctx: Context, at: Long) {
+        val am = ctx.getSystemService(AlarmManager::class.java)
+        val pi = PendingIntent.getBroadcast(
+            ctx, 7000 + (at / 60000L).toInt() % 100000, Intent(ctx, ReminderReceiver::class.java).putExtra("shots", true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi) }
+    }
+
+    fun notify(ctx: Context) {
+        Shots.load(ctx)
+        val now = System.currentTimeMillis() + 60000L
+        val back = Shots.infos.values.count { it.state == "snoozed" && it.until <= now }
+        if (back == 0) return
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(CHANNEL) == null) nm.createNotificationChannel(NotificationChannel(CHANNEL, "Snoozed screenshots", NotificationManager.IMPORTANCE_DEFAULT))
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val open = PendingIntent.getActivity(
+            ctx, 7001, Intent(ctx, MainActivity::class.java).putExtra(TAB_KEY, 4).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = NotificationCompat.Builder(ctx, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(if (back == 1) "A screenshot is back" else "$back screenshots are back")
+            .setContentText("Waiting in Review")
+            .setContentIntent(open).setAutoCancel(true).build()
+        runCatching { NotificationManagerCompat.from(ctx).notify(7001, n) }
+    }
+}
+
 const val OPEN_KEY = "b72.open"
 const val NEW_KEY = "b72.new"
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
+        if (intent.hasExtra("shots")) { ShotSnooze.notify(ctx); return }
         if (intent.hasExtra("url")) { TripAlerts.notify(ctx, intent); com.b72.keep_canvas.widget.TripWidget.refresh(ctx); return }
         Reminders.notify(ctx, intent.getStringExtra("id").orEmpty(), intent.getStringExtra("title").orEmpty())
     }
