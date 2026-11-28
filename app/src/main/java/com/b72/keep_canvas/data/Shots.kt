@@ -60,14 +60,23 @@ object Shots {
         }
     }
 
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Writes everything known to disk. The copy is taken here; the JSON is built and written on a background thread, in order, so a swipe never waits on the disk. */
     fun save(ctx: Context) {
+        val snapshot = infos.toMap()
+        val target = file(ctx)
+        writer.execute { write(snapshot, target) }
+    }
+
+    private fun write(snapshot: Map<Long, ShotInfo>, target: File) {
         val o = buildJsonObject {
-            for ((id, i) in infos.toMap()) put(id.toString(), buildJsonObject {
+            for ((id, i) in snapshot) put(id.toString(), buildJsonObject {
                 put("t", i.title); put("s", i.summary); put("c", i.category); put("o", i.oneTime); put("x", i.text.take(1500)); put("st", i.state); put("a", i.ai); put("col", i.col); put("u", i.until)
                 put("g", buildJsonArray { i.tags.forEach { add(JsonPrimitive(it)) } })
             })
         }
-        runCatching { file(ctx).also { it.parentFile?.mkdirs() }.writeText(o.toString()) }
+        runCatching { target.also { it.parentFile?.mkdirs() }.writeText(o.toString()) }
     }
 
     fun setState(ctx: Context, id: Long, state: String) {
