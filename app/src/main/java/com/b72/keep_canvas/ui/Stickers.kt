@@ -84,6 +84,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -219,6 +222,9 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .5.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
             )
             FitTabs(listOf("Stickers", "Stamps", "On display"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
+            if (paths.isEmpty() && !busy) Box(Modifier.padding(top = 20.dp).size(120.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.tertiaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(44.dp), tint = cs.onTertiaryContainer)
+            }
             if (shown.isEmpty() && !busy) {
                 Text(
                     if (paths.isEmpty()) "Photograph something small: a cup, a ticket, a plant, a thing from your desk. It is cut out, named, catalogued and kept here, in a case of its own."
@@ -246,7 +252,7 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
         androidx.compose.animation.AnimatedVisibility(visible = shownPage != null, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
           val p = shownPage ?: return@AnimatedVisibility
           val pageCtx = LocalShared.current?.let { SharedCtx(it.st, this) }
-          Box(Modifier.let { if (pageCtx != null) it.container(pageCtx, "art-$p", 28.dp) else it }) {
+          Box(Modifier.let { if (pageCtx != null) it.container(pageCtx, "art-$p", 28.dp) else it }.background(cs.surfaceContainerLow)) {
             ArtifactPage(p, onCanvases[p].orEmpty(), onBack = { view = null }, onCanvas = { view = null; onCanvas(it) }, onDelete = {
                 val undo = repo.removeStickerUndo(p); view = null
                 scope.launch { if (snack.showSnackbar("Artifact deleted", actionLabel = "Undo", withDismissAction = true, duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) undo() }
@@ -271,6 +277,18 @@ private fun accession(path: String, made: Long?): String {
 
 private val Mono10 = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .7.sp)
 
+private val PLATES by lazy { listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Flower, MaterialShapes.Clover4Leaf, MaterialShapes.Cookie6Sided, MaterialShapes.Gem, MaterialShapes.Bun) }
+
+/** A shape from the Expressive set behind an object, in a tonal colour, turned a little: each object keeps its own (chosen from its name on disk). */
+@Composable
+private fun Plate(path: String, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val h = path.hashCode() and 0x7fffffff
+    val shape = PLATES[h % PLATES.size].toShape()
+    val col = when ((h / 7) % 3) { 0 -> cs.primaryContainer; 1 -> cs.tertiaryContainer; else -> cs.secondaryContainer }
+    Box(modifier.rotate(((h / 3) % 50 - 25).toFloat()).clip(shape).background(col))
+}
+
 /** The tile an object sits on: a flat tonal container in the app's own colours, like every other card. */
 @Composable
 private fun Case(modifier: Modifier, @Suppress("UNUSED_PARAMETER") accent: Color, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
@@ -288,10 +306,14 @@ private fun Vitrine(path: String, tags: List<String>, grow: SharedCtx?, onClick:
     val kind = remember(path, aiTick.intValue) { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker" }
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open", indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onClick)) {
         Case(Modifier.fillMaxWidth().aspectRatio(1f).let { if (grow != null) it.container(grow, "art-$path", 28.dp) else it }, cs.primary) {
+            if (!isStamp(path)) Plate(path, Modifier.align(Alignment.Center).fillMaxSize(.8f))
             img?.let { Image(it, null, Modifier.fillMaxSize().padding(16.dp).rotate(((path.hashCode() % 7) - 3) * 1.4f), contentScale = ContentScale.Fit) }
-            if (tags.isNotEmpty()) Row(Modifier.align(Alignment.TopStart).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(cs.primary))
-                Text("ON DISPLAY", style = Mono10, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
+            if (tags.isNotEmpty()) Row(
+                Modifier.align(Alignment.TopStart).padding(10.dp).clip(CircleShape).background(cs.surface.copy(alpha = .9f)).padding(start = 7.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Dashboard, null, Modifier.size(13.dp), tint = cs.primary)
+                Text(if (tags.size > 1) "ON ${tags.size} CANVASES" else "ON DISPLAY", style = Mono10, color = cs.onSurface, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 5.dp))
             }
         }
         Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp)) {
@@ -332,14 +354,16 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
     val kind = info?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker"
     Column(Modifier.fillMaxSize().background(cs.surfaceContainerLow).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 120.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            IconButton(onClick = onBack, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+            FilledTonalIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(onClick = onSaveCopy, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.SaveAlt, "Save a copy to the gallery") }
-                IconButton(onClick = { confirm = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = cs.surface)) { Icon(Icons.Rounded.Delete, "Remove") }
+                FilledTonalIconButton(onClick = onSaveCopy) { Icon(Icons.Rounded.SaveAlt, "Save a copy to the gallery") }
+                FilledTonalIconButton(onClick = { confirm = true }) { Icon(Icons.Rounded.Delete, "Remove") }
             }
         }
         // drag to turn the object and look at it from the side
         Case(Modifier.fillMaxWidth().height(400.dp), cs.primary) {
+            // the object's own shape sits behind it, big, and stays put while the object tilts above it
+            if (!isStamp(path)) Plate(path, Modifier.align(Alignment.Center).size(300.dp))
             Box(
                 Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(vertical = 28.dp)
                     .pointerInput(Unit) {
