@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 
 package com.b72.keep_canvas.ui
 
@@ -64,6 +64,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import com.b72.keep_canvas.data.Cloud
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.animation.animateContentSize
@@ -280,14 +281,14 @@ fun ShotsScreen() {
         val av = this
         val grow = LocalShared.current?.let { SharedCtx(it.st, av) }
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(top = 16.dp)) {
-            TabTitle("Screenshots", shots.size.takeIf { it > 0 }, Modifier.padding(horizontal = 20.dp))
+            TabTitle("Screenshots", shots.size.takeIf { it > 0 }, Modifier.floating().padding(horizontal = 20.dp))
             if (!granted) {
                 Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Go through your screenshots, keep the ones worth keeping, and let the rest go. Everything is read on this phone.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant)
                     Button(onClick = { ask.launch(needsPermission(ctx)) }, modifier = Modifier.padding(top = 20.dp)) { Text("Allow access to screenshots") }
                 }
             } else {
-                FitTabs(listOf("Review", "Kept", "Clean up"), listOf(queue.size, kept.size, cleanCount).map { it.toString() }, tab, { tab = it }, Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
+                FitTabs(listOf("Review", "Kept", "Clean up"), listOf(queue.size, kept.size, cleanCount).map { it.toString() }, tab, { tab = it }, Modifier.floating().padding(horizontal = 20.dp, vertical = 14.dp))
                 reading?.let { (d, t) ->
                     Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         LoadingIndicator(Modifier.size(22.dp))
@@ -575,7 +576,7 @@ private fun fitsCard(s: Shot): Boolean { val a = s.w.toFloat() / s.h.coerceAtLea
 private class KeptState {
     val q = mutableStateOf(""); val cat = mutableStateOf<String?>(null); val col = mutableStateOf<String?>(null)
     val answer = mutableStateOf<String?>(null); val matches = mutableStateOf<List<Shot>>(emptyList())
-    val grid = androidx.compose.foundation.lazy.grid.LazyGridState()
+    val grid = androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState()
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -628,7 +629,7 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
     Column(Modifier.fillMaxSize()) {
         // the same filled pill as Home's search bar
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(start = 16.dp, end = 4.dp),
+            Modifier.floating().fillMaxWidth().padding(horizontal = 20.dp).height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
@@ -644,17 +645,19 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
             }
             IconButton(onClick = { ask() }, enabled = q.isNotBlank() && !asking) { Icon(Icons.Rounded.AutoAwesome, "Ask") }
         }
-        if (cats.size > 1) Row(Modifier.endFade().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 36.dp, top = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (cats.size > 1) Row(Modifier.floating().endFade().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 36.dp, top = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (c in cats) FilterChip(cat == c, { cat = if (cat == c) null else c }, label = { Text(categoryLabel(c)) })
         }
         if (asking) LoadingIndicator(Modifier.padding(20.dp).size(40.dp).align(Alignment.CenterHorizontally))
-        LazyVerticalGrid(
-            GridCells.Fixed(2), state = st.grid, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 150.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(1f),
+        // staggered: every screenshot keeps its own proportions, so nothing is padded out to match its neighbour
+        androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
+            androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2), state = st.grid,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 150.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalItemSpacing = 14.dp, modifier = Modifier.weight(1f),
         ) {
             // the answer, in the manner of Pixel Screenshots: a sentence, where it came from, and what it came from
             answer?.let { a ->
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                item(span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) {
                     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                         Text("FROM YOUR SCREENSHOTS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)
                         Text(a, style = flexStyle(24.sp, wght = 480, lh = 1.2f), color = cs.onSurface, modifier = Modifier.padding(top = 8.dp))
@@ -663,7 +666,7 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
                 }
             }
             // collections, as stacks of what is in them
-            if (answer == null && q.isBlank() && col == null && collections.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+            if (answer == null && q.isBlank() && col == null && collections.isNotEmpty()) item(span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) {
                 Column {
                     Text("COLLECTIONS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -689,23 +692,23 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
                 }
             }
             col?.let { c ->
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                item(span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable { col = null }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Close, "Leave the collection", Modifier.size(20.dp))
                         Text(c, style = flexStyle(26.sp, wght = 680, lh = 1.1f), modifier = Modifier.padding(start = 10.dp))
                     }
                 }
             }
-            if (shown.isEmpty() && !asking) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+            if (shown.isEmpty() && !asking) item(span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) {
                 Text(if (kept.isEmpty()) "Nothing kept yet. Swipe right on a screenshot in Review." else "Nothing matches.", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp))
             }
             items(shown, key = { it.id }) { s ->
                 val i = infos[s.id]
                 Column(Modifier.clickable(onClickLabel = "Open") { onOpen(s) }) {
-                    val k = remember(s.id) { kindOf(s) }
+                    // its own proportions (a very long capture is held to a tall strip and shows its top)
                     ShotImage(
-                        s, 500, Modifier.fillMaxWidth().aspectRatio(.62f).let { if (grow != null) it.container(grow, "shot-${s.id}", 22.dp) else it }.clip(RoundedCornerShape(22.dp)),
-                        if (k == ShotKind.Partial) ContentScale.Fit else ContentScale.Crop, if (k == ShotKind.Scrolling) Alignment.TopCenter else Alignment.Center,
+                        s, 500, Modifier.fillMaxWidth().aspectRatio(shotAspect(s).coerceIn(.3f, 1.8f)).let { if (grow != null) it.container(grow, "shot-${s.id}", 22.dp) else it }.clip(RoundedCornerShape(22.dp)),
+                        ContentScale.Crop, if (shotAspect(s) < .3f) Alignment.TopCenter else Alignment.Center,
                     )
                     Text(i?.title.orEmpty(), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
                     Text(categoryLabel(i?.category.orEmpty()).uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)

@@ -250,6 +250,12 @@ fun NotePage(
         val w = maxWidth - 32.dp
         val wPx = with(density) { w.toPx() }
         val lay = if (title.isNotEmpty()) rememberTitleLay(title, wPx, note.id, style = note.layout) else null
+        // a watermark, for some notes: a faint one-colour emoji for what the title is about, half off the bottom right corner, under the words
+        val mark = remember(note.id, note.title) { Glyphs.forNote(note.id, note.title) }
+        if (mark != null) GlyphMark(
+            mark, 260.dp, pal.fg.copy(alpha = .075f),
+            Modifier.align(Alignment.BottomEnd).offset(x = 56.dp, y = 50.dp).graphicsLayer { rotationZ = ((note.id.hashCode() and 0xff) % 31 - 15).toFloat() },
+        )
 
         // the line being typed is kept near the middle, so neither the keyboard nor the formatting strip ever covers it
         val richNow by androidx.compose.runtime.rememberUpdatedState(rich)

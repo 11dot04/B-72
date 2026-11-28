@@ -84,8 +84,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Dashboard
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Schedule
@@ -222,8 +222,8 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
                 style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .5.sp), color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
             )
             FitTabs(listOf("Stickers", "Stamps", "On display"), listOf(stickers.size, stamps.size, placed.size).map { it.toString() }, tab, { tab = it }, Modifier.padding(top = 14.dp, bottom = 14.dp))
-            if (paths.isEmpty() && !busy) Box(Modifier.padding(top = 20.dp).size(120.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.tertiaryContainer), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(44.dp), tint = cs.onTertiaryContainer)
+            if (paths.isEmpty() && !busy) Box(Modifier.padding(top = 20.dp).size(132.dp).clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerHigh).dotGrid(cs.onSurface.copy(alpha = .10f)), contentAlignment = Alignment.Center) {
+                GlyphMark("\uD83D\uDCF7", 84.dp, cs.onSurface.copy(alpha = .35f), Modifier.rotate(-8f), weight = 500)
             }
             if (shown.isEmpty() && !busy) {
                 Text(
@@ -240,8 +240,9 @@ fun StickersScreen(repo: Repo, loaded: Loaded?, onBack: () -> Unit, onCanvas: (S
             }
         }
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(view == null), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SmallFloatingActionButton(onClick = { if (!busy) takePhoto() }, containerColor = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) { Icon(Icons.Rounded.PhotoCamera, "Take a photo") }
+        // the camera and the maker side by side, one height and one shape, so they read as a pair
+        Row(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 104.dp).floating(view == null), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            FloatingActionButton(onClick = { if (!busy) takePhoto() }, containerColor = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) { Icon(Icons.Rounded.PhotoCamera, "Take a photo") }
             ExtendedFloatingActionButton(
                 onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 icon = { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Icon(Icons.Rounded.AutoAwesome, null) },
@@ -277,18 +278,6 @@ private fun accession(path: String, made: Long?): String {
 
 private val Mono10 = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .7.sp)
 
-private val PLATES by lazy { listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Flower, MaterialShapes.Clover4Leaf, MaterialShapes.Cookie6Sided, MaterialShapes.Gem, MaterialShapes.Bun) }
-
-/** A shape from the Expressive set behind an object, in a tonal colour, turned a little: each object keeps its own (chosen from its name on disk). */
-@Composable
-private fun Plate(path: String, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    val h = path.hashCode() and 0x7fffffff
-    val shape = PLATES[h % PLATES.size].toShape()
-    val col = when ((h / 7) % 3) { 0 -> cs.primaryContainer; 1 -> cs.tertiaryContainer; else -> cs.secondaryContainer }
-    Box(modifier.rotate(((h / 3) % 50 - 25).toFloat()).clip(shape).background(col))
-}
-
 /** The tile an object sits on: a flat tonal container in the app's own colours, like every other card. */
 @Composable
 private fun Case(modifier: Modifier, @Suppress("UNUSED_PARAMETER") accent: Color, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
@@ -306,8 +295,15 @@ private fun Vitrine(path: String, tags: List<String>, grow: SharedCtx?, onClick:
     val kind = remember(path, aiTick.intValue) { com.b72.keep_canvas.data.ArtifactAi.get(ctx, path)?.kind?.takeIf { it.isNotBlank() } ?: if (isStamp(path)) "Stamp" else "Sticker" }
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open", indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onClick)) {
         Case(Modifier.fillMaxWidth().aspectRatio(1f).let { if (grow != null) it.container(grow, "art-$path", 28.dp) else it }, cs.primary) {
-            if (!isStamp(path)) Plate(path, Modifier.align(Alignment.Center).fillMaxSize(.8f))
-            img?.let { Image(it, null, Modifier.fillMaxSize().padding(16.dp).rotate(((path.hashCode() % 7) - 3) * 1.4f), contentScale = ContentScale.Fit) }
+            // cut paper on dotted paper: a faint emoji for what it is, then the object with a hard shadow under it
+            Box(Modifier.fillMaxSize().dotGrid(cs.onSurface.copy(alpha = .10f)))
+            val mark = remember(name) { name?.let { Glyphs.forName(it) } }
+            if (mark != null) GlyphMark(mark, 150.dp, cs.onSurface.copy(alpha = .07f), Modifier.align(Alignment.BottomEnd).offset(x = 26.dp, y = 30.dp).rotate(((path.hashCode() and 0xff) % 31 - 15).toFloat()))
+            img?.let { b ->
+                val r = ((path.hashCode() % 7) - 3) * 1.4f
+                Image(b, null, Modifier.fillMaxSize().padding(16.dp).offset(3.dp, 4.dp).rotate(r), contentScale = ContentScale.Fit, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black.copy(alpha = .22f)))
+                Image(b, null, Modifier.fillMaxSize().padding(16.dp).rotate(r), contentScale = ContentScale.Fit)
+            }
             if (tags.isNotEmpty()) Row(
                 Modifier.align(Alignment.TopStart).padding(10.dp).clip(CircleShape).background(cs.surface.copy(alpha = .9f)).padding(start = 7.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -362,8 +358,10 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
         }
         // drag to turn the object and look at it from the side
         Case(Modifier.fillMaxWidth().height(400.dp), cs.primary) {
-            // the object's own shape sits behind it, big, and stays put while the object tilts above it
-            if (!isStamp(path)) Plate(path, Modifier.align(Alignment.Center).size(300.dp))
+            // dotted paper, a faint emoji for what it is, and the object above them with a hard shadow, tilting as you drag
+            Box(Modifier.fillMaxSize().dotGrid(cs.onSurface.copy(alpha = .10f)))
+            val mark = remember(name) { name?.let { Glyphs.forName(it) } }
+            if (mark != null) GlyphMark(mark, 300.dp, cs.onSurface.copy(alpha = .07f), Modifier.align(Alignment.BottomEnd).offset(x = 50.dp, y = 56.dp).rotate(((path.hashCode() and 0xff) % 31 - 15).toFloat()))
             Box(
                 Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(vertical = 28.dp)
                     .pointerInput(Unit) {
@@ -378,7 +376,11 @@ private fun ArtifactPage(path: String, tags: List<String>, onBack: () -> Unit, o
                     }
                     .graphicsLayer { rotationX = tiltX.value; rotationY = tiltY.value; cameraDistance = 16f * density },
             ) {
-                img?.let { Image(it, null, Modifier.fillMaxSize().rotate(((path.hashCode() % 7) - 3) * 1.2f), contentScale = ContentScale.Fit) }
+                img?.let { b ->
+                    val r = ((path.hashCode() % 7) - 3) * 1.2f
+                    Image(b, null, Modifier.fillMaxSize().offset(5.dp, 7.dp).rotate(r), contentScale = ContentScale.Fit, colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black.copy(alpha = .22f)))
+                    Image(b, null, Modifier.fillMaxSize().rotate(r), contentScale = ContentScale.Fit)
+                }
             }
             Text("DRAG TO TURN", style = Mono10, color = cs.onSurfaceVariant.copy(alpha = .6f), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
         }
