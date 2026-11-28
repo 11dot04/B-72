@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -54,14 +55,19 @@ fun EmojiSticker(glyph: String, modifier: Modifier = Modifier, size: Dp = 96.dp,
     val sh: androidx.compose.ui.graphics.Shape = shape?.toShape() ?: RoundedCornerShape(size * .4f)
     val ink = Color(0xFF1B1B1F)
     val cs = if (colors.size >= 2) colors else listOf(Color(0xFFE8DEF8), Color(0xFFFFD8E4))
-    Box(
-        modifier.graphicsLayer { rotationZ = tilt }.size(size).shadow(8.dp, sh).clip(sh)
-            .background(Brush.sweepGradient(cs + cs.first()))
-            .background(Brush.linearGradient(0f to Color.White.copy(alpha = .55f), .45f to Color.White.copy(alpha = .0f), .55f to Color.White.copy(alpha = .22f), 1f to Color.Transparent))
-            .border(5.dp, Color.White, sh),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(glyph, fontFamily = fam, fontSize = (size.value * .56f).sp, color = ink.copy(alpha = .28f), modifier = Modifier.graphicsLayer { translationX = 3.dp.toPx(); translationY = 3.dp.toPx() })
-        Text(glyph, fontFamily = fam, fontSize = (size.value * .56f).sp, color = ink)
+    // built from plain clipped layers (a dark one offset for the shadow, a white one for the die-cut edge, the colours a little smaller on top):
+    // no shadow elevation and no stroked outline, which are the expensive parts of drawing an odd shape every frame of a drag
+    Box(modifier.graphicsLayer { rotationZ = tilt }.size(size), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationY = 4.dp.toPx(); translationX = 1.dp.toPx() }.clip(sh).background(Color.Black.copy(alpha = .22f)))
+        Box(Modifier.fillMaxSize().clip(sh).background(Color.White))
+        Box(
+            Modifier.fillMaxSize().graphicsLayer { scaleX = .88f; scaleY = .88f }.clip(sh)
+                .background(Brush.sweepGradient(cs + cs.first()))
+                .background(Brush.linearGradient(0f to Color.White.copy(alpha = .55f), .45f to Color.White.copy(alpha = .0f), .55f to Color.White.copy(alpha = .22f), 1f to Color.Transparent)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(glyph, fontFamily = fam, fontSize = (size.value * .52f).sp, color = ink.copy(alpha = .28f), modifier = Modifier.graphicsLayer { translationX = 3.dp.toPx(); translationY = 3.dp.toPx() })
+            Text(glyph, fontFamily = fam, fontSize = (size.value * .52f).sp, color = ink)
+        }
     }
 }

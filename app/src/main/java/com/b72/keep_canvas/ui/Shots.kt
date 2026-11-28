@@ -222,6 +222,8 @@ fun ShotsScreen() {
         if (todo.isEmpty() && redo.isEmpty()) return@LaunchedEffect
         val session = if (Assistant.installed) withContext(Dispatchers.Default) { Assistant.open(ctx.applicationContext) } else null
         try {
+            // all of the reading runs off the main thread, so a screenshot being read can never hold up a swipe or a tap
+            withContext(Dispatchers.Default) {
             todo.forEachIndexed { i, s ->
                 reading = i to (todo.size + redo.size)
                 Shots.infos[s.id] = Shots.analyse(ctx, s, session)
@@ -233,6 +235,7 @@ fun ShotsScreen() {
                 val n = Shots.analyse(ctx, s, session, old.text)
                 if (n.ai) Shots.infos[s.id] = n.copy(state = old.state, col = old.col, until = old.until)
                 else if (session.cloud && Cloud.waitMs(ctx) < 0) return@forEachIndexed
+            }
             }
         } finally { session?.close(); Shots.save(ctx); reading = null }
     }
