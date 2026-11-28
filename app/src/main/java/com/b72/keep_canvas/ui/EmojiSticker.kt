@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -40,19 +41,25 @@ object EmojiFont {
 }
 
 /**
- * A sticker: one emoji in the one-colour Noto font, ink on a pastel gradient, with a white die-cut edge and a little shadow, set at a tilt.
- * (The emoji are written without the "emoji presentation" selector, so the font draws them as outlines instead of the coloured system ones.)
+ * A sticker: one emoji in the one-colour Noto font, printed in ink on an iridescent sweep of the given colours, with a glossy sheen, a thick white die-cut edge
+ * and a soft shadow, set at a tilt. The ink is printed twice, a hair out of register, like a cheap sticker sheet. [shape] is any M3 Expressive polygon (a cookie, a flower...);
+ * a rounded square when none is given. (The emoji are written without the "emoji presentation" selector, so the font draws outlines instead of the coloured system ones.)
  */
 @Composable
-fun EmojiSticker(glyph: String, modifier: Modifier = Modifier, size: Dp = 84.dp, tilt: Float = -8f, colors: List<Color>) {
+fun EmojiSticker(glyph: String, modifier: Modifier = Modifier, size: Dp = 96.dp, tilt: Float = -8f, colors: List<Color>, shape: androidx.graphics.shapes.RoundedPolygon? = null) {
     val ctx = LocalContext.current
-    val fam = remember { EmojiFont.family(ctx, 600) }
-    val shape = RoundedCornerShape(size * .4f)
+    val fam = remember { EmojiFont.family(ctx, 700) }
+    val sh: androidx.compose.ui.graphics.Shape = shape?.toShape() ?: RoundedCornerShape(size * .4f)
+    val ink = Color(0xFF1B1B1F)
+    val cs = if (colors.size >= 2) colors else listOf(Color(0xFFE8DEF8), Color(0xFFFFD8E4))
     Box(
-        modifier.graphicsLayer { rotationZ = tilt }.size(size).shadow(6.dp, shape).clip(shape)
-            .background(Brush.linearGradient(colors)).border(4.dp, Color.White, shape),
+        modifier.graphicsLayer { rotationZ = tilt }.size(size).shadow(8.dp, sh).clip(sh)
+            .background(Brush.sweepGradient(cs + cs.first()))
+            .background(Brush.linearGradient(0f to Color.White.copy(alpha = .55f), .45f to Color.White.copy(alpha = .0f), .55f to Color.White.copy(alpha = .22f), 1f to Color.Transparent))
+            .border(5.dp, Color.White, sh),
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, fontFamily = fam, fontSize = (size.value * .52f).sp, color = Color(0xFF1B1B1F))
+        Text(glyph, fontFamily = fam, fontSize = (size.value * .56f).sp, color = ink.copy(alpha = .28f), modifier = Modifier.graphicsLayer { translationX = 3.dp.toPx(); translationY = 3.dp.toPx() })
+        Text(glyph, fontFamily = fam, fontSize = (size.value * .56f).sp, color = ink)
     }
 }

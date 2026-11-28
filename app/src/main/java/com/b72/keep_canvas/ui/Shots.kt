@@ -60,9 +60,14 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material.icons.rounded.Snooze
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
+import com.b72.keep_canvas.data.Cloud
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.FloatingToolbarDefaults
@@ -140,13 +145,31 @@ private object ShotBitmaps {
 }
 
 @Composable
-private fun ShotImage(shot: Shot, px: Int, modifier: Modifier, scale: ContentScale = ContentScale.Crop) {
+private fun ShotImage(shot: Shot, px: Int, modifier: Modifier, scale: ContentScale = ContentScale.Crop, align: Alignment = Alignment.Center) {
     val ctx = LocalContext.current
     val img by produceState<ImageBitmap?>(ShotBitmaps.peek(shot.uri, px), shot.id) { value = ShotBitmaps.load(ctx, shot.uri, px) }
     Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = scale) }
+        img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = scale, alignment = align) }
     }
 }
+
+/** Screenshots come in three kinds, and each is laid out for what it is: the whole screen, a piece of one, or a long capture that scrolled. */
+private enum class ShotKind { Full, Partial, Scrolling }
+
+private fun kindOf(s: Shot): ShotKind {
+    if (s.w <= 0 || s.h <= 0) return ShotKind.Full
+    val dm = android.content.res.Resources.getSystem().displayMetrics
+    val dev = maxOf(dm.heightPixels, dm.widthPixels).toFloat() / minOf(dm.heightPixels, dm.widthPixels).coerceAtLeast(1)
+    val r = s.h.toFloat() / s.w
+    fun near(a: Float, b: Float) = a in b * .9f..b * 1.1f
+    return when {
+        r > dev * 1.4f -> ShotKind.Scrolling
+        near(r, dev) || near(r, 1f / dev) -> ShotKind.Full
+        else -> ShotKind.Partial
+    }
+}
+
+private fun shotAspect(s: Shot) = if (s.w > 0 && s.h > 0) s.w.toFloat() / s.h else .46f
 
 private fun categoryLabel(c: String) = when (c) {
     "otp" -> "One-time code"; "payment" -> "Payment"; "receipt" -> "Receipt"; "delivery" -> "Delivery"; "ride" -> "Ride"; "ticket" -> "Ticket"
@@ -174,19 +197,42 @@ fun ShotsScreen() {
     var reading by remember { mutableStateOf<Pair<Int, Int>?>(null) } // done of total
     var scanned by remember { mutableStateOf(false) }
     var tab by UiPrefs.shotTab
+    var retrying by remember { mutableStateOf<Long?>(null) }
+    fun retry(sh: Shot) {
+        if (retrying != null) return
+        retrying = sh.id
+        scope.launch {
+            val old = Shots.infos[sh.id]
+            val session = if (Assistant.installed) withContext(Dispatchers.Default) { Assistant.open(ctx.applicationContext) } else null
+            val n = try { Shots.analyse(ctx, sh, session, old?.text) } finally { session?.close() }
+            Shots.infos[sh.id] = n.copy(state = old?.state ?: "new", col = old?.col.orEmpty(), until = old?.until ?: 0L)
+            Shots.save(ctx)
+            retrying = null
+            snack.showSnackbar(if (n.ai) "Read again by the assistant" else if (session == null) "No assistant is switched on" else "The assistant did not answer. Try again in a minute.")
+        }
+    }
 
     LaunchedEffect(granted) {
         if (!granted) return@LaunchedEffect
         Shots.load(ctx)
         shots = Shots.scan(ctx); scanned = true
         val todo = shots.filter { it.id !in Shots.infos }
-        if (todo.isEmpty()) return@LaunchedEffect
+        // the ones that only got plain rules last time (the cloud's per-minute limit, or no answer) are read again, a few at a time and after the new ones
+        val redo = if (Assistant.installed) shots.filter { s -> Shots.infos[s.id]?.let { !it.ai && it.text.length >= 12 && it.state != "drop" } == true }.take(40) else emptyList()
+        if (todo.isEmpty() && redo.isEmpty()) return@LaunchedEffect
         val session = if (Assistant.installed) withContext(Dispatchers.Default) { Assistant.open(ctx.applicationContext) } else null
         try {
             todo.forEachIndexed { i, s ->
-                reading = i to todo.size
+                reading = i to (todo.size + redo.size)
                 Shots.infos[s.id] = Shots.analyse(ctx, s, session)
                 if (i % 5 == 4) Shots.save(ctx)
+            }
+            if (session != null && (!session.cloud || Cloud.waitMs(ctx) >= 0)) redo.forEachIndexed { j, s ->
+                reading = (todo.size + j) to (todo.size + redo.size)
+                val old = Shots.infos[s.id] ?: return@forEachIndexed
+                val n = Shots.analyse(ctx, s, session, old.text)
+                if (n.ai) Shots.infos[s.id] = n.copy(state = old.state, col = old.col, until = old.until)
+                else if (session.cloud && Cloud.waitMs(ctx) < 0) return@forEachIndexed
             }
         } finally { session?.close(); Shots.save(ctx); reading = null }
     }
@@ -266,6 +312,7 @@ fun ShotsScreen() {
             val pageCtx = LocalShared.current?.let { SharedCtx(it.st, this) }
             ShotPage(
                 sh, infos[sh.id], kept.mapNotNull { infos[it.id]?.col?.takeIf { c -> c.isNotBlank() } }.distinct().sorted(),
+                retrying = retrying == sh.id, onRetry = { retry(sh) },
                 onBack = { detail = null }, onDelete = { delete(listOf(sh)); detail = null },
                 onReview = { Shots.setState(ctx, sh.id, "new"); detail = null }, onCollect = { n -> Shots.setCollection(ctx, sh.id, n) },
                 modifier = Modifier.let { if (pageCtx != null) it.container(pageCtx, "shot-${sh.id}", 28.dp) else it },
@@ -415,10 +462,22 @@ private fun ReviewPane(
                         )
                     },
             ) {
-                Column(Modifier.fillMaxSize().padding(12.dp)) {
-                    // the whole screenshot, in a frame of its own on the tinted card
-                    Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = .08f)), contentAlignment = Alignment.Center) {
-                        ShotImage(top, 1400, Modifier.fillMaxSize(), ContentScale.Fit)
+                Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center) {
+                    // each kind of screenshot gets its own treatment: a whole screen or a piece is framed at its own proportions and the words sit right under it;
+                    // a long scrolling capture fills the width from its top and fades out where it carries on
+                    val kind = remember(top.id) { kindOf(top) }
+                    if (kind == ShotKind.Scrolling) Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(24.dp))) {
+                        ShotImage(top, 1400, Modifier.fillMaxSize(), ContentScale.FillWidth, Alignment.TopCenter)
+                        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(96.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, tone.first))))
+                        Text(
+                            "SCROLLING CAPTURE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .6.sp), color = tone.first,
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).clip(CircleShape).background(tone.second).padding(horizontal = 12.dp, vertical = 5.dp),
+                        )
+                    } else Box(Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        ShotImage(
+                            top, 1400, Modifier.aspectRatio(shotAspect(top)).clip(RoundedCornerShape(22.dp)).border(1.dp, tone.second.copy(alpha = .14f), RoundedCornerShape(22.dp)),
+                            ContentScale.Fit,
+                        )
                     }
                     var more by remember(top.id) { mutableStateOf(false) }
                     Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp).padding(top = 12.dp, bottom = 6.dp)) {
@@ -441,15 +500,15 @@ private fun ReviewPane(
                 val keepGlyph = if (top.id % 2L == 0L) "✌" else "👍"
                 EmojiSticker(
                     keepGlyph, Modifier.align(Alignment.TopStart).padding(18.dp).graphicsLayer { val k = (x.value / thr).coerceIn(0f, 1f); alpha = k; scaleX = .5f + .6f * k; scaleY = scaleX },
-                    tilt = -12f, colors = listOf(cs.primaryContainer, cs.tertiaryContainer, cs.secondaryContainer),
+                    tilt = -12f, colors = listOf(cs.primaryContainer, cs.tertiaryContainer, cs.secondaryContainer, cs.primaryContainer), shape = MaterialShapes.Cookie9Sided,
                 )
                 EmojiSticker(
                     "👀", Modifier.align(Alignment.TopEnd).padding(18.dp).graphicsLayer { val k = (-x.value / thr).coerceIn(0f, 1f); alpha = k; scaleX = .5f + .6f * k; scaleY = scaleX },
-                    tilt = 11f, colors = listOf(cs.errorContainer, cs.tertiaryContainer, cs.surfaceContainerHighest),
+                    tilt = 11f, colors = listOf(cs.errorContainer, cs.tertiaryContainer, cs.secondaryContainer, cs.errorContainer), shape = MaterialShapes.Flower,
                 )
                 EmojiSticker(
                     "💤", Modifier.align(Alignment.TopCenter).padding(top = 18.dp).graphicsLayer { val k = (-y.value / thrY).coerceIn(0f, 1f); alpha = k; scaleX = .5f + .6f * k; scaleY = scaleX },
-                    tilt = 6f, colors = listOf(cs.secondaryContainer, cs.primaryContainer, cs.surfaceContainerHighest),
+                    tilt = 6f, colors = listOf(cs.secondaryContainer, cs.primaryContainer, cs.tertiaryContainer, cs.secondaryContainer), shape = MaterialShapes.Clover4Leaf,
                 )
             }
         }
@@ -640,7 +699,11 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
             items(shown, key = { it.id }) { s ->
                 val i = infos[s.id]
                 Column(Modifier.clickable(onClickLabel = "Open") { onOpen(s) }) {
-                    ShotImage(s, 500, Modifier.fillMaxWidth().aspectRatio(.62f).let { if (grow != null) it.container(grow, "shot-${s.id}", 22.dp) else it }.clip(RoundedCornerShape(22.dp)))
+                    val k = remember(s.id) { kindOf(s) }
+                    ShotImage(
+                        s, 500, Modifier.fillMaxWidth().aspectRatio(.62f).let { if (grow != null) it.container(grow, "shot-${s.id}", 22.dp) else it }.clip(RoundedCornerShape(22.dp)),
+                        if (k == ShotKind.Partial) ContentScale.Fit else ContentScale.Crop, if (k == ShotKind.Scrolling) Alignment.TopCenter else Alignment.Center,
+                    )
                     Text(i?.title.orEmpty(), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
                     Text(categoryLabel(i?.category.orEmpty()).uppercase(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = .6.sp), color = cs.onSurfaceVariant)
                 }
@@ -653,7 +716,8 @@ private fun KeptPane(kept: List<Shot>, infos: Map<Long, ShotInfo>, grow: SharedC
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ShotPage(
-    s: Shot, i: ShotInfo?, collections: List<String>, onBack: () -> Unit, onDelete: () -> Unit, onReview: () -> Unit, onCollect: (String) -> Unit, modifier: Modifier = Modifier,
+    s: Shot, i: ShotInfo?, collections: List<String>, retrying: Boolean, onRetry: () -> Unit,
+    onBack: () -> Unit, onDelete: () -> Unit, onReview: () -> Unit, onCollect: (String) -> Unit, modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
@@ -664,18 +728,38 @@ private fun ShotPage(
             Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             }
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Color.Black.copy(alpha = .08f)), contentAlignment = Alignment.Center) {
-                ShotImage(s, 1600, Modifier.fillMaxWidth().heightIn(max = 560.dp), ContentScale.Fit)
+            // every kind is framed the same way (rounded, hairline edge) and sized by its own proportions, so no bars and no stray space; the title follows right under it
+            val kind = remember(s.id) { kindOf(s) }
+            val frame = RoundedCornerShape(28.dp)
+            val edge = tone.second.copy(alpha = .14f)
+            var whole by remember(s.id) { mutableStateOf(false) }
+            val screenH = LocalConfiguration.current.screenHeightDp.dp
+            if (kind == ShotKind.Scrolling) {
+                // a long capture: its top at full width, fading out where it goes on, and a button to unroll all of it
+                Box(Modifier.fillMaxWidth().animateContentSize().let { if (whole) it else it.heightIn(max = screenH * .6f) }.clip(frame).border(1.dp, edge, frame)) {
+                    ShotImage(s, 1600, Modifier.fillMaxWidth().wrapContentHeight(unbounded = true).aspectRatio(shotAspect(s)), ContentScale.FillWidth)
+                    if (!whole) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(110.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, tone.first))))
+                }
+                TextButton(onClick = { whole = !whole }, Modifier.align(Alignment.CenterHorizontally)) { Text(if (whole) "Roll it back up" else "Show the whole capture") }
+            } else Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                ShotImage(s, 1600, Modifier.heightIn(max = screenH * .62f).aspectRatio(shotAspect(s)).clip(frame).border(1.dp, edge, frame), ContentScale.Fit)
             }
             Column(Modifier.padding(horizontal = 8.dp)) {
-                Text(i?.title.orEmpty(), style = flexStyle(32.sp, wght = 700, lh = 1.08f), color = tone.second, modifier = Modifier.padding(top = 18.dp))
+                Text(i?.title.orEmpty(), style = flexStyle(32.sp, wght = 700, lh = 1.08f), color = tone.second, modifier = Modifier.padding(top = 14.dp))
                 if (i?.ai == true && i.summary.isNotEmpty()) Text(i.summary, style = MaterialTheme.typography.bodyLarge, color = tone.second.copy(alpha = .85f), modifier = Modifier.padding(top = 6.dp))
                 FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (i != null) Text(categoryLabel(i.category).uppercase(), style = flexStyle(14.sp, wght = 650, wdth = 70f, lh = 1f), color = tone.second, modifier = Modifier.clip(CircleShape).background(tone.second.copy(alpha = .14f)).padding(horizontal = 14.dp, vertical = 7.dp))
+                    if (kind == ShotKind.Scrolling) Text("SCROLLING CAPTURE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .6.sp), color = tone.second, modifier = Modifier.clip(CircleShape).border(1.dp, tone.second.copy(alpha = .4f), CircleShape).padding(horizontal = 12.dp, vertical = 7.dp))
+                    else if (kind == ShotKind.Partial) Text("PARTIAL", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .6.sp), color = tone.second, modifier = Modifier.clip(CircleShape).border(1.dp, tone.second.copy(alpha = .4f), CircleShape).padding(horizontal = 12.dp, vertical = 7.dp))
                     if (i?.oneTime == true) Text("Probably only needed once", style = MaterialTheme.typography.labelLarge, color = tone.second, modifier = Modifier.clip(CircleShape).border(1.dp, tone.second.copy(alpha = .4f), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp))
                     i?.tags?.forEach { Text("#$it", style = MaterialTheme.typography.labelLarge, color = tone.second.copy(alpha = .8f), modifier = Modifier.clip(CircleShape).background(tone.second.copy(alpha = .08f)).padding(horizontal = 12.dp, vertical = 6.dp)) }
                 }
-                Text("COLLECTION", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .6.sp), color = tone.second.copy(alpha = .7f), modifier = Modifier.padding(top = 22.dp, bottom = 6.dp))
+                if (i != null) AssistChip(
+                    onClick = onRetry, enabled = !retrying, modifier = Modifier.padding(top = 12.dp),
+                    label = { Text(if (retrying) "Reading…" else if (i.ai) "Read by the assistant · read again" else "Read by plain rules · read with the assistant") },
+                    leadingIcon = { Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp)) },
+                )
+                Text("COLLECTION", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, letterSpacing = .6.sp), color = tone.second.copy(alpha = .7f), modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (c in collections) FilterChip(i?.col == c, { onCollect(if (i?.col == c) "" else c) }, label = { Text(c) })
                     AssistChip(onClick = { naming = true }, label = { Text("New collection") }, leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) })
@@ -699,6 +783,9 @@ private fun ShotPage(
             leadingContent = {
                 IconButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(s.uri, "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } }) { Icon(Icons.Rounded.OpenInNew, "Open in another app") }
                 IconButton(onClick = onReview) { Icon(Icons.Rounded.Undo, "Review again") }
+                IconButton(onClick = onRetry, enabled = !retrying) {
+                    if (retrying) androidx.compose.material3.CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.Refresh, "Read again with the assistant")
+                }
             },
             trailingContent = { IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Delete", tint = cs.error) } },
             content = {
