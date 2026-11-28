@@ -25,6 +25,17 @@ object Cloud {
     /** Free keys allow about 500 Flash-Lite and 20 Flash requests a day (and 15 and 5 a minute); the app stays a little under both. */
     private fun dailyCap() = if (model == FLASH) 18 else 450
     private var blockedUntil = 0L
+    private var lastAt = 0L
+    /** Free keys allow 15 Flash-Lite and 5 Flash requests a minute; a request is spaced this far from the one before. */
+    private fun gap() = if (model == FLASH) 13_000L else 4_300L
+
+    /** How long to wait before the next request is safe, in ms; -1 when none will be accepted soon (no key, or the day's allowance is used). */
+    fun waitMs(ctx: Context): Long {
+        if (key(ctx).isBlank() || usedToday(ctx) >= dailyCap()) return -1L
+        val now = System.currentTimeMillis()
+        if (blockedUntil - now > 120_000L) return -1L
+        return maxOf(0L, blockedUntil - now, lastAt + gap() - now)
+    }
 
     /** How many cloud requests were made today. */
     fun usedToday(ctx: Context): Int {
@@ -62,7 +73,7 @@ object Cloud {
     fun ask(ctx: Context, prompt: String, json: Boolean = false): String? = try {
         val k = key(ctx)
         if (k.isBlank() || System.currentTimeMillis() < blockedUntil || usedToday(ctx) >= dailyCap()) null else {
-            count(ctx)
+            count(ctx); lastAt = System.currentTimeMillis()
             val c = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; doOutput = true; connectTimeout = 15_000; readTimeout = 60_000
                 setRequestProperty("Content-Type", "application/json"); setRequestProperty("x-goog-api-key", k)

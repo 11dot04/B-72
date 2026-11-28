@@ -211,6 +211,9 @@ object Assistant {
             else -> try { engine.createConversation().use { it.sendMessage(prompt).toString() } } catch (e: Throwable) { null }
         }
 
+        /** True when answers come from the cloud (which has a rate limit), not from the phone. */
+        val cloud: Boolean get() = engine == null && nano == null && ctx != null
+
         override fun close() { runCatching { engine?.close() } }
     }
 

@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -147,12 +148,22 @@ Text:
 """
 
     /** Reads one screenshot: its text, then what it is. [session] is the assistant, when there is one; the rules answer otherwise. */
-    suspend fun analyse(ctx: Context, shot: Shot, session: Assistant.Session?): ShotInfo {
-        val text = Ocr.readUri(ctx, shot.uri).orEmpty().trim()
+    suspend fun analyse(ctx: Context, shot: Shot, session: Assistant.Session?, known: String? = null): ShotInfo {
+        val text = known?.takeIf { it.isNotBlank() } ?: Ocr.readUri(ctx, shot.uri).orEmpty().trim()
         val (gc, go, gt) = guess(text)
         val title0 = text.lineSequence().map { it.trim() }.firstOrNull { it.count { c -> c.isLetter() } >= 4 }?.take(40) ?: "Screenshot"
         if (session != null && text.length >= 12) {
-            val reply = withContext(Dispatchers.Default) { session.ask(PROMPT + text.take(1200)) }
+            // the cloud answers a few a minute: wait for the next slot (and for a refused minute to pass) instead of giving up on the screenshot
+            var reply: String? = null
+            var tries = 0
+            while (tries < 3) {
+                tries++
+                var w = 0L
+                if (session.cloud) { w = Cloud.waitMs(ctx); if (w < 0) break; if (w > 0) delay(w + 250) }
+                if (tries > 1 && w == 0L) delay(2_000)
+                reply = withContext(Dispatchers.Default) { session.ask(PROMPT + text.take(1200)) }
+                if (reply != null || !session.cloud) break
+            }
             val a = reply?.indexOf('{') ?: -1; val z = reply?.lastIndexOf('}') ?: -1
             if (reply != null && a >= 0 && z > a) {
                 val o = runCatching { AppJson.parseToJsonElement(reply.substring(a, z + 1)) as? JsonObject }.getOrNull()
